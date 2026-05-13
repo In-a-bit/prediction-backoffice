@@ -44,7 +44,7 @@ export function TaskCard({ task }: { task: Task }) {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <Link
-              href={`/tasks/${task.id}`}
+              href={`/automations/crypto-interval/${task.id}`}
               className="text-base font-semibold hover:text-accent inline-flex items-baseline gap-2"
             >
               {assetLabel}
@@ -129,7 +129,7 @@ export function TaskCard({ task }: { task: Task }) {
         />
         <div className="flex-1" />
         <Link
-          href={`/tasks/${task.id}`}
+          href={`/automations/crypto-interval/${task.id}`}
           className="text-sm text-accent hover:underline"
         >
           View activity →

@@ -27,7 +27,6 @@ function nextSlotEnd(at: Date, intervalMinutes: number): Date {
   return new Date(ms + (stepMs - rem));
 }
 
-// Format a Date for an <input type="datetime-local"> in the user's local TZ.
 function toDatetimeLocal(d: Date): string {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -61,9 +60,6 @@ export function NewTaskForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // Re-tick once a second so the "auto" preview stays accurate. We render the
-  // preview from `now` so the value the user sees matches what the server will
-  // compute when they submit.
   const [now, setNow] = useState<Date>(() => new Date());
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
@@ -251,7 +247,7 @@ export function NewTaskForm({
         >
           {pending ? "Creating…" : "Create task"}
         </button>
-        <Link href="/tasks" className={buttonVariants.secondary}>
+        <Link href="/automations/crypto-interval" className={buttonVariants.secondary}>
           Cancel
         </Link>
       </div>

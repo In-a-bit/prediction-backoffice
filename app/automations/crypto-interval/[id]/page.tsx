@@ -14,6 +14,7 @@ import {
   Stat,
 } from "@/components/ui";
 import { BackofficeApiError, getTask, listTaskMarkets } from "@/lib/api";
+import { behaviors } from "@/lib/behaviors";
 import {
   formatDateTime,
   formatDateTimeFull,
@@ -26,9 +27,11 @@ import type { CreatedMarket, CreatedMarketStatus, Task } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+const behavior = behaviors["crypto-interval"];
+
 type Params = { id: string };
 
-export default async function TaskDetailPage({
+export default async function CryptoIntervalTaskDetailPage({
   params,
 }: {
   params: Promise<Params>;
@@ -71,8 +74,8 @@ export default async function TaskDetailPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-foreground-muted">
-        <Link href="/tasks" className="hover:text-foreground">
-          ← All tasks
+        <Link href={behavior.href} className="hover:text-foreground">
+          ← All crypto tasks
         </Link>
       </div>
 
@@ -269,11 +272,6 @@ function MarketRow({ market }: { market: CreatedMarket }) {
   );
 }
 
-// MarketStatusBadge renders the full lifecycle: PENDING → VERIFYING (CREATED
-// without verified_at) → VERIFIED (CREATED with verified_at) → FAILED. The
-// verified_at timestamp is stamped by the backoffice's verifier loop once
-// dpm-api confirms the on-chain deployment reached REGISTERED/DEPLOYED, so
-// "VERIFIED" in the UI means the market is actually live on-chain.
 function MarketStatusBadge({ market }: { market: CreatedMarket }) {
   if (market.status === "FAILED") return <Badge tone="danger">FAILED</Badge>;
   if (market.status === "PENDING") return <Badge tone="warning">PENDING</Badge>;

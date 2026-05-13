@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { AddAssetSection } from "./add-asset-section";
@@ -9,9 +10,12 @@ import {
   PageHeader,
 } from "@/components/ui";
 import { listAssets } from "@/lib/api";
+import { behaviors } from "@/lib/behaviors";
 import type { Asset } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const behavior = behaviors["crypto-interval"];
 
 export default async function AssetsPage() {
   let assets: Asset[] = [];
@@ -26,9 +30,15 @@ export default async function AssetsPage() {
 
   return (
     <div className="space-y-6">
+      <div className="text-sm text-foreground-muted">
+        <Link href={behavior.href} className="hover:text-foreground">
+          ← Crypto Intervals
+        </Link>
+      </div>
+
       <PageHeader
-        title="Assets"
-        description="Tradeable base/quote pairs available to tasks. Adding an asset queries the resolution source (Binance) for supported USDT-quoted pairs."
+        title="Crypto assets"
+        description="Tradeable base/quote pairs available to crypto-interval tasks. Adding an asset queries the resolution source (Binance) for supported USDT-quoted pairs."
       />
 
       {error ? <ErrorMessage>{error}</ErrorMessage> : null}

@@ -10,12 +10,15 @@ import {
   buttonVariants,
 } from "@/components/ui";
 import { listTasks } from "@/lib/api";
+import { behaviors } from "@/lib/behaviors";
 import { formatDateTime, formatDuration } from "@/lib/format";
 import type { Task } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function TasksPage() {
+const behavior = behaviors["crypto-interval"];
+
+export default async function CryptoIntervalListPage() {
   let tasks: Task[] = [];
   let error: string | null = null;
   try {
@@ -27,12 +30,20 @@ export default async function TasksPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Tasks"
-        description="Each task drives auto-creation and auto-resolution for one asset/interval pair."
+        title={behavior.name}
+        description={behavior.tagline + " — each task drives auto-creation and auto-resolution for one asset / interval pair."}
         actions={
-          <Link href="/tasks/new" className={buttonVariants.primary}>
-            New task
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/automations/crypto-interval/assets"
+              className={buttonVariants.secondary}
+            >
+              Manage assets
+            </Link>
+            <Link href={behavior.newHref} className={buttonVariants.primary}>
+              New crypto task
+            </Link>
+          </div>
         }
       />
 
@@ -41,10 +52,10 @@ export default async function TasksPage() {
       {tasks.length === 0 && !error ? (
         <Card>
           <EmptyState
-            title="No tasks yet"
-            description="Tasks define which markets get auto-created and resolved."
+            title="No crypto-interval tasks yet"
+            description="Tasks define which markets get auto-created and resolved for crypto assets."
             action={
-              <Link href="/tasks/new" className={buttonVariants.primary}>
+              <Link href={behavior.newHref} className={buttonVariants.primary}>
                 Create your first task
               </Link>
             }
@@ -93,7 +104,7 @@ function TaskRow({ task }: { task: Task }) {
     <tr className="border-t border-border hover:bg-foreground/[0.02]">
       <td className="px-5 py-3">
         <Link
-          href={`/tasks/${task.id}`}
+          href={`/automations/crypto-interval/${task.id}`}
           className="font-medium hover:text-accent"
         >
           {assetLabel}
@@ -144,7 +155,7 @@ function TaskRow({ task }: { task: Task }) {
       </td>
       <td className="px-5 py-3 text-right">
         <Link
-          href={`/tasks/${task.id}`}
+          href={`/automations/crypto-interval/${task.id}`}
           className="text-sm text-accent hover:underline"
         >
           Open →

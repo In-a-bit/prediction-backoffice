@@ -40,8 +40,9 @@ export async function createTaskAction(input: {
     return { ok: false, error: explain(err) };
   }
   revalidatePath("/");
-  revalidatePath("/tasks");
-  redirect(`/tasks/${task.id}`);
+  revalidatePath("/automations");
+  revalidatePath("/automations/crypto-interval");
+  redirect(`/automations/crypto-interval/${task.id}`);
 }
 
 export async function updateTaskAction(
@@ -54,8 +55,9 @@ export async function updateTaskAction(
     return { ok: false, error: explain(err) };
   }
   revalidatePath("/");
-  revalidatePath("/tasks");
-  revalidatePath(`/tasks/${id}`);
+  revalidatePath("/automations");
+  revalidatePath("/automations/crypto-interval");
+  revalidatePath(`/automations/crypto-interval/${id}`);
   return { ok: true };
 }
 
@@ -82,8 +84,8 @@ export async function createAssetAction(input: {
 }): Promise<ActionResult<{ id: number }>> {
   try {
     const a = await api.createAsset(input);
-    revalidatePath("/assets");
-    revalidatePath("/tasks/new");
+    revalidatePath("/automations/crypto-interval/assets");
+    revalidatePath("/automations/crypto-interval/new");
     return { ok: true, data: { id: a.id } };
   } catch (err) {
     return { ok: false, error: explain(err) };
@@ -99,6 +101,6 @@ export async function updateAssetAction(
   } catch (err) {
     return { ok: false, error: explain(err) };
   }
-  revalidatePath("/assets");
+  revalidatePath("/automations/crypto-interval/assets");
   return { ok: true };
 }

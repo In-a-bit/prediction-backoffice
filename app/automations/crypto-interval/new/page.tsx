@@ -10,11 +10,14 @@ import {
   buttonVariants,
 } from "@/components/ui";
 import { listAssets, listIntervals } from "@/lib/api";
+import { behaviors } from "@/lib/behaviors";
 import type { Asset, Interval } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewTaskPage() {
+const behavior = behaviors["crypto-interval"];
+
+export default async function NewCryptoIntervalTaskPage() {
   let assets: Asset[] = [];
   let intervals: Interval[] = [];
   let error: string | null = null;
@@ -30,14 +33,14 @@ export default async function NewTaskPage() {
   return (
     <div className="space-y-6">
       <div className="text-sm text-foreground-muted">
-        <Link href="/tasks" className="hover:text-foreground">
-          ← All tasks
+        <Link href={behavior.href} className="hover:text-foreground">
+          ← All crypto tasks
         </Link>
       </div>
 
       <PageHeader
-        title="New task"
-        description="Pick an asset and interval. The backoffice will create a series, attach tags, and start the create/resolve loops automatically."
+        title="New crypto-interval task"
+        description="Pick an asset and interval. The backoffice will create a series, attach tags, and start the create / resolve loops automatically."
       />
 
       {error ? <ErrorMessage>{error}</ErrorMessage> : null}
@@ -48,7 +51,10 @@ export default async function NewTaskPage() {
             title="No active assets"
             description="Add an asset before creating a task."
             action={
-              <Link href="/assets" className={buttonVariants.primary}>
+              <Link
+                href="/automations/crypto-interval/assets"
+                className={buttonVariants.primary}
+              >
                 Manage assets
               </Link>
             }
