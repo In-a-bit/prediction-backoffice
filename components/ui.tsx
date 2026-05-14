@@ -194,3 +194,142 @@ export function InfoMessage({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+// ----- Form primitives -----
+
+export const inputClass =
+  "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm placeholder:text-foreground-muted/70 focus:outline-none focus:border-accent";
+
+export const selectClass = inputClass;
+
+export const textareaClass = `${inputClass} font-mono text-xs leading-relaxed`;
+
+export function Field({
+  label,
+  hint,
+  error,
+  htmlFor,
+  required,
+  children,
+}: {
+  label: string;
+  hint?: ReactNode;
+  error?: ReactNode;
+  htmlFor?: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label
+        htmlFor={htmlFor}
+        className="text-xs font-medium text-foreground-muted flex items-center gap-1"
+      >
+        {label}
+        {required ? <span className="text-danger">*</span> : null}
+      </label>
+      {children}
+      {hint ? (
+        <span className="text-[11px] text-foreground-muted">{hint}</span>
+      ) : null}
+      {error ? <span className="text-[11px] text-danger">{error}</span> : null}
+    </div>
+  );
+}
+
+export function BoolSelect({
+  value,
+  onChange,
+  id,
+  allowUnset = true,
+}: {
+  value: boolean | undefined;
+  onChange: (v: boolean | undefined) => void;
+  id?: string;
+  allowUnset?: boolean;
+}) {
+  // Triple-state ("", "true", "false") so the operator can distinguish
+  // "unset → server default" from explicit true/false. The dpm-api uses
+  // pointer fields with defaults when omitted.
+  const v = value === undefined ? "" : value ? "true" : "false";
+  return (
+    <select
+      id={id}
+      className={selectClass}
+      value={v}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (next === "") onChange(undefined);
+        else onChange(next === "true");
+      }}
+    >
+      {allowUnset ? <option value="">— default —</option> : null}
+      <option value="true">Yes</option>
+      <option value="false">No</option>
+    </select>
+  );
+}
+
+export function JsonField({
+  value,
+  onChange,
+  id,
+  rows = 6,
+  placeholder = "{}",
+  invalid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  id?: string;
+  rows?: number;
+  placeholder?: string;
+  invalid?: boolean;
+}) {
+  return (
+    <textarea
+      id={id}
+      className={`${textareaClass} ${invalid ? "border-danger" : ""}`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      rows={rows}
+      placeholder={placeholder}
+      spellCheck={false}
+    />
+  );
+}
+
+export function AdvancedCollapse({
+  children,
+  summary = "Advanced fields",
+  defaultOpen = false,
+}: {
+  children: ReactNode;
+  summary?: string;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      className="group rounded-md border border-border bg-foreground/[0.02]"
+      open={defaultOpen}
+    >
+      <summary className="cursor-pointer list-none px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-foreground-muted flex items-center justify-between">
+        <span>{summary}</span>
+        <span className="transition-transform group-open:rotate-90 text-foreground-muted">
+          ▸
+        </span>
+      </summary>
+      <div className="px-4 py-4 border-t border-border space-y-3">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+// Section header inside a card body — visually groups a related set of fields.
+export function SectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted mt-1 mb-2">
+      {children}
+    </h3>
+  );
+}
