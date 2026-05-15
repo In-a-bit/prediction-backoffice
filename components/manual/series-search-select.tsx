@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { Badge, buttonVariants, inputClass } from "@/components/ui";
 import type { SeriesResponse } from "@/lib/types";
@@ -17,15 +17,13 @@ export function SeriesSearchSelect({
   onChange: (externalId: string) => void;
 }) {
   const [slug, setSlug] = useState("");
+  // The resolved series is only populated by an explicit lookup. If the
+  // parent clears `value`, we drop the resolved row at render time (derived
+  // state) — no effect needed.
   const [resolved, setResolved] = useState<SeriesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  // If `value` (the linked external_id) is set on mount but we don't yet have
-  // the series details, leave the row collapsed — the operator already chose.
-  useEffect(() => {
-    if (!value) setResolved(null);
-  }, [value]);
+  const effectiveResolved = value ? resolved : null;
 
   const lookup = () => {
     setError(null);
@@ -56,13 +54,13 @@ export function SeriesSearchSelect({
     onChange("");
   };
 
-  if (value && resolved) {
+  if (value && effectiveResolved) {
     return (
       <div className="flex items-center justify-between rounded-md border border-border bg-foreground/[0.03] px-3 py-2">
         <div className="flex flex-col">
-          <span className="text-sm font-medium">{resolved.title}</span>
+          <span className="text-sm font-medium">{effectiveResolved.title}</span>
           <span className="text-[11px] text-foreground-muted font-mono">
-            {resolved.external_id}
+            {effectiveResolved.external_id}
           </span>
         </div>
         <button
@@ -100,7 +98,7 @@ export function SeriesSearchSelect({
           {isPending ? "Looking up…" : "Look up"}
         </button>
       </div>
-      {value && !resolved ? (
+      {value && !effectiveResolved ? (
         <div className="flex items-center gap-2 text-xs text-foreground-muted">
           <Badge tone="info">linked</Badge>
           <span className="font-mono break-all">{value}</span>

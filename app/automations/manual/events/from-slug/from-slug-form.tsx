@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import {
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui";
 import {
   EventEditor,
-  emptyEventEditorState,
   eventEditorStateFromPayload,
   eventEditorStateToPayload,
   type EventEditorState,
@@ -421,15 +421,40 @@ export function FromSlugForm() {
       ) : null}
 
       {phase === "deploying-markets" && createdPlanId ? (
-        <DeployPlanDriver
-          planExternalId={createdPlanId}
-          onCompleted={() => setPhase("done")}
-        />
+        <>
+          <InfoMessage>
+            Plan persisted to the backend — execution will continue even if you
+            close this tab.{" "}
+            <Link
+              href={`/automations/manual/plans/${encodeURIComponent(createdPlanId)}`}
+              className="underline"
+            >
+              Open plan page →
+            </Link>
+          </InfoMessage>
+          <DeployPlanDriver
+            planExternalId={createdPlanId}
+            onCompleted={() => setPhase("done")}
+          />
+        </>
       ) : null}
 
-      {phase === "done" ? (
+      {phase === "done" && createdPlanId ? (
         <InfoMessage>
-          All markets settled. Check the operator log for the full audit trail.
+          All markets settled.{" "}
+          <Link
+            href={`/automations/manual/plans/${encodeURIComponent(createdPlanId)}`}
+            className="underline"
+          >
+            View final plan
+          </Link>
+          {" · "}
+          <Link
+            href="/automations/manual/operator-log"
+            className="underline"
+          >
+            Operator log
+          </Link>
         </InfoMessage>
       ) : null}
     </div>

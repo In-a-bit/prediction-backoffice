@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import {
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui";
 import {
   EventEditor,
-  emptyEventEditorState,
   eventEditorStateFromPayload,
   eventEditorStateToPayload,
   type EventEditorState,
@@ -27,7 +27,6 @@ import {
 } from "@/components/manual/market-editor";
 import {
   SeriesEditor,
-  emptySeriesEditorState,
   seriesEditorStateFromPayload,
   seriesEditorStateToPayload,
   type SeriesEditorState,
@@ -194,8 +193,8 @@ export function FromDescriptionForm() {
         const tagIds = await upsertTags();
 
         // Each event is created right before its markets deploy. We seed the
-        // first event here; subsequent events are created via deployNextEvent
-        // in the SequentialMarketDeployer's onAllSettled callback below.
+        // first event here; subsequent events are created via advanceToNextEvent,
+        // triggered by the DeployPlanDriver's onCompleted callback.
         await createEventAt(0, seriesExternalId, tagIds);
         setPhase("deploying-markets");
       } catch (err) {
@@ -415,17 +414,39 @@ export function FromDescriptionForm() {
               )}
 
               {isCreated && isActive && row.planExternalId ? (
-                <DeployPlanDriver
-                  planExternalId={row.planExternalId}
-                  onCompleted={() => {
-                    void advanceToNextEvent();
-                  }}
-                />
+                <>
+                  <p className="text-xs text-foreground-muted">
+                    Plan persisted to the backend — execution continues even
+                    if you close this tab.{" "}
+                    <Link
+                      href={`/automations/manual/plans/${encodeURIComponent(row.planExternalId)}`}
+                      className="underline"
+                    >
+                      Open plan page →
+                    </Link>
+                  </p>
+                  <DeployPlanDriver
+                    planExternalId={row.planExternalId}
+                    onCompleted={() => {
+                      void advanceToNextEvent();
+                    }}
+                  />
+                </>
               ) : null}
 
               {!isActive && !isCreated && phase !== "review" ? (
                 <p className="text-xs text-foreground-muted">
                   {row.markets.length} market(s) queued for after creation.
+                </p>
+              ) : null}
+              {!isActive && row.planExternalId ? (
+                <p className="text-xs text-foreground-muted">
+                  <Link
+                    href={`/automations/manual/plans/${encodeURIComponent(row.planExternalId)}`}
+                    className="underline"
+                  >
+                    View plan →
+                  </Link>
                 </p>
               ) : null}
             </CardBody>

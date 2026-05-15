@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 
 import {
@@ -104,6 +105,16 @@ export function MarketsForm({
   if (planId) {
     return (
       <div className="space-y-4">
+        <p className="text-xs text-foreground-muted">
+          Plan persisted to the backend.{" "}
+          <Link
+            href={`/automations/manual/plans/${encodeURIComponent(planId)}`}
+            className="underline"
+          >
+            Open plan page →
+          </Link>{" "}
+          Closing this tab does not stop execution.
+        </p>
         <DeployPlanDriver planExternalId={planId} />
         <button
           type="button"

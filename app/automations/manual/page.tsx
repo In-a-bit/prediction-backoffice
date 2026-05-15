@@ -7,6 +7,12 @@ export const dynamic = "force-dynamic";
 
 const TILES = [
   {
+    href: "/automations/manual/plans",
+    title: "Deploy plans",
+    description:
+      "Live and past market deploy queues — see what's running, recreate failed markets, signal balance for waiting workflows. Execution is backend-driven and survives UI/server restarts.",
+  },
+  {
     href: "/automations/manual/series/new",
     title: "New series",
     description:

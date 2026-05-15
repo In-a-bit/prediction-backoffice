@@ -117,6 +117,7 @@ const sections: Section[] = [
         if (b.key === "manual") {
           return [
             head,
+            { href: "/automations/manual/plans", label: "Deploy plans", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/series/new", label: "New series", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/events/new", label: "New event", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/events/from-slug", label: "From Polymarket slug", accent: b.accent, icon: <span />, child: true } satisfies Item,
