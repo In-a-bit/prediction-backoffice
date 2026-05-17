@@ -20,6 +20,9 @@ type Item = {
   // When true, the item is active only on an exact pathname match (not a
   // prefix match). Use for "index" links like /automations.
   exact?: boolean;
+  // Optional React-key override. Use when multiple sibling items share the
+  // same href (e.g. several "coming soon" sports all linking to the hub).
+  key?: string;
 };
 
 type Section = { title: string; items: Item[] };
@@ -117,12 +120,33 @@ const sections: Section[] = [
         if (b.key === "manual") {
           return [
             head,
-            { href: "/automations/manual/plans", label: "Deploy plans", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/series/new", label: "New series", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/events/new", label: "New event", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/events/from-slug", label: "From Polymarket slug", accent: b.accent, icon: <span />, child: true } satisfies Item,
             { href: "/automations/manual/events/from-description", label: "From description (AI)", accent: b.accent, icon: <span />, child: true } satisfies Item,
-            { href: "/automations/manual/operator-log", label: "Operator log", accent: b.accent, icon: <span />, child: true } satisfies Item,
+            // Deploy plans + Operator log moved to the cross-cutting
+            // Inventory section so manual + sports share one view.
+          ];
+        }
+        // Sports has one child entry per sport so operators can jump
+        // straight to "Soccer" or "Basketball" without going through
+        // the sport-picker hub. Coming-soon sports are still listed
+        // (greyed) so the roadmap is visible at a glance.
+        if (b.key === "sports") {
+          const soonChip = (
+            <span className="text-[10px] uppercase tracking-wider text-foreground-muted/80">soon</span>
+          );
+          return [
+            head,
+            { href: "/automations/sports/soccer", label: "Soccer", accent: b.accent, icon: <span />, child: true } satisfies Item,
+            { href: "/automations/sports/soccer/new", label: "New soccer league", accent: b.accent, icon: <span />, child: true } satisfies Item,
+            // Future sports — all link to the sport-picker hub for now; need an
+            // explicit `key` because they share `href`.
+            { key: "soon-basketball", href: "/automations/sports", label: "Basketball (soon)", accent: b.accent, icon: <span />, child: true, trailing: soonChip } satisfies Item,
+            { key: "soon-nba", href: "/automations/sports", label: "NBA (soon)", accent: b.accent, icon: <span />, child: true, trailing: soonChip } satisfies Item,
+            { key: "soon-mma", href: "/automations/sports", label: "MMA (soon)", accent: b.accent, icon: <span />, child: true, trailing: soonChip } satisfies Item,
+            // Sports rows of the operator log live in the global
+            // /operator-log page; deep-linked via ?source=sports.
           ];
         }
         return [head];
@@ -165,6 +189,41 @@ const sections: Section[] = [
           </svg>
         ),
       },
+      {
+        href: "/deploy-plans",
+        label: "Deploy plans",
+        icon: (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 5h10l4 4v10a2 2 0 0 1-2 2H4z" />
+            <path d="M14 5v4h4" />
+            <path d="M8 13h7M8 17h5" />
+          </svg>
+        ),
+      },
+      {
+        href: "/operator-log",
+        label: "Operator log",
+        icon: (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 6h16M4 12h16M4 18h10" />
+            <circle cx="20" cy="18" r="2" />
+          </svg>
+        ),
+      },
     ],
   },
 ];
@@ -202,9 +261,10 @@ export function Sidebar() {
             <ul className="space-y-0.5">
               {s.items.map((item) => {
                 const active = isActive(pathname, item);
+                const k = item.key ?? item.href;
                 if (item.child) {
                   return (
-                    <li key={item.href}>
+                    <li key={k}>
                       <Link
                         href={item.href}
                         className={`group flex items-center gap-2.5 pl-9 pr-2 py-1 rounded-md text-[13px] transition-colors ${
@@ -229,7 +289,7 @@ export function Sidebar() {
                   );
                 }
                 return (
-                  <li key={item.href}>
+                  <li key={k}>
                     <Link
                       href={item.href}
                       className={`group flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
@@ -302,7 +362,7 @@ export function MobileBar() {
                 </div>
                 <ul className="space-y-0.5">
                   {s.items.map((item) => (
-                    <li key={item.href}>
+                    <li key={item.key ?? item.href}>
                       <Link
                         href={item.href}
                         className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-foreground/5"

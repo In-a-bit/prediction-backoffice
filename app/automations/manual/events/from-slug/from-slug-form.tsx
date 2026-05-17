@@ -426,7 +426,7 @@ export function FromSlugForm() {
             Plan persisted to the backend — execution will continue even if you
             close this tab.{" "}
             <Link
-              href={`/automations/manual/plans/${encodeURIComponent(createdPlanId)}`}
+              href={`/deploy-plans/${encodeURIComponent(createdPlanId)}`}
               className="underline"
             >
               Open plan page →
@@ -443,14 +443,14 @@ export function FromSlugForm() {
         <InfoMessage>
           All markets settled.{" "}
           <Link
-            href={`/automations/manual/plans/${encodeURIComponent(createdPlanId)}`}
+            href={`/deploy-plans/${encodeURIComponent(createdPlanId)}`}
             className="underline"
           >
             View final plan
           </Link>
           {" · "}
           <Link
-            href="/automations/manual/operator-log"
+            href="/operator-log?source=manual"
             className="underline"
           >
             Operator log

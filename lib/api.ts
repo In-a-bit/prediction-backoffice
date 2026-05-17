@@ -230,3 +230,116 @@ export const manual = {
       { method: "POST", authed: true },
     ),
 };
+
+// ---------------------------------------------------------------------------
+// Sports — soccer/football today; the API surface is sport-agnostic so future
+// sports drop in without new endpoints. Reuses the manual deploy-plan controls
+// (start/pause/recreate/skip/signal-balance) via the existing manual.* methods.
+// ---------------------------------------------------------------------------
+
+import type {
+  SportsLeagueConfig,
+  SportsFixtureEvent,
+  SportsCreateLeagueConfigInput,
+  SportsUpdateLeagueConfigInput,
+  ApiFootballLeagueSearchResult,
+} from "./types";
+
+export const sports = {
+  listLeagueConfigs: (sportKey?: string) => {
+    const qs = sportKey ? `?sport_key=${encodeURIComponent(sportKey)}` : "";
+    return request<SportsLeagueConfig[]>(`/sports/league-configs${qs}`);
+  },
+  getLeagueConfig: (id: number) =>
+    request<SportsLeagueConfig>(`/sports/league-configs/${id}`),
+  createLeagueConfig: (input: SportsCreateLeagueConfigInput) =>
+    request<SportsLeagueConfig>("/sports/league-configs", {
+      method: "POST",
+      body: input,
+      authed: true,
+    }),
+  updateLeagueConfig: (id: number, patch: SportsUpdateLeagueConfigInput) =>
+    request<SportsLeagueConfig>(`/sports/league-configs/${id}`, {
+      method: "PATCH",
+      body: patch,
+      authed: true,
+    }),
+  addMarketType: (id: number, marketTypeKey: string, audit: { actor?: string } = {}) =>
+    request<SportsLeagueConfig>(
+      `/sports/league-configs/${id}/market-types`,
+      {
+        method: "POST",
+        body: { ...audit, market_type_key: marketTypeKey },
+        authed: true,
+      },
+    ),
+  removeMarketType: (id: number, typeId: number) =>
+    request<SportsLeagueConfig>(
+      `/sports/league-configs/${id}/market-types/${typeId}`,
+      { method: "DELETE", authed: true },
+    ),
+
+  // Fixtures
+  listFixtures: (leagueConfigId: number, filter: { status?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (filter.status) q.set("status", filter.status);
+    const qs = q.toString();
+    return request<SportsFixtureEvent[]>(
+      `/sports/league-configs/${leagueConfigId}/fixtures${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getFixture: (id: number) =>
+    request<SportsFixtureEvent>(`/sports/fixtures/${id}`),
+  forceCreateFixture: (id: number, audit: { actor?: string } = {}) =>
+    request<SportsFixtureEvent>(`/sports/fixtures/${id}/force-create`, {
+      method: "POST",
+      body: audit,
+      authed: true,
+    }),
+  skipFixture: (id: number, audit: { actor?: string } = {}) =>
+    request<{ status: string }>(`/sports/fixtures/${id}/skip`, {
+      method: "POST",
+      body: audit,
+      authed: true,
+    }),
+
+  // Markets (per-outcome)
+  cancelMarket: (id: number, audit: { actor?: string } = {}) =>
+    request<{ status: string }>(`/sports/markets/${id}/cancel`, {
+      method: "POST",
+      body: audit,
+      authed: true,
+    }),
+  umaResolveManually: (id: number, payouts: string[], audit: { actor?: string } = {}) =>
+    request<{ workflow_id: string; status: string }>(
+      `/sports/markets/${id}/uma/resolve-manually`,
+      { method: "POST", body: { ...audit, payouts }, authed: true },
+    ),
+  umaWatchDispute: (id: number, audit: { actor?: string } = {}) =>
+    request<{ workflow_id: string; status: string }>(
+      `/sports/markets/${id}/uma/watch-dispute`,
+      { method: "POST", body: audit, authed: true },
+    ),
+  getMarketStatus: (id: number) =>
+    request<Record<string, unknown>>(`/sports/markets/${id}/status`),
+
+  // League search (proxies api-football /leagues?search=)
+  searchLeagues: (q: string, season?: number) => {
+    const params = new URLSearchParams({ q });
+    if (season) params.set("season", String(season));
+    return request<ApiFootballLeagueSearchResult[]>(
+      `/sports/leagues/search?${params.toString()}`,
+    );
+  },
+
+  // Eager list of every league for a season — backs the new-config dropdown.
+  // Optional country/type filters. Cached server-side for an hour per param set.
+  listAllLeagues: (season: number, filters: { country?: string; type?: string } = {}) => {
+    const params = new URLSearchParams({ season: String(season) });
+    if (filters.country) params.set("country", filters.country);
+    if (filters.type) params.set("type", filters.type);
+    return request<ApiFootballLeagueSearchResult[]>(
+      `/sports/leagues/all?${params.toString()}`,
+    );
+  },
+};

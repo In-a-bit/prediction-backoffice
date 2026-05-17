@@ -15,7 +15,20 @@ import type { OperatorLogEntry, OperatorLogFilters } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+// Source partitions every operator-log row by the family of action it
+// records. Action strings beginning with `sports_` or `uma_` are sports
+// writes (sports_create_plan, sports_force_create, uma_propose, …);
+// everything else is manual (create_series, create_event, create_market, …).
+// "all" disables the partition.
+type Source = "all" | "manual" | "sports";
+
+function classifySource(action: string): Exclude<Source, "all"> {
+  if (action.startsWith("sports_") || action.startsWith("uma_")) return "sports";
+  return "manual";
+}
+
 type SearchParams = {
+  source?: string;
   resource_type?: string;
   action?: string;
   actor?: string;
@@ -30,6 +43,9 @@ export default async function OperatorLogPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const source: Source =
+    sp.source === "manual" || sp.source === "sports" ? sp.source : "all";
+
   const filters: OperatorLogFilters = {};
   if (
     sp.resource_type === "series" ||
@@ -40,7 +56,7 @@ export default async function OperatorLogPage({
   if (sp.action) filters.action = sp.action as OperatorLogFilters["action"];
   if (sp.actor) filters.actor = sp.actor;
   if (sp.correlation_id) filters.correlation_id = sp.correlation_id;
-  if (sp.status) filters.status = sp.status as OperatorLogFilters["status"];
+  if (sp.status) filters.status = sp.status as OperatorLogEntry["status"];
   if (sp.limit) filters.limit = Number(sp.limit);
 
   let entries: OperatorLogEntry[] = [];
@@ -51,32 +67,38 @@ export default async function OperatorLogPage({
     error = err instanceof Error ? err.message : String(err);
   }
 
+  // Source partition is applied after fetch — the backend endpoint
+  // doesn't distinguish manual vs sports rows, so we filter by action
+  // prefix here. Cheap: the operator log is paginated to <=200 rows.
+  const filteredEntries =
+    source === "all" ? entries : entries.filter((e) => classifySource(e.action) === source);
+
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto space-y-4">
       <PageHeader
         title="Operator log"
-        description="Audit trail for every manual write — series, events, markets, signal-balance calls, and recreate attempts."
-        actions={
-          <Link href="/automations/manual" className={buttonVariants.ghost}>
-            Back to hub
-          </Link>
-        }
+        description="Cross-cutting audit trail for every write the backoffice makes — manual creator actions, sports automations, UMA propose/resolve, and operator overrides."
       />
 
-      <FilterBar filters={filters} />
+      <SourceTabs current={source} sp={sp} />
+      <FilterBar source={source} filters={filters} />
 
       {error ? (
         <Card>
           <CardBody className="text-sm text-danger">{error}</CardBody>
         </Card>
-      ) : entries.length === 0 ? (
+      ) : filteredEntries.length === 0 ? (
         <EmptyState
           title="No log entries"
-          description="Create a series, event, or market and it will appear here."
+          description={
+            source === "all"
+              ? "Create a series, event, market, or league config and it will appear here."
+              : `No ${source} actions match the current filter.`
+          }
         />
       ) : (
         <ul className="space-y-2">
-          {entries.map((e) => (
+          {filteredEntries.map((e) => (
             <LogRow key={e.id} entry={e} />
           ))}
         </ul>
@@ -85,12 +107,52 @@ export default async function OperatorLogPage({
   );
 }
 
-function FilterBar({ filters }: { filters: OperatorLogFilters }) {
+// SourceTabs renders three pill buttons that swap the `source` query
+// param while preserving every other filter. Server-rendered links — no
+// client component needed.
+function SourceTabs({ current, sp }: { current: Source; sp: SearchParams }) {
+  const tabs: { key: Source; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "manual", label: "Manual" },
+    { key: "sports", label: "Sports" },
+  ];
+  return (
+    <div className="flex items-center gap-2">
+      {tabs.map((t) => {
+        const params = new URLSearchParams();
+        for (const [k, v] of Object.entries(sp)) {
+          if (k === "source" || v === undefined || v === "") continue;
+          params.set(k, String(v));
+        }
+        if (t.key !== "all") params.set("source", t.key);
+        const qs = params.toString();
+        const active = current === t.key;
+        return (
+          <Link
+            key={t.key}
+            href={`/operator-log${qs ? `?${qs}` : ""}`}
+            className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
+              active
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-foreground-muted hover:text-foreground hover:bg-foreground/[0.04]"
+            }`}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function FilterBar({ source, filters }: { source: Source; filters: OperatorLogFilters }) {
   const types = ["", "series", "event", "market"] as const;
   return (
     <Card>
       <CardBody>
         <form className="flex flex-wrap gap-2 items-end" method="get">
+          {/* Preserve source across form submits via hidden input. */}
+          {source !== "all" && <input type="hidden" name="source" value={source} />}
           <label className="flex flex-col gap-1 text-xs">
             resource_type
             <select
@@ -111,7 +173,17 @@ function FilterBar({ filters }: { filters: OperatorLogFilters }) {
               type="text"
               name="action"
               defaultValue={filters.action ?? ""}
-              placeholder="create_market"
+              placeholder={source === "sports" ? "uma_propose" : "create_market"}
+              className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            actor
+            <input
+              type="text"
+              name="actor"
+              defaultValue={filters.actor ?? ""}
+              placeholder="sports-auto"
               className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
             />
           </label>
@@ -154,16 +226,16 @@ function LogRow({ entry }: { entry: OperatorLogEntry }) {
           : entry.status === "running" || entry.status === "submitted"
             ? "info"
             : "neutral";
+  const source = classifySource(entry.action);
   return (
     <li>
       <Card>
         <CardHeader className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <Badge tone={tone}>{entry.status}</Badge>
+            <Badge tone={source === "sports" ? "info" : "neutral"}>{source}</Badge>
             <span className="text-sm font-medium">{entry.action}</span>
-            <span className="text-xs text-foreground-muted">
-              · {entry.resource_type}
-            </span>
+            <span className="text-xs text-foreground-muted">· {entry.resource_type}</span>
             {entry.resource_external_id ? (
               <span className="text-[11px] text-foreground-muted font-mono truncate">
                 · {entry.resource_external_id}
@@ -181,7 +253,7 @@ function LogRow({ entry }: { entry: OperatorLogEntry }) {
           {entry.correlation_id ? (
             <div>
               <Link
-                href={`/automations/manual/operator-log?correlation_id=${entry.correlation_id}`}
+                href={`/operator-log?correlation_id=${entry.correlation_id}`}
                 className="font-mono underline"
               >
                 correlation: {entry.correlation_id}
@@ -193,9 +265,7 @@ function LogRow({ entry }: { entry: OperatorLogEntry }) {
               recreated from: {entry.parent_log_id}
             </div>
           ) : null}
-          {entry.error ? (
-            <div className="text-danger">error: {entry.error}</div>
-          ) : null}
+          {entry.error ? <div className="text-danger">error: {entry.error}</div> : null}
           {entry.resource_type === "event" && entry.resource_external_id ? (
             <div className="pt-1">
               <Link

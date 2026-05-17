@@ -419,7 +419,7 @@ export function FromDescriptionForm() {
                     Plan persisted to the backend — execution continues even
                     if you close this tab.{" "}
                     <Link
-                      href={`/automations/manual/plans/${encodeURIComponent(row.planExternalId)}`}
+                      href={`/deploy-plans/${encodeURIComponent(row.planExternalId)}`}
                       className="underline"
                     >
                       Open plan page →
@@ -442,7 +442,7 @@ export function FromDescriptionForm() {
               {!isActive && row.planExternalId ? (
                 <p className="text-xs text-foreground-muted">
                   <Link
-                    href={`/automations/manual/plans/${encodeURIComponent(row.planExternalId)}`}
+                    href={`/deploy-plans/${encodeURIComponent(row.planExternalId)}`}
                     className="underline"
                   >
                     View plan →

@@ -12,13 +12,17 @@ import {
 import { DeployPlanDriver } from "@/components/manual/deploy-plan-driver";
 import { manual } from "@/lib/api";
 import { formatDateTimeFull } from "@/lib/format";
-import type {
-  DeployPlan,
-  DeployPlanStatus,
-  OperatorLogEntry,
-} from "@/lib/types";
+import type { DeployPlan, DeployPlanStatus, OperatorLogEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+// classifySource mirrors the same logic from the list page so the badge
+// stays consistent between list and detail views.
+function classifySource(plan: DeployPlan): "manual" | "sports" {
+  if (plan.actor === "sports-auto") return "sports";
+  if (plan.note && plan.note.toLowerCase().startsWith("sports/")) return "sports";
+  return "manual";
+}
 
 export default async function DeployPlanDetailPage({
   params,
@@ -53,21 +57,17 @@ export default async function DeployPlanDetailPage({
         <PageHeader
           title="Deploy plan"
           actions={
-            <Link
-              href="/automations/manual/plans"
-              className={buttonVariants.ghost}
-            >
+            <Link href="/deploy-plans" className={buttonVariants.ghost}>
               ← All plans
             </Link>
           }
         />
-        <ErrorMessage>
-          {error ?? "Plan not found"}
-        </ErrorMessage>
+        <ErrorMessage>{error ?? "Plan not found"}</ErrorMessage>
       </div>
     );
   }
 
+  const source = classifySource(plan);
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto space-y-6">
       <PageHeader
@@ -75,10 +75,10 @@ export default async function DeployPlanDetailPage({
         description="Live view of a backend-driven market deploy queue. Closing this tab will not stop execution — the runner continues server-side."
         actions={
           <Link
-            href="/automations/manual/plans"
+            href={`/deploy-plans?source=${source}`}
             className={buttonVariants.ghost}
           >
-            ← All plans
+            ← All {source} plans
           </Link>
         }
       />
@@ -87,9 +87,8 @@ export default async function DeployPlanDetailPage({
         <CardHeader className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <PlanStatusBadge status={plan.status} />
-            <span className="text-xs text-foreground-muted">
-              by {plan.actor}
-            </span>
+            <Badge tone={source === "sports" ? "info" : "neutral"}>{source}</Badge>
+            <span className="text-xs text-foreground-muted">by {plan.actor}</span>
           </div>
           <div className="flex flex-col items-end gap-0.5 text-[11px] text-foreground-muted">
             <span>created {formatDateTimeFull(plan.created_at)}</span>
@@ -114,7 +113,7 @@ export default async function DeployPlanDetailPage({
             <div>
               <span className="text-foreground-muted">correlation: </span>
               <Link
-                href={`/automations/manual/operator-log?correlation_id=${plan.correlation_id}`}
+                href={`/operator-log?correlation_id=${plan.correlation_id}`}
                 className="underline"
               >
                 {plan.correlation_id}
@@ -180,9 +179,7 @@ function LogRow({ entry }: { entry: OperatorLogEntry }) {
           <div className="flex items-center gap-2 min-w-0">
             <Badge tone={tone}>{entry.status}</Badge>
             <span className="text-sm font-medium">{entry.action}</span>
-            <span className="text-xs text-foreground-muted">
-              · {entry.resource_type}
-            </span>
+            <span className="text-xs text-foreground-muted">· {entry.resource_type}</span>
             {entry.resource_external_id ? (
               <span className="text-[11px] text-foreground-muted font-mono truncate">
                 · {entry.resource_external_id}

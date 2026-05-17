@@ -437,3 +437,143 @@ export type CreateDeployPlanInput = ManualAudit & {
   note?: string;
   markets: MarketPayload[];
 };
+
+// ---------------------------------------------------------------------------
+// Sports (mirrors apps/backoffice/handlers/sports_*.go).
+// ---------------------------------------------------------------------------
+
+export type SportsLeagueConfig = {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  sport_key: string;
+  api_league_id: number;
+  api_season: number;
+  league_slug: string;
+  series_id: number;
+  series_slug: string;
+  time_ahead_hours: number;
+  tag_ids: number[];
+  category?: string;
+  sub_category?: string;
+  league_metadata?: Record<string, unknown>;
+  is_create_active: boolean;
+  is_resolve_active: boolean;
+  is_metadata_update_active: boolean;
+  auto_start_plans: boolean;
+  market_types: SportsMarketTypeSummary[];
+  fixture_count: number;
+};
+
+export type SportsMarketTypeSummary = {
+  id: number;
+  key: string;
+  display_name: string;
+  activated_at: string;
+  deactivated_at?: string;
+  link_id: number;
+};
+
+export type SportsFixtureEvent = {
+  id: number;
+  api_fixture_id: number;
+  league_config_id: number;
+  kickoff_at: string;
+  event_external_id?: string;
+  event_slug: string;
+  fixture_status_short: string;
+  fixture_payload?: Record<string, unknown>;
+  is_skipped_by_operator: boolean;
+  creation_plan_external_id?: string;
+  backfill_plan_external_ids?: string[];
+  last_polled_at?: string;
+  last_metadata_pushed_at?: string;
+  markets?: SportsFixtureMarket[];
+  decisions?: SportsFixtureDecision[];
+};
+
+export type SportsFixtureMarketStatus =
+  | "pending"
+  | "created"
+  | "proposing"
+  | "proposed"
+  | "resolving"
+  | "resolved"
+  | "refunded"
+  | "cancelled"
+  | "failed";
+
+export type SportsFixtureMarket = {
+  id: number;
+  market_type_id: number;
+  market_type_key: string;
+  outcome_key: string;
+  market_external_id?: string;
+  deploy_plan_external_id?: string;
+  deploy_plan_position?: number;
+  market_slug: string;
+  local_status: SportsFixtureMarketStatus;
+  propose_workflow_id?: string;
+  resolve_workflow_id?: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SportsFixtureDecision = {
+  id: number;
+  market_type_id: number;
+  decision_kind: "propose" | "refund_5050";
+  proposed_prices: Record<string, string>;
+  decision_input_snapshot: Record<string, unknown>;
+  decided_at: string;
+  propose_dispatched_at?: string;
+  resolve_dispatched_at?: string;
+  correlation_id: string;
+};
+
+export type ApiFootballLeagueSearchResult = {
+  id: number;
+  name: string;
+  country: string;
+  logo: string;
+  flag: string;
+  type: string;
+};
+
+// SportsTagSpec is the operator-facing slug+label pair the form sends.
+// The backend upserts each via dpm-api, returning a numeric id that gets
+// merged with any explicit tag_ids before being stored on the config.
+export type SportsTagSpec = {
+  slug: string;
+  label?: string;
+};
+
+export type SportsCreateLeagueConfigInput = {
+  actor?: string;
+  correlation_id?: string;
+  sport_key: string;
+  api_league_id: number;
+  api_season: number;
+  league_slug: string;
+  time_ahead_hours: number;
+  tag_ids?: number[];
+  tag_specs?: SportsTagSpec[];
+  category?: string;
+  sub_category?: string;
+  market_type_keys: string[];
+  auto_start_plans?: boolean;
+};
+
+export type SportsUpdateLeagueConfigInput = {
+  actor?: string;
+  time_ahead_hours?: number;
+  tag_ids?: number[];
+  tag_specs?: SportsTagSpec[];
+  category?: string;
+  sub_category?: string;
+  is_create_active?: boolean;
+  is_resolve_active?: boolean;
+  is_metadata_update_active?: boolean;
+  auto_start_plans?: boolean;
+};

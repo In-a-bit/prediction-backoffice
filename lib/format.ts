@@ -81,3 +81,11 @@ export function shortId(uuid: string | null | undefined): string {
   if (!uuid) return "—";
   return uuid.slice(0, 8);
 }
+
+// formatFootballSeason renders an api-football "start year" integer as the
+// operator-facing "YYYY/YYYY+1" label. The integer remains the wire format
+// (and the DB representation); only the UI swaps in the prettier form.
+export function formatFootballSeason(startYear: number | null | undefined): string {
+  if (startYear == null || !Number.isFinite(startYear)) return "—";
+  return `${startYear}/${startYear + 1}`;
+}

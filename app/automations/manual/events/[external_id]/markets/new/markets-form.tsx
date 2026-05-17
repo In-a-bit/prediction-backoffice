@@ -108,7 +108,7 @@ export function MarketsForm({
         <p className="text-xs text-foreground-muted">
           Plan persisted to the backend.{" "}
           <Link
-            href={`/automations/manual/plans/${encodeURIComponent(planId)}`}
+            href={`/deploy-plans/${encodeURIComponent(planId)}`}
             className="underline"
           >
             Open plan page →

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const TILES = [
   {
-    href: "/automations/manual/plans",
+    href: "/deploy-plans?source=manual",
     title: "Deploy plans",
     description:
       "Live and past market deploy queues — see what's running, recreate failed markets, signal balance for waiting workflows. Execution is backend-driven and survives UI/server restarts.",
@@ -37,10 +37,10 @@ const TILES = [
       "Describe an event or a series of events in prose. Gemini drafts the structured payload; you review then deploy.",
   },
   {
-    href: "/automations/manual/operator-log",
+    href: "/operator-log?source=manual",
     title: "Operator log",
     description:
-      "Audit trail for every manual write — series, events, markets, and recreate attempts.",
+      "Audit trail filtered to manual writes — series, events, markets, recreate attempts. Lives under Inventory in the sidebar.",
   },
 ] as const;
 
@@ -78,7 +78,7 @@ export default function ManualHubPage() {
       <p className="mt-10 text-xs text-foreground-muted">
         Need to add markets to an event you already created? Open the event in{" "}
         <Link
-          href="/automations/manual/operator-log?resource_type=event"
+          href="/operator-log?source=manual&resource_type=event"
           className="underline"
         >
           the operator log
