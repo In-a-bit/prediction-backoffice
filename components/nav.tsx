@@ -109,8 +109,28 @@ const sections: Section[] = [
           return [
             head,
             {
+              key: "crypto-tasks",
+              href: "/automations/crypto-interval",
+              label: "Tasks",
+              accent: b.accent,
+              icon: <span />,
+              child: true,
+              exact: true,
+            } satisfies Item,
+            {
               href: "/automations/crypto-interval/assets",
               label: "Assets",
+              accent: b.accent,
+              icon: <span />,
+              child: true,
+            } satisfies Item,
+            // Per-slot crypto_events live under their parent task — direct
+            // link kept here so operators have a 1-click jump to "what's
+            // creating right now" alongside the Sports / Soccer pattern.
+            {
+              key: "crypto-events-shortcut",
+              href: "/deploy-plans?source=crypto",
+              label: "Active plans",
               accent: b.accent,
               icon: <span />,
               child: true,
@@ -139,7 +159,6 @@ const sections: Section[] = [
           return [
             head,
             { href: "/automations/sports/soccer", label: "Soccer", accent: b.accent, icon: <span />, child: true } satisfies Item,
-            { href: "/automations/sports/soccer/new", label: "New soccer league", accent: b.accent, icon: <span />, child: true } satisfies Item,
             // Future sports — all link to the sport-picker hub for now; need an
             // explicit `key` because they share `href`.
             { key: "soon-basketball", href: "/automations/sports", label: "Basketball (soon)", accent: b.accent, icon: <span />, child: true, trailing: soonChip } satisfies Item,

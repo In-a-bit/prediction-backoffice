@@ -9,7 +9,7 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { listTasks } from "@/lib/api";
+import { crypto } from "@/lib/api";
 import { behaviors } from "@/lib/behaviors";
 import { formatDateTime, formatDuration } from "@/lib/format";
 import type { Task } from "@/lib/types";
@@ -22,7 +22,7 @@ export default async function CryptoIntervalListPage() {
   let tasks: Task[] = [];
   let error: string | null = null;
   try {
-    tasks = await listTasks({ withStats: true });
+    tasks = await crypto.listTasks({ withStats: true });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

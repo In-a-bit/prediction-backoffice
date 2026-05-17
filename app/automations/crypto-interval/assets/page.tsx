@@ -9,7 +9,7 @@ import {
   ErrorMessage,
   PageHeader,
 } from "@/components/ui";
-import { listAssets } from "@/lib/api";
+import { crypto } from "@/lib/api";
 import { behaviors } from "@/lib/behaviors";
 import type { Asset } from "@/lib/types";
 
@@ -21,7 +21,7 @@ export default async function AssetsPage() {
   let assets: Asset[] = [];
   let error: string | null = null;
   try {
-    assets = await listAssets();
+    assets = await crypto.listAssets();
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

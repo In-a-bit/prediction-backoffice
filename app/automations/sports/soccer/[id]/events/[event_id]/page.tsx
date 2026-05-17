@@ -4,22 +4,22 @@ import { notFound } from "next/navigation";
 import { Badge, Card, CardBody, CardHeader, PageHeader, buttonVariants } from "@/components/ui";
 import { DeployPlanDriver } from "@/components/manual/deploy-plan-driver";
 import { sports } from "@/lib/api";
-import { FixtureActions } from "./actions";
-import { FixtureAutoRefresh } from "./auto-refresh";
+import { SportEventActions } from "./actions";
+import { SportEventAutoRefresh } from "./auto-refresh";
 
 export const dynamic = "force-dynamic";
 
-export default async function FixtureDetailPage({
+export default async function SportEventDetailPage({
   params,
 }: {
-  params: Promise<{ id: string; fixture_id: string }>;
+  params: Promise<{ id: string; event_id: string }>;
 }) {
-  const { id: idStr, fixture_id: fxStr } = await params;
-  const leagueConfigId = Number.parseInt(idStr, 10);
-  const fixtureId = Number.parseInt(fxStr, 10);
-  if (!Number.isFinite(leagueConfigId) || !Number.isFinite(fixtureId)) notFound();
+  const { id: idStr, event_id: eventStr } = await params;
+  const sportTaskId = Number.parseInt(idStr, 10);
+  const eventId = Number.parseInt(eventStr, 10);
+  if (!Number.isFinite(sportTaskId) || !Number.isFinite(eventId)) notFound();
 
-  const fixture = await sports.getFixture(fixtureId).catch(() => null);
+  const fixture = await sports.getEvent(eventId).catch(() => null);
   if (!fixture) notFound();
 
   const payload = (fixture.fixture_payload ?? {}) as Record<string, unknown>;
@@ -29,7 +29,7 @@ export default async function FixtureDetailPage({
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto">
-      <FixtureAutoRefresh
+      <SportEventAutoRefresh
         creationPlanId={fixture.creation_plan_external_id}
         intervalMs={2000}
       />
@@ -38,9 +38,9 @@ export default async function FixtureDetailPage({
         description={`api-football fixture ${fixture.api_fixture_id} · kickoff ${new Date(fixture.kickoff_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · status ${fixture.fixture_status_short}`}
       />
 
-      <FixtureActions
-        fixtureId={fixture.id}
-        leagueConfigId={leagueConfigId}
+      <SportEventActions
+        eventId={fixture.id}
+        sportTaskId={sportTaskId}
         hasCreationPlan={Boolean(fixture.creation_plan_external_id)}
         isSkipped={fixture.is_skipped_by_operator}
       />
@@ -80,14 +80,14 @@ export default async function FixtureDetailPage({
             {fixture.decisions.map((d) => (
               <Card key={d.id}>
                 <CardHeader className="flex items-center gap-3">
-                  <span className="font-medium text-sm">Market type {d.market_type_id}</span>
+                  <span className="font-medium text-sm">Market type {d.sport_market_type_id}</span>
                   <Badge tone={d.decision_kind === "refund_5050" ? "warning" : "info"}>
                     {d.decision_kind}
                   </Badge>
                   {d.propose_dispatched_at ? (
                     <Badge tone="success">proposed</Badge>
                   ) : (
-                    <Badge tone="default">pending propose</Badge>
+                    <Badge tone="neutral">pending propose</Badge>
                   )}
                   {d.resolve_dispatched_at && <Badge tone="success">resolved</Badge>}
                 </CardHeader>
@@ -149,7 +149,7 @@ export default async function FixtureDetailPage({
       )}
 
       <div className="mt-10">
-        <Link href={`/automations/sports/soccer/${leagueConfigId}`} className={buttonVariants.ghost}>
+        <Link href={`/automations/sports/soccer/${sportTaskId}`} className={buttonVariants.ghost}>
           ← Back to league
         </Link>
       </div>
@@ -157,7 +157,7 @@ export default async function FixtureDetailPage({
   );
 }
 
-function localStatusTone(s: string): "default" | "success" | "warning" | "danger" | "info" {
+function localStatusTone(s: string): "neutral" | "success" | "warning" | "danger" | "info" {
   switch (s) {
     case "resolved":
     case "refunded":
@@ -168,13 +168,13 @@ function localStatusTone(s: string): "default" | "success" | "warning" | "danger
     case "created":
       return "info";
     case "pending":
-      return "default";
+      return "neutral";
     case "cancelled":
       return "warning";
     case "failed":
       return "danger";
     default:
-      return "default";
+      return "neutral";
   }
 }
 

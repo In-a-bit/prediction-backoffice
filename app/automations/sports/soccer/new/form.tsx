@@ -19,7 +19,7 @@ import {
 } from "@/components/sports/tag-chips";
 import type {
   ApiFootballLeagueSearchResult,
-  SportsLeagueConfig,
+  SportTask,
   SportsTagSpec,
 } from "@/lib/types";
 
@@ -80,13 +80,13 @@ type LeagueOption = ApiFootballLeagueSearchResult & {
   existingConfigId?: number;
 };
 
-export function NewLeagueConfigForm() {
+export function NewSportTaskForm() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [season, setSeason] = useState<number>(defaultSeason);
   const [allLeagues, setAllLeagues] = useState<ApiFootballLeagueSearchResult[]>([]);
-  const [existingConfigs, setExistingConfigs] = useState<SportsLeagueConfig[]>([]);
+  const [existingConfigs, setExistingConfigs] = useState<SportTask[]>([]);
   // Default to true so the "0 leagues" warning doesn't flash before the
   // first fetch starts (initial render → useEffect fires → setLoadingLeagues(true)
   // had a one-frame gap that made the page look broken).
@@ -125,7 +125,7 @@ export function NewLeagueConfigForm() {
             cache: "no-store",
             signal: controller.signal,
           }),
-          fetch(`/api/sports/league-configs?sport_key=soccer`, {
+          fetch(`/api/sports/tasks?sport_key=soccer`, {
             cache: "no-store",
             signal: controller.signal,
           }),
@@ -148,7 +148,7 @@ export function NewLeagueConfigForm() {
           console.warn(`existing configs fetch failed: status ${configsRes.status}`);
           setExistingConfigs([]);
         } else {
-          const data = (await configsRes.json()) as SportsLeagueConfig[] | null;
+          const data = (await configsRes.json()) as SportTask[] | null;
           setExistingConfigs(Array.isArray(data) ? data : []);
         }
       } catch (err) {
@@ -189,7 +189,7 @@ export function NewLeagueConfigForm() {
   // Country filter is an exact match (so "England" doesn't surface
   // "Northern Ireland" etc.); text filter is a substring across name+id.
   const options: LeagueOption[] = useMemo(() => {
-    const existingForSeason = new Map<number, SportsLeagueConfig>();
+    const existingForSeason = new Map<number, SportTask>();
     for (const cfg of existingConfigs) {
       if (cfg.api_season === season) {
         existingForSeason.set(cfg.api_league_id, cfg);
@@ -282,7 +282,7 @@ export function NewLeagueConfigForm() {
     setSubmitError(null);
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/sports/league-configs/create`, {
+        const res = await fetch(`/api/sports/tasks/create`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -357,7 +357,8 @@ export function NewLeagueConfigForm() {
                 ))}
               </select>
             </Field>
-            <Field label="Filter (name, id)" className="flex-1 min-w-48">
+            <div className="flex-1 min-w-48">
+            <Field label="Filter (name, id)">
               <input
                 className="border rounded px-3 py-2 w-full"
                 placeholder="premier, 39…"
@@ -365,6 +366,7 @@ export function NewLeagueConfigForm() {
                 onChange={(e) => setFilter(e.target.value)}
               />
             </Field>
+            </div>
             <div className="text-xs text-foreground-muted pb-2">
               {loadingLeagues
                 ? "loading…"
@@ -417,7 +419,7 @@ export function NewLeagueConfigForm() {
                         </div>
                       </div>
                       {lg.disabled ? (
-                        <Badge tone="default">{lg.disabledReason}</Badge>
+                        <Badge tone="neutral">{lg.disabledReason}</Badge>
                       ) : isSelected ? (
                         <Badge tone="success">selected</Badge>
                       ) : null}

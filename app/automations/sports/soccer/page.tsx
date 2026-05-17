@@ -8,7 +8,7 @@ import { formatFootballSeason } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function SoccerHubPage() {
-  const configs = await sports.listLeagueConfigs("soccer").catch(() => []);
+  const configs = await sports.listTasks("soccer").catch(() => []);
   const accent = behaviors.sports.accent;
 
   return (
@@ -74,7 +74,7 @@ export default async function SoccerHubPage() {
                   <div className="flex items-center gap-3 text-xs">
                     <span>time ahead: {cfg.time_ahead_hours}h</span>
                     <span>•</span>
-                    <span>fixtures ingested: {cfg.fixture_count}</span>
+                    <span>fixtures ingested: {cfg.event_count}</span>
                   </div>
                 </CardBody>
               </Card>

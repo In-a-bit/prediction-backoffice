@@ -442,7 +442,7 @@ export type CreateDeployPlanInput = ManualAudit & {
 // Sports (mirrors apps/backoffice/handlers/sports_*.go).
 // ---------------------------------------------------------------------------
 
-export type SportsLeagueConfig = {
+export type SportTask = {
   id: number;
   created_at: string;
   updated_at: string;
@@ -461,11 +461,11 @@ export type SportsLeagueConfig = {
   is_resolve_active: boolean;
   is_metadata_update_active: boolean;
   auto_start_plans: boolean;
-  market_types: SportsMarketTypeSummary[];
-  fixture_count: number;
+  market_types: SportMarketTypeSummary[];
+  event_count: number;
 };
 
-export type SportsMarketTypeSummary = {
+export type SportMarketTypeSummary = {
   id: number;
   key: string;
   display_name: string;
@@ -474,10 +474,10 @@ export type SportsMarketTypeSummary = {
   link_id: number;
 };
 
-export type SportsFixtureEvent = {
+export type SportEvent = {
   id: number;
   api_fixture_id: number;
-  league_config_id: number;
+  sport_task_id: number;
   kickoff_at: string;
   event_external_id?: string;
   event_slug: string;
@@ -488,11 +488,11 @@ export type SportsFixtureEvent = {
   backfill_plan_external_ids?: string[];
   last_polled_at?: string;
   last_metadata_pushed_at?: string;
-  markets?: SportsFixtureMarket[];
-  decisions?: SportsFixtureDecision[];
+  markets?: SportMarket[];
+  decisions?: SportDecision[];
 };
 
-export type SportsFixtureMarketStatus =
+export type SportMarketStatus =
   | "pending"
   | "created"
   | "proposing"
@@ -503,16 +503,16 @@ export type SportsFixtureMarketStatus =
   | "cancelled"
   | "failed";
 
-export type SportsFixtureMarket = {
+export type SportMarket = {
   id: number;
-  market_type_id: number;
+  sport_market_type_id: number;
   market_type_key: string;
   outcome_key: string;
   market_external_id?: string;
   deploy_plan_external_id?: string;
   deploy_plan_position?: number;
   market_slug: string;
-  local_status: SportsFixtureMarketStatus;
+  local_status: SportMarketStatus;
   propose_workflow_id?: string;
   resolve_workflow_id?: string;
   error?: string;
@@ -520,9 +520,9 @@ export type SportsFixtureMarket = {
   updated_at: string;
 };
 
-export type SportsFixtureDecision = {
+export type SportDecision = {
   id: number;
-  market_type_id: number;
+  sport_market_type_id: number;
   decision_kind: "propose" | "refund_5050";
   proposed_prices: Record<string, string>;
   decision_input_snapshot: Record<string, unknown>;
@@ -549,7 +549,7 @@ export type SportsTagSpec = {
   label?: string;
 };
 
-export type SportsCreateLeagueConfigInput = {
+export type CreateSportTaskInput = {
   actor?: string;
   correlation_id?: string;
   sport_key: string;
@@ -565,7 +565,7 @@ export type SportsCreateLeagueConfigInput = {
   auto_start_plans?: boolean;
 };
 
-export type SportsUpdateLeagueConfigInput = {
+export type UpdateSportTaskInput = {
   actor?: string;
   time_ahead_hours?: number;
   tag_ids?: number[];
@@ -576,4 +576,63 @@ export type SportsUpdateLeagueConfigInput = {
   is_resolve_active?: boolean;
   is_metadata_update_active?: boolean;
   auto_start_plans?: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Crypto-interval refactor — mirrors apps/backoffice/handlers/crypto_*.go.
+// Legacy `Task`/`Asset`/`Interval` types stay in this file for backward-compat
+// with any existing dashboard imports; the new types below are the post-
+// refactor shape (renamed tables + per-slot `crypto_events` + `crypto_markets`
+// + `crypto_decisions` outbox, all driven through DeployPlan).
+// ---------------------------------------------------------------------------
+
+export type CryptoEventMarketStatus =
+  | "pending"
+  | "created"
+  | "verified"
+  | "resolving"
+  | "resolved"
+  | "cancelled"
+  | "failed";
+
+export type CryptoMarket = {
+  id: number;
+  market_external_id?: string;
+  deploy_plan_external_id?: string;
+  deploy_plan_position?: number;
+  market_slug: string;
+  local_status: CryptoEventMarketStatus;
+  verified_at?: string;
+  resolve_dispatched_at?: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CryptoDecision = {
+  id: number;
+  outcome: "up" | "down";
+  payouts: string[];
+  decision_input_snapshot: Record<string, unknown>;
+  decided_at: string;
+  dispatched_at?: string;
+  correlation_id: string;
+};
+
+export type CryptoEvent = {
+  id: number;
+  crypto_task_id: number;
+  slot_start: string;
+  slot_end: string;
+  event_external_id?: string;
+  event_slug: string;
+  price_to_beat?: string;
+  price_at_close?: string;
+  deploy_plan_external_id?: string;
+  is_skipped_by_operator: boolean;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+  markets?: CryptoMarket[];
+  decision?: CryptoDecision;
 };

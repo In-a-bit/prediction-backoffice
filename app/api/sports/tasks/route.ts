@@ -5,7 +5,7 @@ import { sports } from "@/lib/api";
 export async function GET(req: NextRequest) {
   try {
     const sportKey = req.nextUrl.searchParams.get("sport_key") ?? undefined;
-    const data = await sports.listLeagueConfigs(sportKey);
+    const data = await sports.listTasks(sportKey);
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

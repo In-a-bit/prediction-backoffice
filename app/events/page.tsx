@@ -9,7 +9,7 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { listTaskMarkets, listTasks } from "@/lib/api";
+import { crypto } from "@/lib/api";
 import type { CreatedMarket, Task } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -35,11 +35,11 @@ export default async function EventsPage() {
   let error: string | null = null;
 
   try {
-    tasks = await listTasks();
+    tasks = await crypto.listTasks();
     const all: { task: Task; markets: CreatedMarket[] }[] = await Promise.all(
       tasks.map(async (t) => {
         try {
-          return { task: t, markets: await listTaskMarkets(t.id, 50) };
+          return { task: t, markets: await crypto.listTaskMarkets(t.id, 50) };
         } catch {
           return { task: t, markets: [] as CreatedMarket[] };
         }

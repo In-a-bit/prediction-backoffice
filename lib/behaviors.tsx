@@ -72,7 +72,7 @@ export const behaviors: Record<BehaviorKey, Behavior> = {
     short: "Crypto",
     tagline: "Auto up/down markets on fixed crypto intervals",
     description:
-      "Pair an asset with an interval. The backoffice keeps a rolling horizon of up/down markets filled in, then auto-resolves each slot from the configured price source.",
+      "Pair a crypto asset with an interval. Each slot becomes a crypto_event with its own DeployPlan — the same plan UI that powers manual + sports — and an outbox-driven dispatcher reports CTF payouts when the slot closes.",
     status: "available",
     href: "/automations/crypto-interval",
     newHref: "/automations/crypto-interval/new",
@@ -80,9 +80,10 @@ export const behaviors: Record<BehaviorKey, Behavior> = {
     accentSoft: "rgba(245, 158, 11, 0.12)",
     icon: cryptoIcon,
     features: [
-      "Auto-create markets on interval boundaries",
-      "Continuous create + resolve loops",
-      "Per-task health metrics",
+      "Per-slot crypto_events spawn a DeployPlan you can monitor on /deploy-plans",
+      "Sequential CTF market creation via the shared runner (Up / Down outcome tokens)",
+      "Decision outbox protects partial reportPayouts retries from price-revision races",
+      "Manual force-create + skip-event escape hatches per slot",
     ],
   },
   manual: {

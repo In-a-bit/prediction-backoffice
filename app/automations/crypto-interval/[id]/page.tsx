@@ -13,7 +13,7 @@ import {
   PageHeader,
   Stat,
 } from "@/components/ui";
-import { BackofficeApiError, getTask, listTaskMarkets } from "@/lib/api";
+import { BackofficeApiError, crypto } from "@/lib/api";
 import { behaviors } from "@/lib/behaviors";
 import {
   formatDateTime,
@@ -46,8 +46,8 @@ export default async function CryptoIntervalTaskDetailPage({
 
   try {
     [task, markets] = await Promise.all([
-      getTask(numericId),
-      listTaskMarkets(numericId, 100),
+      crypto.getTask(numericId),
+      crypto.listTaskMarkets(numericId, 100),
     ]);
   } catch (e) {
     if (e instanceof BackofficeApiError && e.status === 404) {

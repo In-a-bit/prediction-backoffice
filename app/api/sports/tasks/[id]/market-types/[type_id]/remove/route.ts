@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sports } from "@/lib/api";
 
 // Accepts both POST (from controls UI) and DELETE for symmetry with the
-// backend's DELETE /sports/league-configs/:id/market-types/:type_id route.
+// backend's DELETE /sports/tasks/:id/market-types/:type_id route.
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string; type_id: string }> }) {
   return remove(ctx);
 }

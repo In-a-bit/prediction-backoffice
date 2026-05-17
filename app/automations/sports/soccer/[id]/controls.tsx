@@ -4,14 +4,14 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Badge, Card, CardBody, CardHeader, ErrorMessage, buttonVariants } from "@/components/ui";
-import type { SportsLeagueConfig } from "@/lib/types";
+import type { SportTask } from "@/lib/types";
 
 const AVAILABLE_MARKET_TYPES = [
   { key: "moneyline", label: "Moneyline" },
   { key: "halftime", label: "Halftime" },
 ] as const;
 
-export function LeagueConfigControls({ config }: { config: SportsLeagueConfig }) {
+export function SportTaskControls({ config }: { config: SportTask }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function LeagueConfigControls({ config }: { config: SportsLeagueConfig })
   };
 
   const toggle = (field: "is_create_active" | "is_resolve_active" | "is_metadata_update_active" | "auto_start_plans", next: boolean) => {
-    post(`/api/sports/league-configs/${config.id}/update`, { [field]: next });
+    post(`/api/sports/tasks/${config.id}/update`, { [field]: next });
   };
 
   return (
@@ -109,7 +109,7 @@ export function LeagueConfigControls({ config }: { config: SportsLeagueConfig })
                       )
                     )
                       return;
-                    post(`/api/sports/league-configs/${config.id}/market-types/${mt.id}/remove`, undefined);
+                    post(`/api/sports/tasks/${config.id}/market-types/${mt.id}/remove`, undefined);
                   }}
                 >
                   Remove
@@ -134,7 +134,7 @@ export function LeagueConfigControls({ config }: { config: SportsLeagueConfig })
                         )
                       )
                         return;
-                      post(`/api/sports/league-configs/${config.id}/market-types/add`, {
+                      post(`/api/sports/tasks/${config.id}/market-types/add`, {
                         market_type_key: mt.key,
                       });
                     }}

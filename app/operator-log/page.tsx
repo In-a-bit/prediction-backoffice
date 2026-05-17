@@ -16,14 +16,16 @@ import type { OperatorLogEntry, OperatorLogFilters } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 // Source partitions every operator-log row by the family of action it
-// records. Action strings beginning with `sports_` or `uma_` are sports
-// writes (sports_create_plan, sports_force_create, uma_propose, …);
-// everything else is manual (create_series, create_event, create_market, …).
+// records.
+//   - sports: action starts with "sports_" or "uma_"
+//   - crypto: action starts with "crypto_" or equals "ctf_report_payouts"
+//   - manual: everything else (create_series, create_event, create_market, …)
 // "all" disables the partition.
-type Source = "all" | "manual" | "sports";
+type Source = "all" | "manual" | "sports" | "crypto";
 
 function classifySource(action: string): Exclude<Source, "all"> {
   if (action.startsWith("sports_") || action.startsWith("uma_")) return "sports";
+  if (action.startsWith("crypto_") || action === "ctf_report_payouts") return "crypto";
   return "manual";
 }
 
@@ -44,7 +46,9 @@ export default async function OperatorLogPage({
 }) {
   const sp = await searchParams;
   const source: Source =
-    sp.source === "manual" || sp.source === "sports" ? sp.source : "all";
+    sp.source === "manual" || sp.source === "sports" || sp.source === "crypto"
+      ? sp.source
+      : "all";
 
   const filters: OperatorLogFilters = {};
   if (
@@ -115,6 +119,7 @@ function SourceTabs({ current, sp }: { current: Source; sp: SearchParams }) {
     { key: "all", label: "All" },
     { key: "manual", label: "Manual" },
     { key: "sports", label: "Sports" },
+    { key: "crypto", label: "Crypto" },
   ];
   return (
     <div className="flex items-center gap-2">
@@ -173,7 +178,13 @@ function FilterBar({ source, filters }: { source: Source; filters: OperatorLogFi
               type="text"
               name="action"
               defaultValue={filters.action ?? ""}
-              placeholder={source === "sports" ? "uma_propose" : "create_market"}
+              placeholder={
+                source === "sports"
+                  ? "uma_propose"
+                  : source === "crypto"
+                    ? "ctf_report_payouts"
+                    : "create_market"
+              }
               className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
             />
           </label>
@@ -233,7 +244,17 @@ function LogRow({ entry }: { entry: OperatorLogEntry }) {
         <CardHeader className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <Badge tone={tone}>{entry.status}</Badge>
-            <Badge tone={source === "sports" ? "info" : "neutral"}>{source}</Badge>
+            <Badge
+              tone={
+                source === "sports"
+                  ? "info"
+                  : source === "crypto"
+                    ? "warning"
+                    : "neutral"
+              }
+            >
+              {source}
+            </Badge>
             <span className="text-sm font-medium">{entry.action}</span>
             <span className="text-xs text-foreground-muted">· {entry.resource_type}</span>
             {entry.resource_external_id ? (

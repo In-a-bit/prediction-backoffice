@@ -7,7 +7,7 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { listTasks } from "@/lib/api";
+import { crypto } from "@/lib/api";
 import { type Behavior, behaviorList } from "@/lib/behaviors";
 import type { Task } from "@/lib/types";
 
@@ -17,7 +17,7 @@ export default async function AutomationsHubPage() {
   let tasks: Task[] = [];
   let error: string | null = null;
   try {
-    tasks = await listTasks({ withStats: true });
+    tasks = await crypto.listTasks({ withStats: true });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

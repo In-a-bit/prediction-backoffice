@@ -17,15 +17,29 @@ import { AutoRefresh } from "./auto-refresh";
 
 export const dynamic = "force-dynamic";
 
-// Source partitions every plan by who spawned it. Sports plans come from
-// the SportsUpcomingTicker (actor = "sports-auto") or from a force-create
-// in the sports UI (note starts with "sports/"). Everything else is manual.
-type Source = "all" | "manual" | "sports";
+// Source partitions every plan by who spawned it.
+//   - sports: SportsUpcomingTicker (actor="sports-auto") or note starts with "sports/"
+//   - crypto: CryptoCreator       (actor="crypto-auto")  or note starts with "crypto/"
+//   - manual: everything else (operator-driven via the manual creator)
+type Source = "all" | "manual" | "sports" | "crypto";
 
 function classifySource(plan: DeployPlan): Exclude<Source, "all"> {
   if (plan.actor === "sports-auto") return "sports";
   if (plan.note && plan.note.toLowerCase().startsWith("sports/")) return "sports";
+  if (plan.actor === "crypto-auto") return "crypto";
+  if (plan.note && plan.note.toLowerCase().startsWith("crypto/")) return "crypto";
   return "manual";
+}
+
+function sourceBadgeTone(s: Exclude<Source, "all">): "info" | "warning" | "neutral" {
+  switch (s) {
+    case "sports":
+      return "info";
+    case "crypto":
+      return "warning"; // amber, matches behaviors.tsx accent for crypto-interval
+    default:
+      return "neutral";
+  }
 }
 
 type SearchParams = {
@@ -43,7 +57,9 @@ export default async function DeployPlansPage({
 }) {
   const sp = await searchParams;
   const source: Source =
-    sp.source === "manual" || sp.source === "sports" ? sp.source : "all";
+    sp.source === "manual" || sp.source === "sports" || sp.source === "crypto"
+      ? sp.source
+      : "all";
 
   let plans: DeployPlan[] = [];
   let error: string | null = null;
@@ -126,6 +142,7 @@ function SourceTabs({ current, sp }: { current: Source; sp: SearchParams }) {
     { key: "all", label: "All" },
     { key: "manual", label: "Manual" },
     { key: "sports", label: "Sports" },
+    { key: "crypto", label: "Crypto" },
   ];
   return (
     <div className="flex items-center gap-2">
@@ -202,7 +219,7 @@ function PlanRow({ plan }: { plan: DeployPlan }) {
           <CardHeader className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <PlanStatusBadge status={plan.status} />
-              <Badge tone={source === "sports" ? "info" : "neutral"}>{source}</Badge>
+              <Badge tone={sourceBadgeTone(source)}>{source}</Badge>
               <span className="text-sm font-medium truncate">
                 {plan.note ?? `Plan ${plan.external_id.slice(0, 8)}`}
               </span>
@@ -233,8 +250,11 @@ function PlanRow({ plan }: { plan: DeployPlan }) {
                   </>
                 ) : null}
               </span>
-              <span className="text-foreground-muted font-mono break-all">
-                event: {plan.event_external_id}
+              <span
+                className="text-foreground-muted font-mono break-all"
+                title="DeployPlan.event_external_id — the dpm-api Event UUID this plan's markets attach to."
+              >
+                Event UUID: {plan.event_external_id.slice(0, 8)}…
               </span>
             </div>
           </CardBody>

@@ -5,15 +5,13 @@ import { useState, useTransition } from "react";
 
 import { ErrorMessage, buttonVariants } from "@/components/ui";
 
-export function FixtureActions({
-  fixtureId,
-  leagueConfigId,
-  hasCreationPlan,
+export function EventActions({
+  eventId,
+  hasDeployPlan,
   isSkipped,
 }: {
-  fixtureId: number;
-  leagueConfigId: number;
-  hasCreationPlan: boolean;
+  eventId: number;
+  hasDeployPlan: boolean;
   isSkipped: boolean;
 }) {
   const router = useRouter();
@@ -25,7 +23,11 @@ export function FixtureActions({
     setError(null);
     startTransition(async () => {
       try {
-        const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
           setError(`status ${res.status}: ${text}`);
@@ -43,15 +45,15 @@ export function FixtureActions({
       <button
         type="button"
         className={buttonVariants.primary}
-        disabled={pending || hasCreationPlan}
+        disabled={pending || hasDeployPlan}
         onClick={() =>
           post(
-            `/api/sports/fixtures/${fixtureId}/force-create`,
-            "Force-create now? This skips the time_ahead_hours gate and creates a DeployPlan immediately.",
+            `/api/crypto/events/${eventId}/force-create`,
+            "Force-create this slot's deploy plan now? Idempotent — re-runs the Creator's per-slot logic.",
           )
         }
       >
-        {hasCreationPlan ? "Plan already created" : "Force create now"}
+        {hasDeployPlan ? "Plan already created" : "Force create now"}
       </button>
 
       <button
@@ -60,17 +62,15 @@ export function FixtureActions({
         disabled={pending || isSkipped}
         onClick={() =>
           post(
-            `/api/sports/fixtures/${fixtureId}/skip`,
-            "Skip auto-creation? The upcoming ticker will leave this fixture alone. Markets that already exist keep their lifecycle.",
+            `/api/crypto/events/${eventId}/skip`,
+            "Skip this slot? The price-ticker + dispatcher will leave it alone. Use this when an event got stuck and you want to manually unstick.",
           )
         }
       >
-        {isSkipped ? "Skipped" : "Skip auto-creation"}
+        {isSkipped ? "Skipped" : "Skip event"}
       </button>
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
-      {/* leagueConfigId is reserved for future per-league overrides on this page */}
-      <input type="hidden" value={leagueConfigId} readOnly />
     </div>
   );
 }

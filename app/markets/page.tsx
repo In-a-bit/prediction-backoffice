@@ -8,7 +8,7 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { listTaskMarkets, listTasks } from "@/lib/api";
+import { crypto } from "@/lib/api";
 import type { CreatedMarket, Task } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -28,14 +28,14 @@ export default async function MarketsPage() {
   let error: string | null = null;
 
   try {
-    tasks = await listTasks();
+    tasks = await crypto.listTasks();
     // Fan-out market fetches per task. ~50 most recent per task gives a useful
     // working set without overwhelming the API; can be lifted to a dedicated
     // endpoint later.
     const fetched = await Promise.all(
       tasks.map(async (t) => {
         try {
-          const ms = await listTaskMarkets(t.id, 50);
+          const ms = await crypto.listTaskMarkets(t.id, 50);
           const assetLabel = t.asset
             ? `${t.asset.display_name}/${t.asset.target.toUpperCase()}`
             : `asset ${t.asset_id}`;

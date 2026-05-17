@@ -12,13 +12,13 @@ import {
   buttonVariants,
 } from "@/components/ui";
 import { TagChipsEditor, suggestSoccerTags } from "@/components/sports/tag-chips";
-import type { SportsLeagueConfig, SportsTagSpec } from "@/lib/types";
+import type { SportTask, SportsTagSpec } from "@/lib/types";
 
-// EditLeagueConfigForm edits the mutable parts of a league config:
+// EditSportTaskForm edits the mutable parts of a league config:
 // time_ahead_hours, tags, category, sub-category, and the four toggles.
 // Sport, api_league_id, api_season, league_slug, series_id are immutable
 // after creation — they define the config's identity.
-export function EditLeagueConfigForm({ config }: { config: SportsLeagueConfig }) {
+export function EditSportTaskForm({ config }: { config: SportTask }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export function EditLeagueConfigForm({ config }: { config: SportsLeagueConfig })
     setSubmitError(null);
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/sports/league-configs/${config.id}/update`, {
+        const res = await fetch(`/api/sports/tasks/${config.id}/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

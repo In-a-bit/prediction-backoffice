@@ -9,7 +9,7 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { listAssets, listIntervals } from "@/lib/api";
+import { crypto } from "@/lib/api";
 import { behaviors } from "@/lib/behaviors";
 import type { Asset, Interval } from "@/lib/types";
 
@@ -23,7 +23,7 @@ export default async function NewCryptoIntervalTaskPage() {
   let error: string | null = null;
 
   try {
-    [assets, intervals] = await Promise.all([listAssets(), listIntervals()]);
+    [assets, intervals] = await Promise.all([crypto.listAssets(), crypto.listIntervals()]);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

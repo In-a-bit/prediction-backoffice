@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { sports } from "@/lib/api";
-import type { SportsCreateLeagueConfigInput } from "@/lib/types";
+import type { CreateSportTaskInput } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as SportsCreateLeagueConfigInput;
+    const body = (await req.json()) as CreateSportTaskInput;
     if (!body?.sport_key || !body?.api_league_id || !body?.api_season || !body?.league_slug) {
       return NextResponse.json(
         { error: "sport_key, api_league_id, api_season, league_slug are required" },
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const data = await sports.createLeagueConfig(body);
+    const data = await sports.createTask(body);
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

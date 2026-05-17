@@ -6,6 +6,7 @@ import type {
   CreateDeployPlanInput,
   CreateTaskRequest,
   CreatedMarket,
+  CryptoEvent,
   DeployPlan,
   EventPayload,
   EventResponse,
@@ -79,37 +80,6 @@ async function request<T>(path: string, opts: FetchOpts = {}): Promise<T> {
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
-
-// ----- Reads -----
-
-export const listAssets = () => request<Asset[]>("/assets");
-
-export const listSupportedPairs = () =>
-  request<SupportedPair[]>("/assets/supported");
-
-export const listIntervals = () => request<Interval[]>("/intervals");
-
-export const listTasks = (opts?: { withStats?: boolean }) =>
-  request<Task[]>(opts?.withStats ? "/tasks?include=stats" : "/tasks");
-
-export const getTask = (id: number | string) => request<Task>(`/tasks/${id}`);
-
-export const listTaskMarkets = (id: number | string, limit = 50) =>
-  request<CreatedMarket[]>(`/tasks/${id}/markets?limit=${limit}`);
-
-// ----- Writes (protected) -----
-
-export const createAsset = (body: CreateAssetRequest) =>
-  request<Asset>("/assets", { method: "POST", body, authed: true });
-
-export const updateAsset = (id: number, body: UpdateAssetRequest) =>
-  request<Asset>(`/assets/${id}`, { method: "PATCH", body, authed: true });
-
-export const createTask = (body: CreateTaskRequest) =>
-  request<Task>("/tasks", { method: "POST", body, authed: true });
-
-export const updateTask = (id: number, body: UpdateTaskRequest) =>
-  request<Task>(`/tasks/${id}`, { method: "PATCH", body, authed: true });
 
 // ---------------------------------------------------------------------------
 // Manual creator — series/event/market creation, status polling, audit log.
@@ -238,35 +208,36 @@ export const manual = {
 // ---------------------------------------------------------------------------
 
 import type {
-  SportsLeagueConfig,
-  SportsFixtureEvent,
-  SportsCreateLeagueConfigInput,
-  SportsUpdateLeagueConfigInput,
+  SportTask,
+  SportEvent,
+  CreateSportTaskInput,
+  UpdateSportTaskInput,
   ApiFootballLeagueSearchResult,
 } from "./types";
 
 export const sports = {
-  listLeagueConfigs: (sportKey?: string) => {
+  // Tasks (one row per sport+league+season automation config)
+  listTasks: (sportKey?: string) => {
     const qs = sportKey ? `?sport_key=${encodeURIComponent(sportKey)}` : "";
-    return request<SportsLeagueConfig[]>(`/sports/league-configs${qs}`);
+    return request<SportTask[]>(`/sports/tasks${qs}`);
   },
-  getLeagueConfig: (id: number) =>
-    request<SportsLeagueConfig>(`/sports/league-configs/${id}`),
-  createLeagueConfig: (input: SportsCreateLeagueConfigInput) =>
-    request<SportsLeagueConfig>("/sports/league-configs", {
+  getTask: (id: number) =>
+    request<SportTask>(`/sports/tasks/${id}`),
+  createTask: (input: CreateSportTaskInput) =>
+    request<SportTask>("/sports/tasks", {
       method: "POST",
       body: input,
       authed: true,
     }),
-  updateLeagueConfig: (id: number, patch: SportsUpdateLeagueConfigInput) =>
-    request<SportsLeagueConfig>(`/sports/league-configs/${id}`, {
+  updateTask: (id: number, patch: UpdateSportTaskInput) =>
+    request<SportTask>(`/sports/tasks/${id}`, {
       method: "PATCH",
       body: patch,
       authed: true,
     }),
   addMarketType: (id: number, marketTypeKey: string, audit: { actor?: string } = {}) =>
-    request<SportsLeagueConfig>(
-      `/sports/league-configs/${id}/market-types`,
+    request<SportTask>(
+      `/sports/tasks/${id}/market-types`,
       {
         method: "POST",
         body: { ...audit, market_type_key: marketTypeKey },
@@ -274,30 +245,30 @@ export const sports = {
       },
     ),
   removeMarketType: (id: number, typeId: number) =>
-    request<SportsLeagueConfig>(
-      `/sports/league-configs/${id}/market-types/${typeId}`,
+    request<SportTask>(
+      `/sports/tasks/${id}/market-types/${typeId}`,
       { method: "DELETE", authed: true },
     ),
 
-  // Fixtures
-  listFixtures: (leagueConfigId: number, filter: { status?: string } = {}) => {
+  // Events (one row per upstream fixture under a sport_task)
+  listEvents: (sportTaskId: number, filter: { status?: string } = {}) => {
     const q = new URLSearchParams();
     if (filter.status) q.set("status", filter.status);
     const qs = q.toString();
-    return request<SportsFixtureEvent[]>(
-      `/sports/league-configs/${leagueConfigId}/fixtures${qs ? `?${qs}` : ""}`,
+    return request<SportEvent[]>(
+      `/sports/tasks/${sportTaskId}/events${qs ? `?${qs}` : ""}`,
     );
   },
-  getFixture: (id: number) =>
-    request<SportsFixtureEvent>(`/sports/fixtures/${id}`),
-  forceCreateFixture: (id: number, audit: { actor?: string } = {}) =>
-    request<SportsFixtureEvent>(`/sports/fixtures/${id}/force-create`, {
+  getEvent: (id: number) =>
+    request<SportEvent>(`/sports/events/${id}`),
+  forceCreateEvent: (id: number, audit: { actor?: string } = {}) =>
+    request<SportEvent>(`/sports/events/${id}/force-create`, {
       method: "POST",
       body: audit,
       authed: true,
     }),
-  skipFixture: (id: number, audit: { actor?: string } = {}) =>
-    request<{ status: string }>(`/sports/fixtures/${id}/skip`, {
+  skipEvent: (id: number, audit: { actor?: string } = {}) =>
+    request<{ status: string }>(`/sports/events/${id}/skip`, {
       method: "POST",
       body: audit,
       authed: true,
@@ -342,4 +313,55 @@ export const sports = {
       `/sports/leagues/all?${params.toString()}`,
     );
   },
+};
+
+// ---------------------------------------------------------------------------
+// Crypto-interval — mirrors apps/backoffice/handlers/crypto_*.go. Single
+// namespace covering the automation config (assets/intervals/tasks) and the
+// per-slot crypto_events surface. The /deploy-plans page renders the
+// DeployPlan that creates each market.
+// ---------------------------------------------------------------------------
+
+export const crypto = {
+  // ----- Assets -----
+  listAssets: () => request<Asset[]>("/crypto/assets"),
+  listSupportedPairs: () =>
+    request<SupportedPair[]>("/crypto/assets/supported"),
+  createAsset: (body: CreateAssetRequest) =>
+    request<Asset>("/crypto/assets", { method: "POST", body, authed: true }),
+  updateAsset: (id: number, body: UpdateAssetRequest) =>
+    request<Asset>(`/crypto/assets/${id}`, { method: "PATCH", body, authed: true }),
+
+  // ----- Intervals -----
+  listIntervals: () => request<Interval[]>("/crypto/intervals"),
+
+  // ----- Tasks -----
+  listTasks: (opts?: { withStats?: boolean }) =>
+    request<Task[]>(opts?.withStats ? "/crypto/tasks?include=stats" : "/crypto/tasks"),
+  getTask: (id: number | string) =>
+    request<Task>(`/crypto/tasks/${id}`),
+  listTaskMarkets: (id: number | string, limit = 50) =>
+    request<CreatedMarket[]>(`/crypto/tasks/${id}/markets?limit=${limit}`),
+  createTask: (body: CreateTaskRequest) =>
+    request<Task>("/crypto/tasks", { method: "POST", body, authed: true }),
+  updateTask: (id: number, body: UpdateTaskRequest) =>
+    request<Task>(`/crypto/tasks/${id}`, { method: "PATCH", body, authed: true }),
+
+  // ----- Events -----
+  listCryptoEvents: (cryptoTaskId: number) =>
+    request<CryptoEvent[]>(`/crypto/tasks/${cryptoTaskId}/events`),
+  getCryptoEvent: (id: number) =>
+    request<CryptoEvent>(`/crypto/events/${id}`),
+  forceCreateCryptoEvent: (id: number, audit: { actor?: string } = {}) =>
+    request<CryptoEvent>(`/crypto/events/${id}/force-create`, {
+      method: "POST",
+      body: audit,
+      authed: true,
+    }),
+  skipCryptoEvent: (id: number, audit: { actor?: string } = {}) =>
+    request<{ status: string }>(`/crypto/events/${id}/skip`, {
+      method: "POST",
+      body: audit,
+      authed: true,
+    }),
 };

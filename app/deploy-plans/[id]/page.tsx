@@ -18,10 +18,23 @@ export const dynamic = "force-dynamic";
 
 // classifySource mirrors the same logic from the list page so the badge
 // stays consistent between list and detail views.
-function classifySource(plan: DeployPlan): "manual" | "sports" {
+function classifySource(plan: DeployPlan): "manual" | "sports" | "crypto" {
   if (plan.actor === "sports-auto") return "sports";
   if (plan.note && plan.note.toLowerCase().startsWith("sports/")) return "sports";
+  if (plan.actor === "crypto-auto") return "crypto";
+  if (plan.note && plan.note.toLowerCase().startsWith("crypto/")) return "crypto";
   return "manual";
+}
+
+function sourceBadgeTone(s: "manual" | "sports" | "crypto"): "info" | "warning" | "neutral" {
+  switch (s) {
+    case "sports":
+      return "info";
+    case "crypto":
+      return "warning";
+    default:
+      return "neutral";
+  }
 }
 
 export default async function DeployPlanDetailPage({
@@ -87,7 +100,7 @@ export default async function DeployPlanDetailPage({
         <CardHeader className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <PlanStatusBadge status={plan.status} />
-            <Badge tone={source === "sports" ? "info" : "neutral"}>{source}</Badge>
+            <Badge tone={sourceBadgeTone(source)}>{source}</Badge>
             <span className="text-xs text-foreground-muted">by {plan.actor}</span>
           </div>
           <div className="flex flex-col items-end gap-0.5 text-[11px] text-foreground-muted">
@@ -96,12 +109,12 @@ export default async function DeployPlanDetailPage({
           </div>
         </CardHeader>
         <CardBody className="text-xs space-y-1.5 font-mono break-all">
-          <div>
-            <span className="text-foreground-muted">plan: </span>
+          <div title="DeployPlan.external_id — the plan's stable UUID, used as the URL slug.">
+            <span className="text-foreground-muted">Plan ID: </span>
             {plan.external_id}
           </div>
-          <div>
-            <span className="text-foreground-muted">event: </span>
+          <div title="DeployPlan.event_external_id — the dpm-api Event UUID this plan's markets attach to.">
+            <span className="text-foreground-muted">Event UUID: </span>
             <Link
               href={`/automations/manual/events/${encodeURIComponent(plan.event_external_id)}/markets/new`}
               className="underline"
@@ -110,8 +123,8 @@ export default async function DeployPlanDetailPage({
             </Link>
           </div>
           {plan.correlation_id ? (
-            <div>
-              <span className="text-foreground-muted">correlation: </span>
+            <div title="DeployPlan.correlation_id — groups every operator_log row produced by this plan.">
+              <span className="text-foreground-muted">Correlation: </span>
               <Link
                 href={`/operator-log?correlation_id=${plan.correlation_id}`}
                 className="underline"

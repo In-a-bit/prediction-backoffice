@@ -226,9 +226,12 @@ export function DeployPlanDriver({
         </CardBody>
       </Card>
 
-      <p className="text-[11px] text-foreground-muted font-mono break-all">
-        plan: {plan.external_id}
-        {plan.correlation_id ? ` · correlation: ${plan.correlation_id}` : ""}
+      <p
+        className="text-[11px] text-foreground-muted font-mono break-all"
+        title="DeployPlan.external_id — plan UUID. DeployPlan.correlation_id — groups every operator_log row for this plan."
+      >
+        Plan ID: {plan.external_id}
+        {plan.correlation_id ? ` · Correlation: ${plan.correlation_id}` : ""}
       </p>
       {allTerminal ? (
         <p className="text-xs text-foreground-muted">
@@ -271,8 +274,11 @@ function MarketRow({
           </span>
           <MarketStatusBadge status={market.status} />
           {market.parent_market_id ? (
-            <span className="text-[11px] text-foreground-muted">
-              · recreated
+            <span
+              className="text-[11px] text-foreground-muted"
+              title={`DeployPlanMarket.parent_market_id = ${market.parent_market_id} — this row was created as a recreate of an earlier failed attempt within the same plan.`}
+            >
+              · recreate
             </span>
           ) : null}
         </div>
@@ -331,10 +337,13 @@ function MarketRow({
       ) : null}
 
       {market.external_id || market.workflow_id ? (
-        <div className="px-4 py-2 text-[11px] text-foreground-muted font-mono break-all">
-          {market.external_id ? `external_id: ${market.external_id}` : null}
+        <div
+          className="px-4 py-2 text-[11px] text-foreground-muted font-mono break-all"
+          title="DeployPlanMarket.external_id = dpm-api market UUID returned in the 202 envelope. DeployPlanMarket.workflow_id = Temporal workflow id driving the on-chain deploy."
+        >
+          {market.external_id ? `Market UUID: ${market.external_id}` : null}
           {market.external_id && market.workflow_id ? " · " : null}
-          {market.workflow_id ? `workflow: ${market.workflow_id}` : null}
+          {market.workflow_id ? `Deploy workflow: ${market.workflow_id}` : null}
         </div>
       ) : null}
     </li>

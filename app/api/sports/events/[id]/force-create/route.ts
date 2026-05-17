@@ -10,7 +10,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ error: "id must be an integer" }, { status: 400 });
     }
     const body = (await req.json().catch(() => ({}))) as { actor?: string };
-    const data = await sports.forceCreateFixture(id, { actor: body?.actor });
+    const data = await sports.forceCreateEvent(id, { actor: body?.actor });
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

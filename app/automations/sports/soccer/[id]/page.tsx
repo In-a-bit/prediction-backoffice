@@ -4,18 +4,18 @@ import { notFound } from "next/navigation";
 import { Badge, Card, CardBody, CardHeader, PageHeader, buttonVariants } from "@/components/ui";
 import { sports } from "@/lib/api";
 import { formatFootballSeason } from "@/lib/format";
-import { LeagueConfigControls } from "./controls";
+import { SportTaskControls } from "./controls";
 
 export const dynamic = "force-dynamic";
 
-export default async function LeagueConfigDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SportTaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number.parseInt(idStr, 10);
   if (!Number.isFinite(id)) notFound();
 
   const [cfg, fixtures] = await Promise.all([
-    sports.getLeagueConfig(id).catch(() => null),
-    sports.listFixtures(id).catch(() => []),
+    sports.getTask(id).catch(() => null),
+    sports.listEvents(id).catch(() => []),
   ]);
   if (!cfg) notFound();
 
@@ -37,7 +37,7 @@ export default async function LeagueConfigDetailPage({ params }: { params: Promi
         </Link>
       </div>
 
-      <LeagueConfigControls config={cfg} />
+      <SportTaskControls config={cfg} />
 
       <h2 className="mt-10 mb-3 text-lg font-semibold">Fixtures</h2>
       {fixtures.length === 0 ? (
@@ -61,7 +61,7 @@ export default async function LeagueConfigDetailPage({ params }: { params: Promi
             return (
               <Link
                 key={fx.id}
-                href={`/automations/sports/soccer/${cfg.id}/fixtures/${fx.id}`}
+                href={`/automations/sports/soccer/${cfg.id}/events/${fx.id}`}
                 className="block"
               >
                 <Card className="h-full transition-shadow hover:shadow-md">
@@ -108,7 +108,7 @@ export default async function LeagueConfigDetailPage({ params }: { params: Promi
   );
 }
 
-function statusTone(status: string): "default" | "success" | "warning" | "danger" | "info" {
+function statusTone(status: string): "neutral" | "success" | "warning" | "danger" | "info" {
   switch (status) {
     case "FT":
     case "AET":
@@ -132,7 +132,7 @@ function statusTone(status: string): "default" | "success" | "warning" | "danger
     case "WO":
       return "danger";
     default:
-      return "default";
+      return "neutral";
   }
 }
 

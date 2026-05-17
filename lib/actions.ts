@@ -35,7 +35,7 @@ export async function createTaskAction(input: {
 }): Promise<ActionResult<{ id: number }>> {
   let task;
   try {
-    task = await api.createTask(input);
+    task = await api.crypto.createTask(input);
   } catch (err) {
     return { ok: false, error: explain(err) };
   }
@@ -50,7 +50,7 @@ export async function updateTaskAction(
   input: { is_create_active?: boolean; is_resolve_active?: boolean; time_ahead_minutes?: number },
 ): Promise<ActionResult> {
   try {
-    await api.updateTask(id, input);
+    await api.crypto.updateTask(id, input);
   } catch (err) {
     return { ok: false, error: explain(err) };
   }
@@ -67,7 +67,7 @@ export async function listSupportedPairsAction(): Promise<
   ActionResult<import("./types").SupportedPair[]>
 > {
   try {
-    const data = await api.listSupportedPairs();
+    const data = await api.crypto.listSupportedPairs();
     return { ok: true, data };
   } catch (err) {
     return { ok: false, error: explain(err) };
@@ -83,7 +83,7 @@ export async function createAssetAction(input: {
   is_active?: boolean;
 }): Promise<ActionResult<{ id: number }>> {
   try {
-    const a = await api.createAsset(input);
+    const a = await api.crypto.createAsset(input);
     revalidatePath("/automations/crypto-interval/assets");
     revalidatePath("/automations/crypto-interval/new");
     return { ok: true, data: { id: a.id } };
@@ -97,7 +97,7 @@ export async function updateAssetAction(
   input: { display_name?: string; is_active?: boolean },
 ): Promise<ActionResult> {
   try {
-    await api.updateAsset(id, input);
+    await api.crypto.updateAsset(id, input);
   } catch (err) {
     return { ok: false, error: explain(err) };
   }
