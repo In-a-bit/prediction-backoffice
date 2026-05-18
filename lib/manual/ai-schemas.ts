@@ -40,9 +40,6 @@ export const EventSchema = z.object({
   restricted: z.boolean().default(false),
   neg_risk: z.boolean().default(false),
   neg_risk_market_id: z.string().optional(),
-  deployment_status: z
-    .enum(["PENDING", "DEPLOYING", "DEPLOYED"])
-    .default("PENDING"),
   comment_count: z.number().int().optional(),
   metadata_type: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
@@ -78,7 +75,6 @@ export const MarketSchema = z.object({
   order_min_size: z.number().int().optional(),
   uma_bond: z.string().optional().describe("integer string in wei"),
   uma_reward: z.string().optional().describe("integer string in wei"),
-  uma_resolution_status: z.string().optional(),
   liveness: z.string().optional(),
   metadata_type: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),

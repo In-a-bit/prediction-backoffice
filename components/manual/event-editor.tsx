@@ -6,7 +6,6 @@ import {
   Field,
   JsonField,
   inputClass,
-  selectClass,
 } from "@/components/ui";
 import {
   isMetadataValid,
@@ -45,7 +44,6 @@ export function emptyEventEditorState(): EventEditorState {
     restricted: undefined,
     neg_risk: undefined,
     neg_risk_market_id: "",
-    deployment_status: undefined,
     parent_event_id: undefined,
     comment_count: undefined,
     series_id: undefined,
@@ -92,7 +90,6 @@ export function eventEditorStateToPayload(s: EventEditorState): EventPayload {
     restricted: s.restricted,
     neg_risk: s.neg_risk,
     neg_risk_market_id: cleanString(s.neg_risk_market_id),
-    deployment_status: s.deployment_status,
     parent_event_id: s.parent_event_id,
     comment_count: s.comment_count,
     series_id: s.series_id,
@@ -261,42 +258,17 @@ export function EventEditor({
           </Field>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field
-            label="Neg-risk market ID"
-            htmlFor={`${idPrefix}-neg-risk-market-id`}
-          >
-            <input
-              id={`${idPrefix}-neg-risk-market-id`}
-              className={inputClass}
-              value={value.neg_risk_market_id ?? ""}
-              onChange={(e) => set("neg_risk_market_id", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Deployment status"
-            htmlFor={`${idPrefix}-deployment-status`}
-          >
-            <select
-              id={`${idPrefix}-deployment-status`}
-              className={selectClass}
-              value={value.deployment_status ?? ""}
-              onChange={(e) =>
-                set(
-                  "deployment_status",
-                  e.target.value === ""
-                    ? undefined
-                    : (e.target.value as EventEditorState["deployment_status"]),
-                )
-              }
-            >
-              <option value="">— default (PENDING) —</option>
-              <option value="PENDING">PENDING</option>
-              <option value="DEPLOYING">DEPLOYING</option>
-              <option value="DEPLOYED">DEPLOYED</option>
-            </select>
-          </Field>
-        </div>
+        <Field
+          label="Neg-risk market ID"
+          htmlFor={`${idPrefix}-neg-risk-market-id`}
+        >
+          <input
+            id={`${idPrefix}-neg-risk-market-id`}
+            className={inputClass}
+            value={value.neg_risk_market_id ?? ""}
+            onChange={(e) => set("neg_risk_market_id", e.target.value)}
+          />
+        </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field

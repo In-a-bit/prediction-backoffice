@@ -58,7 +58,6 @@ export function emptyMarketEditorState(): MarketEditorState {
     order_min_size: undefined,
     uma_bond: "",
     uma_reward: "",
-    uma_resolution_status: "",
     liveness: "",
     metadata_type: "",
     metadataText: "",
@@ -81,7 +80,6 @@ export function marketEditorStateFromPayload(
     order_price_min_tick_size: p.order_price_min_tick_size ?? "",
     uma_bond: p.uma_bond ?? "",
     uma_reward: p.uma_reward ?? "",
-    uma_resolution_status: p.uma_resolution_status ?? "",
     liveness: p.liveness ?? "",
     metadata_type: p.metadata_type ?? "",
     metadataText: stringifyMetadata(p.metadata),
@@ -124,7 +122,6 @@ export function marketEditorStateToPayload(
     order_min_size: s.order_min_size,
     uma_bond: cleanString(s.uma_bond),
     uma_reward: cleanString(s.uma_reward),
-    uma_resolution_status: cleanString(s.uma_resolution_status),
     liveness: cleanString(s.liveness),
     metadata_type: cleanString(s.metadata_type),
     metadata: parseMetadata(s.metadataText),
@@ -412,18 +409,7 @@ export function MarketEditor({
           </Field>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field
-            label="UMA resolution status"
-            htmlFor={`${idPrefix}-uma-status`}
-          >
-            <input
-              id={`${idPrefix}-uma-status`}
-              className={inputClass}
-              value={value.uma_resolution_status ?? ""}
-              onChange={(e) => set("uma_resolution_status", e.target.value)}
-            />
-          </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field
             label="Liveness"
             hint="Seconds (default 7200)"
