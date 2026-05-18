@@ -23,6 +23,7 @@ type Action =
   | "start"
   | "pause"
   | "recreate"
+  | "retry"
   | "skip"
   | "signal-balance";
 
@@ -115,6 +116,9 @@ export function DeployPlanDriver({
               break;
             case "recreate":
               path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/recreate`;
+              break;
+            case "retry":
+              path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/retry`;
               break;
             case "skip":
               path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/skip`;
@@ -216,6 +220,7 @@ export function DeployPlanDriver({
                   market={m}
                   isPending={isPending && pendingAction?.pos === m.position}
                   pendingActionType={pendingAction?.type}
+                  onRetry={() => fire("retry", m.position)}
                   onRecreate={() => fire("recreate", m.position)}
                   onSkip={() => fire("skip", m.position)}
                   onSignalBalance={() => fire("signal-balance", m.position)}
@@ -247,6 +252,7 @@ function MarketRow({
   market,
   isPending,
   pendingActionType,
+  onRetry,
   onRecreate,
   onSkip,
   onSignalBalance,
@@ -254,6 +260,7 @@ function MarketRow({
   market: DeployPlanMarket;
   isPending: boolean;
   pendingActionType?: Action;
+  onRetry: () => void;
   onRecreate: () => void;
   onSkip: () => void;
   onSignalBalance: () => void;
@@ -287,9 +294,21 @@ function MarketRow({
             <>
               <button
                 type="button"
+                onClick={onRetry}
+                disabled={isPending}
+                className={buttonVariants.primary}
+                title="Retry this market in place. If the original CreateMarket call never reached dpm-api, re-issues it. If dpm-api has the market with deployment_status=FAILED, asks dpm-api to reset and restart the deploy workflow."
+              >
+                {isPending && pendingActionType === "retry"
+                  ? "Retrying…"
+                  : "Retry"}
+              </button>
+              <button
+                type="button"
                 onClick={onRecreate}
                 disabled={isPending}
                 className={buttonVariants.secondary}
+                title="Mark this market skipped and append a fresh row at the next queue position. Use when in-place retry isn't appropriate (or you want a clean audit trail)."
               >
                 {isPending && pendingActionType === "recreate"
                   ? "Recreating…"

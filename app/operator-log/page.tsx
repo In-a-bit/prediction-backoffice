@@ -13,6 +13,8 @@ import { manual } from "@/lib/api";
 import { formatDateTimeFull } from "@/lib/format";
 import type { OperatorLogEntry, OperatorLogFilters } from "@/lib/types";
 
+import { RetryLogButton } from "./retry-button";
+
 export const dynamic = "force-dynamic";
 
 // Source partitions every operator-log row by the family of action it
@@ -287,6 +289,12 @@ function LogRow({ entry }: { entry: OperatorLogEntry }) {
             </div>
           ) : null}
           {entry.error ? <div className="text-danger">error: {entry.error}</div> : null}
+          {entry.status === "failed" &&
+          (entry.action === "create_series" || entry.action === "create_event") ? (
+            <div className="pt-2">
+              <RetryLogButton externalId={entry.external_id} />
+            </div>
+          ) : null}
           {entry.resource_type === "event" && entry.resource_external_id ? (
             <div className="pt-1">
               <Link

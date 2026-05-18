@@ -44,14 +44,15 @@ export function SportEventActions({
         type="button"
         className={buttonVariants.primary}
         disabled={pending || hasCreationPlan}
+        title="Idempotently re-runs the per-event Creator logic: ensures the dpm-api event exists, then spawns/re-spawns the DeployPlan if missing. Use this to retry after the upcoming-ticker hit an error, or to force a fixture in early before the time_ahead_hours window."
         onClick={() =>
           post(
             `/api/sports/events/${eventId}/force-create`,
-            "Force-create now? This skips the time_ahead_hours gate and creates a DeployPlan immediately.",
+            "Run create now? This re-attempts the dpm-api event-create step and spawns a DeployPlan immediately (skipping the time_ahead_hours gate). Safe to retry — idempotent if a plan already exists.",
           )
         }
       >
-        {hasCreationPlan ? "Plan already created" : "Force create now"}
+        {hasCreationPlan ? "Plan already created" : "Retry / force create"}
       </button>
 
       <button

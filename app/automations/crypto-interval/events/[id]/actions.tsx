@@ -46,14 +46,15 @@ export function EventActions({
         type="button"
         className={buttonVariants.primary}
         disabled={pending || hasDeployPlan}
+        title="Idempotently re-runs the per-slot Creator logic: ensures the dpm-api event exists, then spawns/re-spawns the DeployPlan if missing. Use this to retry after a tick error, or to force a slot in early."
         onClick={() =>
           post(
             `/api/crypto/events/${eventId}/force-create`,
-            "Force-create this slot's deploy plan now? Idempotent — re-runs the Creator's per-slot logic.",
+            "Run create now? Re-attempts the dpm-api event-create step and spawns a DeployPlan if one isn't already running. Safe to retry — idempotent.",
           )
         }
       >
-        {hasDeployPlan ? "Plan already created" : "Force create now"}
+        {hasDeployPlan ? "Plan already created" : "Retry / force create"}
       </button>
 
       <button

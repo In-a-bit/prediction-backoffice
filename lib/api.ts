@@ -189,6 +189,16 @@ export const manual = {
       `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/recreate`,
       { method: "POST", authed: true },
     ),
+  retryPlanMarket: (externalId: string, position: number) =>
+    request<DeployPlan>(
+      `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/retry`,
+      { method: "POST", authed: true },
+    ),
+  retryOperatorLog: (externalId: string) =>
+    request<OperatorLogEntry>(
+      `/manual/operator-log/${encodeURIComponent(externalId)}/retry`,
+      { method: "POST", authed: true },
+    ),
   skipPlanMarket: (externalId: string, position: number) =>
     request<DeployPlan>(
       `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/skip`,
