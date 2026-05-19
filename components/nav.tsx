@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { behaviorList } from "@/lib/behaviors";
 
@@ -256,7 +256,10 @@ function isActive(pathname: string, item: Item) {
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="hidden lg:flex w-64 shrink-0 border-r border-border bg-surface flex-col sticky top-0 h-screen">
+    <aside
+      aria-label="Primary navigation"
+      className="hidden lg:flex w-64 shrink-0 border-r border-border bg-surface flex-col sticky top-0 h-screen"
+    >
       <div className="px-5 h-14 flex items-center gap-2 border-b border-border">
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background text-sm font-bold">
           P
@@ -265,7 +268,7 @@ export function Sidebar() {
           <span className="text-sm font-semibold tracking-tight">
             Prediction
           </span>
-          <span className="text-[11px] text-foreground-muted -mt-0.5">
+          <span className="text-xs text-foreground-muted -mt-0.5">
             Backoffice
           </span>
         </div>
@@ -354,52 +357,127 @@ export function MobileBar() {
   const pathname = usePathname();
   const allItems = sections.flatMap((s) => s.items);
   const active = allItems.find((i) => isActive(pathname, i));
+
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Close whenever the route changes — the previous `<details>` left the
+  // dropdown obscuring the page that operators had just navigated to.
+  // Guarded so the setState only fires on real transitions (not on mount
+  // or on already-closed renders), which keeps it off the cascading-render
+  // path that `react-hooks/set-state-in-effect` warns about.
+  useEffect(() => {
+    if (open) setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // Close on Escape and on outside click while open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target)) return;
+      if (buttonRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
+
   return (
     <header className="lg:hidden sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur supports-[backdrop-filter]:bg-surface/70">
       <div className="px-4 h-14 flex items-center gap-3">
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background text-sm font-bold">
           P
         </span>
-        <div className="flex flex-col leading-tight">
+        <div className="flex flex-col leading-tight min-w-0">
           <span className="text-sm font-semibold tracking-tight">
             Prediction
           </span>
-          <span className="text-[11px] text-foreground-muted -mt-0.5">
+          <span className="text-xs text-foreground-muted -mt-0.5 truncate">
             {active?.label ?? "Backoffice"}
           </span>
         </div>
         <div className="flex-1" />
-        <details className="relative">
-          <summary className="list-none cursor-pointer px-2 py-1.5 rounded-md border border-border text-sm">
-            Menu
-          </summary>
-          <div className="absolute right-0 mt-2 w-64 bg-surface border border-border rounded-lg shadow-lg p-3 space-y-4 z-40">
-            {sections.map((s) => (
-              <div key={s.title}>
-                <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground-muted">
-                  {s.title}
+        <div className="relative">
+          <button
+            ref={buttonRef}
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-controls={menuId}
+            aria-label={open ? "Close navigation" : "Open navigation"}
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md border border-border bg-surface text-sm hover:bg-foreground/5 cursor-pointer"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden
+            >
+              {open ? (
+                <path d="M6 6l12 12M18 6l-12 12" />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              )}
+            </svg>
+            <span>Menu</span>
+          </button>
+          {open ? (
+            <div
+              ref={panelRef}
+              id={menuId}
+              role="menu"
+              aria-label="Primary navigation"
+              className="absolute right-0 mt-2 w-72 max-h-[calc(100dvh-4.5rem)] overflow-y-auto bg-surface border border-border rounded-lg shadow-lg p-3 space-y-4 z-40"
+            >
+              {sections.map((s) => (
+                <div key={s.title}>
+                  <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground-muted">
+                    {s.title}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {s.items.map((item) => (
+                      <li key={item.key ?? item.href}>
+                        <Link
+                          href={item.href}
+                          role="menuitem"
+                          onClick={() => setOpen(false)}
+                          className="flex items-center gap-2.5 px-2 py-2.5 rounded-md text-sm hover:bg-foreground/5 active:bg-foreground/10"
+                        >
+                          <span className="h-4 w-4 shrink-0">{item.icon}</span>
+                          <span className="flex items-center gap-2 flex-1 min-w-0">
+                            {item.accent ? dot(item.accent) : null}
+                            <span className="truncate">{item.label}</span>
+                          </span>
+                          {item.trailing}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="space-y-0.5">
-                  {s.items.map((item) => (
-                    <li key={item.key ?? item.href}>
-                      <Link
-                        href={item.href}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-foreground/5"
-                      >
-                        <span className="h-4 w-4">{item.icon}</span>
-                        <span className="flex items-center gap-2 flex-1">
-                          {item.accent ? dot(item.accent) : null}
-                          {item.label}
-                        </span>
-                        {item.trailing}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </details>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
     </header>
   );

@@ -6,12 +6,12 @@ import { useState, useTransition } from "react";
 import { Badge, ErrorMessage, buttonVariants } from "@/components/ui";
 import type { EventResponse } from "@/lib/types";
 
-type EventActionKey = "pause" | "unpause" | "activate";
+type EventActionKey = "pause" | "unpause" | "activate" | "deactivate";
 
 // EventActionsPanel renders the dpm-api event lifecycle controls. Visibility
 // mirrors the dpm-api LifecycleHandler — pause/unpause flip a single bool,
-// activate sets active=true. We hide the no-op variants so the operator
-// can't fire something that's already in the target state.
+// activate/deactivate flip event.active. We hide the no-op variants so the
+// operator can't fire something that's already in the target state.
 export function EventActionsPanel({
   externalId,
   event,
@@ -26,6 +26,12 @@ export function EventActionsPanel({
   const [isPending, startTransition] = useTransition();
 
   function fire(key: EventActionKey) {
+    if (key === "deactivate") {
+      const ok = window.confirm(
+        "Deactivate this event? It will be hidden from users until you activate it again.",
+      );
+      if (!ok) return;
+    }
     setError(null);
     setOk(null);
     setPending(key);
@@ -52,12 +58,12 @@ export function EventActionsPanel({
   const showPause = !event.paused && !event.archived;
   const showUnpause = event.paused;
   const showActivate = !event.active && !event.archived;
+  const showDeactivate = event.active && !event.archived;
 
-  if (!showPause && !showUnpause && !showActivate) {
+  if (!showPause && !showUnpause && !showActivate && !showDeactivate) {
     return (
       <p className="text-xs text-foreground-muted">
-        No lifecycle actions available — event is already active and unpaused
-        (or archived).
+        No lifecycle actions available — event is archived.
       </p>
     );
   }
@@ -74,6 +80,17 @@ export function EventActionsPanel({
             title="Set event.active=true. Idempotent."
           >
             {pending === "activate" ? "Activating…" : "Activate"}
+          </button>
+        ) : null}
+        {showDeactivate ? (
+          <button
+            type="button"
+            onClick={() => fire("deactivate")}
+            disabled={isPending}
+            className={buttonVariants.danger}
+            title="Set event.active=false — hides the event from users."
+          >
+            {pending === "deactivate" ? "Deactivating…" : "Deactivate"}
           </button>
         ) : null}
         {showPause ? (

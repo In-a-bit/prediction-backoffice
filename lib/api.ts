@@ -449,6 +449,11 @@ export const dpm = {
       `/events/by-external-id/${encodeURIComponent(event_external_id)}/activate`,
       { method: "POST" },
     ),
+  deactivateEvent: (event_external_id: string) =>
+    dpmRequest<DpmActionResult>(
+      `/events/by-external-id/${encodeURIComponent(event_external_id)}/deactivate`,
+      { method: "POST" },
+    ),
   // Market pause/unpause/activate take the dpm numeric id.
   pauseMarket: (market_id: number) =>
     dpmRequest<DpmActionResult>(`/markets/${market_id}/pause`, { method: "POST" }),

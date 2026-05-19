@@ -7,6 +7,8 @@ import {
   EmptyState,
   ErrorMessage,
   PageHeader,
+  Tabs,
+  type Tab,
 } from "@/components/ui";
 import { crypto, manual, sports } from "@/lib/api";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
@@ -143,7 +145,7 @@ export default async function EventsPage({
         description="Every event the backoffice has touched, across every automation source. Each row drills into the unified event page — same view as /events/[external_id]."
       />
 
-      <SourceTabs current={filter} />
+      <Tabs current={filter} tabs={buildSourceTabs()} label="Event source" />
 
       <Card>
         <CardBody>
@@ -152,14 +154,14 @@ export default async function EventsPage({
               <input type="hidden" name="source" value={filter} />
             ) : null}
             {filter === "crypto" ? (
-              <label className="flex flex-col gap-1 text-xs">
-                task
+              <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
+                Task
                 <select
                   name="task_id"
                   defaultValue={taskScoped ? String(taskId) : ""}
-                  className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
+                  className="rounded-md border border-border bg-surface px-2 h-9 text-sm font-normal text-foreground"
                 >
-                  <option value="">— all tasks —</option>
+                  <option value="">— All tasks —</option>
                   {cryptoTasks.map((t) => (
                     <option key={t.id} value={t.id}>
                       {labelCryptoTask(t, cryptoAssets, cryptoIntervals)}
@@ -169,14 +171,14 @@ export default async function EventsPage({
               </label>
             ) : null}
             {filter === "sport" ? (
-              <label className="flex flex-col gap-1 text-xs">
-                task
+              <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
+                Task
                 <select
                   name="task_id"
                   defaultValue={taskScoped ? String(taskId) : ""}
-                  className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
+                  className="rounded-md border border-border bg-surface px-2 h-9 text-sm font-normal text-foreground"
                 >
-                  <option value="">— all tasks —</option>
+                  <option value="">— All tasks —</option>
                   {[...groupBySport(sportTasks).entries()].map(([sport, list]) => (
                     <optgroup key={sport} label={sport}>
                       {list.map((t) => (
@@ -189,23 +191,23 @@ export default async function EventsPage({
                 </select>
               </label>
             ) : null}
-            <label className="flex flex-col gap-1 text-xs">
-              deployment_status
+            <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
+              Deployment status
               <input
                 type="text"
                 name="status"
                 defaultValue={statusFilter ?? ""}
                 placeholder="e.g. REGISTERED, PENDING"
-                className="rounded-md border border-border bg-surface px-2 py-1 text-sm w-56"
+                className="rounded-md border border-border bg-surface px-2 h-9 text-sm w-56 font-normal text-foreground"
               />
             </label>
             <button
               type="submit"
-              className="px-3 py-1.5 rounded-md text-sm border border-border hover:bg-foreground/[0.04]"
+              className="inline-flex items-center justify-center h-9 px-3 rounded-md text-sm border border-border hover:bg-foreground/[0.04] cursor-pointer"
             >
               Apply
             </button>
-            <p className="text-[11px] text-foreground-muted ml-auto">
+            <p className="text-xs text-foreground-muted ml-auto">
               {summaryFor(filter, rows.length, taskScoped)}
             </p>
           </form>
@@ -230,34 +232,13 @@ export default async function EventsPage({
   );
 }
 
-function SourceTabs({ current }: { current: Filter }) {
-  const tabs: { key: Filter; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "manual", label: "Manual" },
-    { key: "crypto", label: "Crypto" },
-    { key: "sport", label: "Sport" },
+function buildSourceTabs(): Tab<Filter>[] {
+  return [
+    { key: "all", label: "All", href: "/events" },
+    { key: "manual", label: "Manual", href: "/events?source=manual" },
+    { key: "crypto", label: "Crypto", href: "/events?source=crypto" },
+    { key: "sport", label: "Sport", href: "/events?source=sport" },
   ];
-  return (
-    <div className="flex items-center gap-2">
-      {tabs.map((t) => {
-        const active = current === t.key;
-        const href = t.key === "all" ? "/events" : `/events?source=${t.key}`;
-        return (
-          <Link
-            key={t.key}
-            href={href}
-            className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
-              active
-                ? "bg-foreground text-background border-foreground"
-                : "border-border text-foreground-muted hover:text-foreground hover:bg-foreground/[0.04]"
-            }`}
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
 }
 
 function RowItem({ row }: { row: Row }) {
@@ -277,7 +258,7 @@ function RowItem({ row }: { row: Row }) {
               </span>
             )}
           </span>
-          <span className="text-[11px] text-foreground-muted shrink-0">
+          <span className="text-xs text-foreground-muted shrink-0 tabular-nums">
             {row.marketCount} market{row.marketCount === 1 ? "" : "s"}
           </span>
           {row.deploymentStatus ? (
@@ -291,7 +272,7 @@ function RowItem({ row }: { row: Row }) {
           {row.flags.active ? <Badge tone="success">active</Badge> : null}
         </div>
         {row.subtitle ? (
-          <p className="mt-1 text-[11px] text-foreground-muted truncate">
+          <p className="mt-1 text-xs text-foreground-muted truncate">
             {row.subtitle}
           </p>
         ) : null}

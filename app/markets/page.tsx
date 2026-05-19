@@ -7,6 +7,8 @@ import {
   EmptyState,
   ErrorMessage,
   PageHeader,
+  Tabs,
+  type Tab,
 } from "@/components/ui";
 import { crypto, manual, sports } from "@/lib/api";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
@@ -114,7 +116,7 @@ export default async function MarketsPage({
         description="Every market the backoffice has produced, across every automation source. Click a row to drill into the full market page — same view as /markets/[external_id] reached from /events or a deploy plan."
       />
 
-      <SourceTabs current={filter} />
+      <Tabs current={filter} tabs={buildSourceTabs()} label="Market source" />
 
       <Card>
         <CardBody>
@@ -122,23 +124,23 @@ export default async function MarketsPage({
             {filter !== "all" ? (
               <input type="hidden" name="source" value={filter} />
             ) : null}
-            <label className="flex flex-col gap-1 text-xs">
-              status
+            <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
+              Status
               <input
                 type="text"
                 name="status"
                 defaultValue={statusFilter ?? ""}
                 placeholder="e.g. deployed, REGISTERED, PROPOSED"
-                className="rounded-md border border-border bg-surface px-2 py-1 text-sm w-64"
+                className="rounded-md border border-border bg-surface px-2 h-9 text-sm w-64 font-normal text-foreground"
               />
             </label>
             <button
               type="submit"
-              className="px-3 py-1.5 rounded-md text-sm border border-border hover:bg-foreground/[0.04]"
+              className="inline-flex items-center justify-center h-9 px-3 rounded-md text-sm border border-border hover:bg-foreground/[0.04] cursor-pointer"
             >
               Apply
             </button>
-            <p className="text-[11px] text-foreground-muted ml-auto">
+            <p className="text-xs text-foreground-muted ml-auto">
               {summaryFor(filter, rows.length)}
             </p>
           </form>
@@ -163,34 +165,13 @@ export default async function MarketsPage({
   );
 }
 
-function SourceTabs({ current }: { current: Filter }) {
-  const tabs: { key: Filter; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "manual", label: "Manual" },
-    { key: "crypto", label: "Crypto" },
-    { key: "sport", label: "Sport" },
+function buildSourceTabs(): Tab<Filter>[] {
+  return [
+    { key: "all", label: "All", href: "/markets" },
+    { key: "manual", label: "Manual", href: "/markets?source=manual" },
+    { key: "crypto", label: "Crypto", href: "/markets?source=crypto" },
+    { key: "sport", label: "Sport", href: "/markets?source=sport" },
   ];
-  return (
-    <div className="flex items-center gap-2">
-      {tabs.map((t) => {
-        const active = current === t.key;
-        const href = t.key === "all" ? "/markets" : `/markets?source=${t.key}`;
-        return (
-          <Link
-            key={t.key}
-            href={href}
-            className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
-              active
-                ? "bg-foreground text-background border-foreground"
-                : "border-border text-foreground-muted hover:text-foreground hover:bg-foreground/[0.04]"
-            }`}
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
 }
 
 function RowItem({ row }: { row: Row }) {
@@ -228,7 +209,7 @@ function RowItem({ row }: { row: Row }) {
             Open →
           </Link>
         ) : (
-          <span className="text-[11px] text-foreground-muted italic px-2">
+          <span className="text-xs text-foreground-muted italic px-2">
             not deployed yet
           </span>
         )}

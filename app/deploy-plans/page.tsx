@@ -7,6 +7,8 @@ import {
   CardHeader,
   EmptyState,
   PageHeader,
+  Tabs,
+  type Tab,
   buttonVariants,
 } from "@/components/ui";
 import { manual } from "@/lib/api";
@@ -88,7 +90,7 @@ export default async function DeployPlansPage({
         description="Cross-cutting queue of market deploys — used by the manual creator and the sports automations alike. Each plan tracks one event's markets through submit → REGISTERED, surviving UI/server restarts. Open a plan to see live progress, recreate failed markets, or signal balance."
       />
 
-      <SourceTabs current={source} sp={sp} />
+      <Tabs current={source} tabs={buildSourceTabs(sp)} label="Plan source" />
       <FilterBar source={source} filters={sp} />
 
       {error ? (
@@ -135,42 +137,31 @@ export default async function DeployPlansPage({
   );
 }
 
-// SourceTabs swap the `source` query param while preserving every other
-// filter. Server-rendered links — same pattern as the operator log page.
-function SourceTabs({ current, sp }: { current: Source; sp: SearchParams }) {
-  const tabs: { key: Source; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "manual", label: "Manual" },
-    { key: "sports", label: "Sports" },
-    { key: "crypto", label: "Crypto" },
-  ];
-  return (
-    <div className="flex items-center gap-2">
-      {tabs.map((t) => {
-        const params = new URLSearchParams();
-        for (const [k, v] of Object.entries(sp)) {
-          if (k === "source" || v === undefined || v === "") continue;
-          params.set(k, String(v));
-        }
-        if (t.key !== "all") params.set("source", t.key);
-        const qs = params.toString();
-        const active = current === t.key;
-        return (
-          <Link
-            key={t.key}
-            href={`/deploy-plans${qs ? `?${qs}` : ""}`}
-            className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
-              active
-                ? "bg-foreground text-background border-foreground"
-                : "border-border text-foreground-muted hover:text-foreground hover:bg-foreground/[0.04]"
-            }`}
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
+// buildSourceTabs swaps the `source` query param while preserving every other
+// filter on /deploy-plans (status, event_external_id). The tabs render via
+// the shared Tabs primitive.
+function buildSourceTabs(sp: SearchParams): Tab<Source>[] {
+  const keys: Source[] = ["all", "manual", "sports", "crypto"];
+  const labels: Record<Source, string> = {
+    all: "All",
+    manual: "Manual",
+    sports: "Sports",
+    crypto: "Crypto",
+  };
+  return keys.map((key) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (k === "source" || v === undefined || v === "") continue;
+      qs.set(k, String(v));
+    }
+    if (key !== "all") qs.set("source", key);
+    const search = qs.toString();
+    return {
+      key,
+      label: labels[key],
+      href: `/deploy-plans${search ? `?${search}` : ""}`,
+    };
+  });
 }
 
 function PlanGroup({
@@ -190,7 +181,7 @@ function PlanGroup({
         <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">
           {title}
         </h2>
-        <span className="text-[11px] text-foreground-muted">{subtitle}</span>
+        <span className="text-xs text-foreground-muted">{subtitle}</span>
       </header>
       {plans.length === 0 ? (
         <p className="text-sm text-foreground-muted px-1">{emptyMessage}</p>
@@ -224,7 +215,7 @@ function PlanRow({ plan }: { plan: DeployPlan }) {
                 {plan.note ?? `Plan ${plan.external_id.slice(0, 8)}`}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-foreground-muted shrink-0">
+            <div className="flex items-center gap-3 text-xs text-foreground-muted shrink-0">
               <span title={formatDateTimeFull(plan.created_at)}>
                 created {formatRelative(plan.created_at)}
               </span>
@@ -276,15 +267,15 @@ function FilterBar({ source, filters }: { source: Source; filters: SearchParams 
   return (
     <Card>
       <CardBody>
-        <form method="get" className="flex flex-wrap gap-2 items-end">
+        <form method="get" className="flex flex-wrap gap-3 items-end">
           {/* Preserve source across form submits via hidden input. */}
           {source !== "all" && <input type="hidden" name="source" value={source} />}
-          <label className="flex flex-col gap-1 text-xs">
-            status
+          <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
+            Status
             <select
               name="status"
               defaultValue={filters.status ?? ""}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-sm"
+              className="rounded-md border border-border bg-surface px-2 h-9 text-sm font-normal text-foreground"
             >
               {statusOptions.map((s) => (
                 <option key={s} value={s}>
@@ -293,18 +284,18 @@ function FilterBar({ source, filters }: { source: Source; filters: SearchParams 
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs">
-            event_external_id
+          <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
+            Event UUID
             <input
               type="text"
               name="event_external_id"
               defaultValue={filters.event_external_id ?? ""}
-              placeholder="UUID"
-              className="rounded-md border border-border bg-surface px-2 py-1 text-sm font-mono w-72"
+              placeholder="paste event UUID"
+              className="rounded-md border border-border bg-surface px-2 h-9 text-sm font-mono w-72 text-foreground"
             />
           </label>
           <button type="submit" className={buttonVariants.secondary}>
-            Filter
+            Apply filter
           </button>
         </form>
       </CardBody>
