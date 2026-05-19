@@ -313,21 +313,69 @@ export type WorkflowStatus = {
   pending_activity?: PendingActivityInfo;
 };
 
+// DpmMarket mirrors apps/dpm-api/handlers/types.go MarketResponse 1:1. Every
+// field the backend returns has a slot here so the backoffice UI never has
+// to guess what's populated.
 export type DpmMarket = {
   id: number;
   external_id: string;
   created_at: string;
   updated_at: string;
   event_id: number;
+
   question: string;
+  condition_id?: string | null;
   slug?: string | null;
+  resolution_source?: string | null;
   description?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
+
   active: boolean;
   closed: boolean;
-  deployment_status: string;
+  archived?: boolean | null;
+  restricted?: boolean | null;
+
+  start_date?: string | null;
+  end_date?: string | null;
+  seconds_delay?: string | null;
+
+  question_id?: string | null;
+  neg_risk?: boolean | null;
+  neg_risk_market_id?: string | null;
+  neg_risk_request_id?: string | null;
+  neg_risk_other?: boolean | null;
+
+  submitted_by?: string | null;
+  resolved_by?: string | null;
+
+  uma_bond?: string | null;
+  uma_reward?: string | null;
   uma_resolution_status?: string | null;
+
+  paused?: boolean | null;
+  flagged?: boolean | null;
+
+  accepting_orders?: boolean | null;
+  accepting_orders_timestamp?: string | null;
+  public_accepting_orders?: boolean | null;
+  public_accepting_orders_timestamp?: string | null;
+  order_price_min_tick_size?: string | null;
+  order_min_size?: number | null;
+
+  funded?: boolean | null;
+  approved?: boolean | null;
+  activation?: string | null;
+  automatically_active?: boolean | null;
+  clear_book_on_start?: boolean | null;
+
+  deployment_status: string;
+  deploying_timestamp?: string | null;
+  rfq_enabled?: boolean | null;
+
+  // Optional fields the backend may add later (resolution_type isn't exposed
+  // today — we infer from uma_* fields instead).
+  resolution_type?: string | null;
+  market_type?: string | null;
+
   metadata_type?: string | null;
   metadata?: Record<string, unknown> | null;
 };

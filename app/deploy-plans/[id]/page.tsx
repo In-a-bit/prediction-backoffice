@@ -116,7 +116,7 @@ export default async function DeployPlanDetailPage({
           <div title="DeployPlan.event_external_id — the dpm-api Event UUID this plan's markets attach to.">
             <span className="text-foreground-muted">Event UUID: </span>
             <Link
-              href={`/automations/manual/events/${encodeURIComponent(plan.event_external_id)}/markets/new`}
+              href={`/events/${encodeURIComponent(plan.event_external_id)}`}
               className="underline"
             >
               {plan.event_external_id}

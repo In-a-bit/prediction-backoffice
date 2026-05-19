@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import {
@@ -10,6 +11,7 @@ import {
   ErrorMessage,
   buttonVariants,
 } from "@/components/ui";
+import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   DeployPlan,
   DeployPlanMarket,
@@ -218,6 +220,8 @@ export function DeployPlanDriver({
                 <MarketRow
                   key={m.id}
                   market={m}
+                  planExternalId={plan.external_id}
+                  source={inferSourceFromPlan(plan)}
                   isPending={isPending && pendingAction?.pos === m.position}
                   pendingActionType={pendingAction?.type}
                   onRetry={() => fire("retry", m.position)}
@@ -250,6 +254,8 @@ export function DeployPlanDriver({
 
 function MarketRow({
   market,
+  planExternalId,
+  source,
   isPending,
   pendingActionType,
   onRetry,
@@ -258,6 +264,8 @@ function MarketRow({
   onSignalBalance,
 }: {
   market: DeployPlanMarket;
+  planExternalId: string;
+  source: PlanSource;
   isPending: boolean;
   pendingActionType?: Action;
   onRetry: () => void;
@@ -265,6 +273,9 @@ function MarketRow({
   onSkip: () => void;
   onSignalBalance: () => void;
 }) {
+  const marketHref = market.external_id
+    ? `/markets/${encodeURIComponent(market.external_id)}?source=${source}&plan_id=${encodeURIComponent(planExternalId)}&pos=${market.position}`
+    : null;
   return (
     <li className="rounded-lg border border-border bg-foreground/[0.02]">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border gap-2">
@@ -290,6 +301,22 @@ function MarketRow({
           ) : null}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {marketHref ? (
+            <Link
+              href={marketHref}
+              className={buttonVariants.ghost}
+              title="Open the market detail page"
+            >
+              Open →
+            </Link>
+          ) : (
+            <span
+              className="text-[11px] text-foreground-muted italic px-2"
+              title="Will appear once the deploy reaches the running stage"
+            >
+              not deployed yet
+            </span>
+          )}
           {market.status === "failed" ? (
             <>
               <button

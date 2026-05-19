@@ -28,6 +28,8 @@ import type {
 
 const baseUrl = process.env.BACKOFFICE_API_URL ?? "http://localhost:8092";
 const apiKey = process.env.BACKOFFICE_API_KEY ?? "";
+const dpmUrl = process.env.DPM_API_URL ?? "http://localhost:8082";
+const dpmApiKey = process.env.DPM_API_KEY ?? "";
 
 type FetchOpts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -374,4 +376,84 @@ export const crypto = {
       body: audit,
       authed: true,
     }),
+};
+
+// ---------------------------------------------------------------------------
+// dpm-api — direct passthrough for on-chain market lifecycle actions. The Go
+// backoffice doesn't proxy these, so we hit dpm-api straight from the route
+// handlers. Mirrors the contract-tester repo (prediction-onchain-actions).
+// ---------------------------------------------------------------------------
+
+async function dpmRequest<T>(
+  path: string,
+  opts: { method?: "GET" | "POST"; body?: unknown } = {},
+): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  if (dpmApiKey) headers["X-API-Key"] = dpmApiKey;
+  const res = await fetch(`${dpmUrl}${path}`, {
+    method: opts.method ?? "GET",
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new BackofficeApiError(res.status, text);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export type DpmActionResult = { workflow_id?: string; status?: string };
+
+export const dpm = {
+  // --- Resolution actions ---
+  // Submit a UMA price proposal. proposed_price is a wei-encoded integer string;
+  // typical values are "0" (NO), "1000000000000000000" (YES), or
+  // "57896044618658097711785492504343953926634992332820282019728792003956564819968" (UNKNOWN).
+  umaPropose: (market_external_id: string, proposer_address: string, proposed_price: string) =>
+    dpmRequest<DpmActionResult>(`/markets/uma/propose`, {
+      method: "POST",
+      body: { market_id: market_external_id, proposer_address, proposed_price },
+    }),
+  umaResolve: (market_external_id: string) =>
+    dpmRequest<DpmActionResult>(`/markets/uma/resolve`, {
+      method: "POST",
+      body: { market_id: market_external_id },
+    }),
+  umaReset: (market_external_id: string) =>
+    dpmRequest<DpmActionResult>(`/markets/uma/reset`, {
+      method: "POST",
+      body: { market_id: market_external_id },
+    }),
+  umaResolveManually: (market_external_id: string, payouts: string[]) =>
+    dpmRequest<DpmActionResult>(`/markets/uma/resolve-manually`, {
+      method: "POST",
+      body: { market_id: market_external_id, payouts },
+    }),
+  ctfOracleReportPayouts: (market_external_id: string, payouts: string[]) =>
+    dpmRequest<DpmActionResult>(`/markets/ctf-oracle/report-payouts`, {
+      method: "POST",
+      body: { market_id: market_external_id, payouts },
+    }),
+
+  // --- Lifecycle (event & market pause/unpause/activate) ---
+  // Event pause/unpause take the dpm numeric id. Activate is keyed by external_id.
+  pauseEvent: (event_id: number) =>
+    dpmRequest<DpmActionResult>(`/events/${event_id}/pause`, { method: "POST" }),
+  unpauseEvent: (event_id: number) =>
+    dpmRequest<DpmActionResult>(`/events/${event_id}/unpause`, { method: "POST" }),
+  activateEvent: (event_external_id: string) =>
+    dpmRequest<DpmActionResult>(
+      `/events/by-external-id/${encodeURIComponent(event_external_id)}/activate`,
+      { method: "POST" },
+    ),
+  // Market pause/unpause/activate take the dpm numeric id.
+  pauseMarket: (market_id: number) =>
+    dpmRequest<DpmActionResult>(`/markets/${market_id}/pause`, { method: "POST" }),
+  unpauseMarket: (market_id: number) =>
+    dpmRequest<DpmActionResult>(`/markets/${market_id}/unpause`, { method: "POST" }),
+  activateMarket: (market_id: number) =>
+    dpmRequest<DpmActionResult>(`/markets/${market_id}/activate`, { method: "POST" }),
 };
