@@ -10,6 +10,7 @@ import {
   Tabs,
   type Tab,
 } from "@/components/ui";
+import { inlineSportOutcome, inlineCryptoOutcome } from "@/components/event-outcome";
 import { crypto, manual, sports } from "@/lib/api";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
@@ -415,13 +416,16 @@ async function cryptoRows(tasks: Task[], taskId?: number): Promise<Row[]> {
     for (const ev of list) {
       if (!ev.event_external_id) continue;
       const existing = byEvent.get(ev.event_external_id);
+      const outcomeLine = inlineCryptoOutcome(ev);
       const row: Row = {
         eventExternalId: ev.event_external_id,
         title: ev.event_slug || `crypto_event#${ev.id}`,
         source: "crypto",
         marketCount: ev.markets?.length ?? 0,
         flags: {},
-        subtitle: `${ev.slot_start} → ${ev.slot_end}`,
+        subtitle: outcomeLine
+          ? `${outcomeLine} · ${ev.slot_start} → ${ev.slot_end}`
+          : `${ev.slot_start} → ${ev.slot_end}`,
         sortKey: new Date(ev.slot_end ?? ev.created_at).getTime(),
       };
       if (!existing || row.sortKey > existing.sortKey) {
@@ -450,13 +454,16 @@ async function sportRows(tasks: SportTask[], taskId?: number): Promise<Row[]> {
     for (const ev of list) {
       if (!ev.event_external_id) continue;
       const existing = byEvent.get(ev.event_external_id);
+      const outcomeLine = inlineSportOutcome(ev);
       const row: Row = {
         eventExternalId: ev.event_external_id,
         title: ev.event_slug || `sport_event#${ev.id}`,
         source: "sport",
         marketCount: ev.markets?.length ?? 0,
         flags: {},
-        subtitle: `kickoff ${ev.kickoff_at} · ${ev.fixture_status_short}`,
+        subtitle: outcomeLine
+          ? `${outcomeLine} · kickoff ${ev.kickoff_at} · ${ev.fixture_status_short}`
+          : `kickoff ${ev.kickoff_at} · ${ev.fixture_status_short}`,
         sortKey: new Date(ev.kickoff_at).getTime(),
       };
       if (!existing || row.sortKey > existing.sortKey) {
