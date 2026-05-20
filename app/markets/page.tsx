@@ -11,6 +11,8 @@ import {
   type Tab,
 } from "@/components/ui";
 import { crypto, manual, sports } from "@/lib/api";
+import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
+import { derive, type Lifecycle, type Result } from "@/lib/market-lifecycle";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   DeployPlan,
@@ -51,12 +53,13 @@ type Row = {
   question: string;
   source: PlanSource;
   marketExternalId?: string | null;
-  // Status badges, in display order.
-  statuses: { label: string; tone: Tone }[];
+  lifecycle: Lifecycle;
+  result: Result;
   // Deep-link context.
   planExternalId?: string;
   position?: number;
   sportMarketId?: number;
+  cryptoEventId?: number;
   // Sort key (epoch ms).
   sortKey: number;
 };
@@ -106,7 +109,12 @@ export default async function MarketsPage({
   rows.sort((a, b) => b.sortKey - a.sortKey);
 
   const filtered = statusFilter
-    ? rows.filter((r) => r.statuses.some((s) => s.label === statusFilter))
+    ? rows.filter((r) =>
+        r.lifecycle.stages.some(
+          (s) => s.key.toLowerCase() === statusFilter.toLowerCase() && s.status === "active",
+        ) ||
+        r.result.label.toLowerCase() === statusFilter.toLowerCase(),
+      )
     : rows;
 
   return (
@@ -130,7 +138,7 @@ export default async function MarketsPage({
                 type="text"
                 name="status"
                 defaultValue={statusFilter ?? ""}
-                placeholder="e.g. deployed, REGISTERED, PROPOSED"
+                placeholder="e.g. created, proposed, resolved, won, lost"
                 className="rounded-md border border-border bg-surface px-2 h-9 text-sm w-64 font-normal text-foreground"
               />
             </label>
@@ -181,6 +189,8 @@ function RowItem({ row }: { row: Row }) {
   if (row.position !== undefined) params.set("pos", String(row.position));
   if (row.sportMarketId !== undefined)
     params.set("sport_market_id", String(row.sportMarketId));
+  if (row.cryptoEventId !== undefined)
+    params.set("crypto_event_id", String(row.cryptoEventId));
   const href = row.marketExternalId
     ? `/markets/${encodeURIComponent(row.marketExternalId)}?${params.toString()}`
     : null;
@@ -194,12 +204,9 @@ function RowItem({ row }: { row: Row }) {
             <span className="text-foreground-muted italic">(untitled)</span>
           )}
         </span>
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-          {row.statuses.map((s, i) => (
-            <Badge key={i} tone={s.tone}>
-              {s.label}
-            </Badge>
-          ))}
+        <div className="flex items-center gap-2 shrink-0">
+          <LifecycleStepper lifecycle={row.lifecycle} variant="compact" />
+          <ResultChip result={row.result} />
         </div>
         {href ? (
           <Link
@@ -242,11 +249,16 @@ function rowFromManual(
   plan: DeployPlan,
   source: PlanSource,
 ): Row {
+  const { lifecycle, result } = derive({
+    source: "manual",
+    planMarket: m,
+  });
   return {
     question: m.question,
     source,
     marketExternalId: m.external_id,
-    statuses: [{ label: m.status, tone: tonalize(m.status) }],
+    lifecycle,
+    result,
     planExternalId: plan.external_id,
     position: m.position,
     sortKey: new Date(m.updated_at).getTime(),
@@ -284,13 +296,20 @@ async function cryptoRows(): Promise<Row[]> {
 }
 
 function rowFromCrypto(m: CryptoMarket, ev: CryptoEvent): Row {
+  const { lifecycle, result } = derive({
+    source: "crypto",
+    cryptoMarket: m,
+    cryptoEvent: ev,
+  });
   return {
     question: m.market_slug,
     source: "crypto",
     marketExternalId: m.market_external_id,
-    statuses: [{ label: m.local_status, tone: tonalize(m.local_status) }],
+    lifecycle,
+    result,
     planExternalId: m.deploy_plan_external_id,
     position: m.deploy_plan_position,
+    cryptoEventId: ev.id,
     sortKey: new Date(ev.slot_end ?? ev.slot_start ?? m.updated_at).getTime(),
   };
 }
@@ -324,11 +343,17 @@ async function sportRows(): Promise<Row[]> {
 }
 
 function rowFromSport(m: SportMarket, ev: SportEvent): Row {
+  const { lifecycle, result } = derive({
+    source: "sport",
+    sportMarket: m,
+    sportEvent: ev,
+  });
   return {
     question: m.market_slug,
     source: "sport",
     marketExternalId: m.market_external_id,
-    statuses: [{ label: m.local_status, tone: tonalize(m.local_status) }],
+    lifecycle,
+    result,
     planExternalId: m.deploy_plan_external_id,
     position: m.deploy_plan_position,
     sportMarketId: m.id,
@@ -348,14 +373,5 @@ type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
 function sourceTone(s: PlanSource): Tone {
   return s === "sport" ? "info" : s === "crypto" ? "warning" : "neutral";
-}
-
-function tonalize(status: string): Tone {
-  const s = status.toLowerCase();
-  if (s.includes("deployed") || s.includes("registered") || s.includes("resolved") || s.includes("verified") || s.includes("succeed")) return "success";
-  if (s.includes("fail") || s.includes("cancel") || s.includes("refund") || s.includes("dispute")) return "danger";
-  if (s.includes("wait") || s.includes("pending") || s.includes("propos") || s.includes("paused")) return "warning";
-  if (s.includes("running") || s.includes("submit") || s.includes("resolving") || s.includes("created") || s.includes("deploying") || s.includes("initializing")) return "info";
-  return "neutral";
 }
 
