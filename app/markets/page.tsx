@@ -101,7 +101,7 @@ export default async function MarketsPage({
     }
     const key = `${r.source}:${r.marketExternalId}`;
     const existing = seen.get(key);
-    if (!existing || r.sortKey > existing.sortKey) seen.set(key, r);
+    if (!existing || preferRow(r, existing)) seen.set(key, r);
   }
   rows = [...seen.values(), ...unkeyed];
 
@@ -373,5 +373,16 @@ type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
 function sourceTone(s: PlanSource): Tone {
   return s === "sport" ? "info" : s === "crypto" ? "warning" : "neutral";
+}
+
+// When the manual loader and a source-specific loader both produce a row for
+// the same external_id, prefer the row with a real result over the manual
+// fallback (which always reports kind "na"). Within equal-richness rows,
+// fall back to the more recent updated_at.
+function preferRow(candidate: Row, existing: Row): boolean {
+  const candidateRich = candidate.result.kind !== "na";
+  const existingRich = existing.result.kind !== "na";
+  if (candidateRich !== existingRich) return candidateRich;
+  return candidate.sortKey > existing.sortKey;
 }
 
