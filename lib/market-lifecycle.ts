@@ -41,6 +41,8 @@ export type Result = {
   reason?: string;
 };
 
+// dpm-api encodes outcome prices as 18-decimal fixed-point strings:
+// 1e18 = YES (this outcome won), 0 = NO (lost), 0.5e18 = 50/50 (refund).
 const PRICE_YES = "1000000000000000000";
 const PRICE_NO = "0";
 const PRICE_5050 = "500000000000000000";
@@ -249,12 +251,6 @@ export function deriveManualLifecycle(
     proposed = "done";
     resolved = "done";
   }
-  // If created hasn't completed, downstream stages stay pending.
-  if (created !== "done") {
-    proposed = proposed === "pending" ? "pending" : proposed;
-    resolved = resolved === "pending" ? "pending" : resolved;
-  }
-
   return {
     stages: [
       { key: "created",  status: created },
