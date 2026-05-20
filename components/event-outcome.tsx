@@ -65,7 +65,7 @@ export function SportOutcomeBlock({ event }: { event: SportEvent | undefined }) 
         </span>
         <span className="text-2xl font-mono tabular-nums text-foreground">
           {finalKnown ? s.fullHome : "—"}
-          <span className="mx-2 text-foreground-muted">:</span>
+          <span className="mx-2 text-foreground-muted" aria-hidden="true">:</span>
           {finalKnown ? s.fullAway : "—"}
         </span>
         <span className="flex-1 text-left text-sm font-medium truncate">
@@ -129,9 +129,11 @@ export function extractCryptoOutcome(
 export function CryptoOutcomeBlock({ event }: { event: CryptoEvent | undefined }) {
   const o = extractCryptoOutcome(event);
   if (!o) return null;
-  const haveBoth = o.open !== null && o.close !== null;
+  const open = o.open;
+  const close = o.close;
+  const haveBoth = open !== null && close !== null;
   const pct =
-    haveBoth && o.open !== 0 ? ((o.close! - o.open!) / o.open!) * 100 : null;
+    haveBoth && open !== 0 ? ((close - open) / open) * 100 : null;
   const arrowTone =
     o.outcome === "up"
       ? "text-success"
@@ -154,7 +156,7 @@ export function CryptoOutcomeBlock({ event }: { event: CryptoEvent | undefined }
             {formatPrice(o.open)}
           </span>
         </div>
-        <span className="text-foreground-muted">→</span>
+        <span className="text-foreground-muted" aria-hidden="true">→</span>
         <div className="flex flex-col items-start flex-1 min-w-0">
           <span className="text-[10px] uppercase tracking-wider text-foreground-muted">
             Close
@@ -164,7 +166,7 @@ export function CryptoOutcomeBlock({ event }: { event: CryptoEvent | undefined }
           </span>
         </div>
         <span className={`shrink-0 inline-flex items-center gap-1.5 ${arrowTone}`}>
-          <span className="text-lg">{arrowGlyph}</span>
+          <span className="text-lg" aria-hidden="true">{arrowGlyph}</span>
           <span className="text-sm font-semibold">{verdictLabel}</span>
         </span>
       </div>
@@ -218,8 +220,9 @@ function parseDecimal(v: string | undefined | null): number | null {
 
 function formatPrice(n: number | null): string {
   if (n === null) return "—";
+  // Pinned locale prevents SSR/CSR hydration mismatches from differing comma/decimal conventions.
   if (n >= 1000) {
-    return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
   }
   if (n >= 1) {
     return `$${n.toFixed(2)}`;
