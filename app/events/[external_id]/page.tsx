@@ -20,6 +20,8 @@ import type {
   MarketStatusVerdict,
 } from "@/lib/types";
 
+import { derive } from "@/lib/market-lifecycle";
+import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
 import { EventActionsPanel } from "./event-actions-panel";
 import { MarketActionsPanel } from "../../markets/[external_id]/market-actions-panel";
 
@@ -420,21 +422,20 @@ function MarketCard({
                   <span className="text-foreground-muted italic">(untitled)</span>
                 )}
               </h3>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge tone={tonalize(m.status)}>plan: {m.status}</Badge>
-                {verdict?.status ? (
-                  <Badge tone={tonalize(verdict.status)}>verdict: {verdict.status}</Badge>
-                ) : null}
-                {dpm?.deployment_status ? (
-                  <Badge tone={tonalize(dpm.deployment_status)}>
-                    deploy: {dpm.deployment_status}
-                  </Badge>
-                ) : null}
-                {dpm?.uma_resolution_status ? (
-                  <Badge tone={tonalize(dpm.uma_resolution_status)}>
-                    uma: {dpm.uma_resolution_status}
-                  </Badge>
-                ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {(() => {
+                  const derived = derive({
+                    source: "manual",
+                    planMarket: m,
+                    verdict: verdict ?? undefined,
+                  });
+                  return (
+                    <>
+                      <LifecycleStepper lifecycle={derived.lifecycle} variant="compact" />
+                      <ResultChip result={derived.result} />
+                    </>
+                  );
+                })()}
                 {m.parent_market_id ? (
                   <Badge tone="neutral">recreated</Badge>
                 ) : null}
