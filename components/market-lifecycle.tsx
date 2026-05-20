@@ -32,6 +32,16 @@ const LINE_TONE: Record<LifecycleStageStatus, string> = {
   skipped:  "bg-warning/40",
 };
 
+const RESULT_STYLE: Record<
+  Exclude<Result["kind"], "na">,
+  { glyph: string; classes: string }
+> = {
+  won:     { glyph: "✓", classes: "bg-success/15 text-success border-success/40" },
+  lost:    { glyph: "✗", classes: "bg-danger/15 text-danger border-danger/40" },
+  refund:  { glyph: "↺", classes: "bg-warning/15 text-warning border-warning/40" },
+  pending: { glyph: "—", classes: "bg-foreground/5 text-foreground-muted border-foreground/15" },
+};
+
 export function LifecycleStepper({
   lifecycle,
   variant = "full",
@@ -43,7 +53,7 @@ export function LifecycleStepper({
   if (variant === "compact") {
     return (
       <div
-        className="inline-flex items-center gap-0"
+        className="inline-flex items-center"
         role="img"
         aria-label={a11yLabel(stages)}
       >
@@ -59,7 +69,7 @@ export function LifecycleStepper({
     );
   }
   return (
-    <div className="flex items-start gap-0 w-full" aria-label={a11yLabel(stages)}>
+    <div className="flex items-start w-full" role="img" aria-label={a11yLabel(stages)}>
       {stages.map((s, i) => (
         <div key={s.key} className="flex items-start flex-1 last:flex-initial">
           <div className="flex flex-col items-center gap-1.5 shrink-0">
@@ -76,6 +86,7 @@ export function LifecycleStepper({
             </div>
           </div>
           {i < stages.length - 1 ? (
+            // mt-[7px] centers the 2px line against the 14px (h-3.5) dot above it
             <span
               className={`mt-[7px] h-0.5 flex-1 mx-2 ${LINE_TONE[s.status]}`}
             />
@@ -95,32 +106,7 @@ export function ResultChip({
 }) {
   if (result.kind === "na") return null;
 
-  const map: Record<
-    Exclude<Result["kind"], "na">,
-    { glyph: string; classes: string }
-  > = {
-    won: {
-      glyph: "✓",
-      classes:
-        "bg-success/15 text-success border-success/40",
-    },
-    lost: {
-      glyph: "✗",
-      classes:
-        "bg-danger/15 text-danger border-danger/40",
-    },
-    refund: {
-      glyph: "↺",
-      classes:
-        "bg-warning/15 text-warning border-warning/40",
-    },
-    pending: {
-      glyph: "—",
-      classes:
-        "bg-foreground/5 text-foreground-muted border-foreground/15",
-    },
-  };
-  const m = map[result.kind];
+  const m = RESULT_STYLE[result.kind];
   return (
     <span className="inline-flex items-center gap-1">
       <span
