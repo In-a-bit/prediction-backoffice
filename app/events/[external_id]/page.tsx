@@ -61,18 +61,17 @@ export default async function EventDetailPage({
     plans.length > 0 ? inferSourceFromPlan(plans[0]!) : "manual";
   const rows = collectMarketRows(plans);
 
-  let parentSportEvent: SportEvent | undefined;
-  let parentCryptoEvent: CryptoEvent | undefined;
-  if (source === "sport") {
-    parentSportEvent = await findParentSportEvent(external_id);
-  } else if (source === "crypto") {
-    parentCryptoEvent = await findParentCryptoEvent(external_id);
-  }
-
-  // Hydrate dpm-api state for every market that already exists on-chain.
-  // We fetch in parallel; per-row failures are silently swallowed so the page
-  // still renders with whatever data we have.
-  const verdicts = await hydrateVerdicts(rows);
+  // Fan out the verdict hydration alongside the parent-event scan — they share
+  // no inputs and both can take measurable time on busy events.
+  const [parentSportEvent, parentCryptoEvent, verdicts] = await Promise.all([
+    source === "sport"
+      ? findParentSportEvent(external_id)
+      : Promise.resolve(undefined),
+    source === "crypto"
+      ? findParentCryptoEvent(external_id)
+      : Promise.resolve(undefined),
+    hydrateVerdicts(rows),
+  ]);
 
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
@@ -598,6 +597,9 @@ function planTone(status: DeployPlan["status"]): Tone {
   }
 }
 
+// Cap the per-source task scan so an org with hundreds of crypto/sport tasks
+// doesn't pay an unbounded cost on each event page load. 10 covers every
+// realistic deployment we've seen; tune down if the page feels slow.
 const TASK_SCAN_LIMIT = 10;
 
 async function findParentSportEvent(
