@@ -66,49 +66,54 @@ export default async function MarketDetailPage({
   let verdict: MarketStatusVerdict | null = null;
   let plan: DeployPlan | null = null;
   let planMarket: DeployPlanMarket | undefined;
-  let fetchError: string | null = null;
-
   let sportEvent: SportEvent | undefined;
   let sportMarket: SportMarket | undefined;
   let cryptoEvent: CryptoEvent | undefined;
-  let cryptoMarketRecord: CryptoMarket | undefined;
+  let cryptoMarketRecord: import("@/lib/types").CryptoMarket | undefined;
+  let fetchError: string | null = null;
 
-  try {
-    verdict = await manual.getMarketStatus(external_id);
-  } catch (err) {
-    fetchError = err instanceof Error ? err.message : String(err);
+  // Fan out every independent fetch we know we need. Each catch-block keeps
+  // the others alive; per-source rendering degrades gracefully.
+  const wantPlan = Boolean(planId && pos !== undefined && Number.isFinite(pos));
+  const wantSport = sourceHint === "sport" && sportMarketId !== undefined;
+  const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
+
+  const [verdictRes, planRes, sportStatusRes, cryptoEventRes] = await Promise.all([
+    manual.getMarketStatus(external_id).catch((err) => {
+      fetchError = err instanceof Error ? err.message : String(err);
+      return null;
+    }),
+    wantPlan
+      ? manual.getDeployPlan(planId as string).catch(() => null)
+      : Promise.resolve(null),
+    wantSport
+      ? sports.getMarketStatus(sportMarketId as number).catch(() => null)
+      : Promise.resolve(null),
+    wantCrypto
+      ? cryptoApi.getCryptoEvent(cryptoEventId as number).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  verdict = verdictRes;
+  if (planRes) {
+    plan = planRes;
+    planMarket = planRes.markets.find((m) => m.position === pos);
   }
-
-  if (planId && pos !== undefined && Number.isFinite(pos)) {
-    try {
-      plan = await manual.getDeployPlan(planId);
-      planMarket = plan.markets.find((m) => m.position === pos);
-    } catch {
-      // Soft-fail.
-    }
+  if (cryptoEventRes) {
+    cryptoEvent = cryptoEventRes;
+    cryptoMarketRecord = cryptoEventRes.markets?.find(
+      (m) => m.market_external_id === external_id,
+    );
   }
-
-  if (sourceHint === "sport" && sportMarketId !== undefined) {
-    try {
-      const statusRaw = await sports.getMarketStatus(sportMarketId);
-      const eventId = extractParentEventId(statusRaw);
-      if (eventId !== undefined) {
+  if (sportStatusRes) {
+    const eventId = extractParentEventId(sportStatusRes);
+    if (eventId !== undefined) {
+      try {
         sportEvent = await sports.getEvent(eventId);
         sportMarket = sportEvent.markets?.find((m) => m.id === sportMarketId);
+      } catch {
+        // Soft-fail.
       }
-    } catch {
-      // Soft-fail.
-    }
-  }
-
-  if (sourceHint === "crypto" && cryptoEventId !== undefined) {
-    try {
-      cryptoEvent = await cryptoApi.getCryptoEvent(cryptoEventId);
-      cryptoMarketRecord = cryptoEvent.markets?.find(
-        (m) => m.market_external_id === external_id,
-      );
-    } catch {
-      // Soft-fail.
     }
   }
 
