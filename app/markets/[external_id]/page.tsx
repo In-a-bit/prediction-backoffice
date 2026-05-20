@@ -9,14 +9,20 @@ import {
   InfoMessage,
   PageHeader,
 } from "@/components/ui";
-import { manual, sports } from "@/lib/api";
+import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcome";
+import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
+import { manual, sports, crypto as cryptoApi } from "@/lib/api";
 import { formatDateTimeFull } from "@/lib/format";
+import { derive } from "@/lib/market-lifecycle";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
+  CryptoEvent,
+  CryptoMarket,
   DeployPlan,
   DeployPlanMarket,
   MarketStatusVerdict,
-  SportMarketStatus,
+  SportEvent,
+  SportMarket,
 } from "@/lib/types";
 
 import { MarketActionsPanel } from "./market-actions-panel";
@@ -28,6 +34,7 @@ type SearchParams = {
   plan_id?: string;
   pos?: string;
   sport_market_id?: string;
+  crypto_event_id?: string;
 };
 
 function parseSource(value: string | undefined): PlanSource | undefined {
@@ -51,12 +58,20 @@ export default async function MarketDetailPage({
     sp.sport_market_id !== undefined
       ? Number.parseInt(sp.sport_market_id, 10)
       : undefined;
+  const cryptoEventId =
+    sp.crypto_event_id !== undefined
+      ? Number.parseInt(sp.crypto_event_id, 10)
+      : undefined;
 
   let verdict: MarketStatusVerdict | null = null;
   let plan: DeployPlan | null = null;
   let planMarket: DeployPlanMarket | undefined;
-  let sportLocalStatus: SportMarketStatus | undefined;
   let fetchError: string | null = null;
+
+  let sportEvent: SportEvent | undefined;
+  let sportMarket: SportMarket | undefined;
+  let cryptoEvent: CryptoEvent | undefined;
+  let cryptoMarketRecord: CryptoMarket | undefined;
 
   try {
     verdict = await manual.getMarketStatus(external_id);
@@ -75,8 +90,23 @@ export default async function MarketDetailPage({
 
   if (sourceHint === "sport" && sportMarketId !== undefined) {
     try {
-      const raw = await sports.getMarketStatus(sportMarketId);
-      sportLocalStatus = extractSportLocalStatus(raw);
+      const statusRaw = await sports.getMarketStatus(sportMarketId);
+      const eventId = extractParentEventId(statusRaw);
+      if (eventId !== undefined) {
+        sportEvent = await sports.getEvent(eventId);
+        sportMarket = sportEvent.markets?.find((m) => m.id === sportMarketId);
+      }
+    } catch {
+      // Soft-fail.
+    }
+  }
+
+  if (sourceHint === "crypto" && cryptoEventId !== undefined) {
+    try {
+      cryptoEvent = await cryptoApi.getCryptoEvent(cryptoEventId);
+      cryptoMarketRecord = cryptoEvent.markets?.find(
+        (m) => m.market_external_id === external_id,
+      );
     } catch {
       // Soft-fail.
     }
@@ -98,11 +128,14 @@ export default async function MarketDetailPage({
 
       {fetchError ? <ErrorMessage>{fetchError}</ErrorMessage> : null}
 
-      <StatusStrip
+      <LifecycleHeader
         source={source}
         verdict={verdict}
-        sportLocalStatus={sportLocalStatus}
-        planMarketStatus={planMarket?.status}
+        planMarket={planMarket}
+        sportMarket={sportMarket}
+        sportEvent={sportEvent}
+        cryptoMarket={cryptoMarketRecord}
+        cryptoEvent={cryptoEvent}
       />
 
       {/* Two-column layout on wide screens: info on the left, actions on the right. */}
@@ -200,7 +233,7 @@ export default async function MarketDetailPage({
                   planMarket={planMarket}
                   planExternalId={plan?.external_id}
                   sportMarketId={sportMarketId}
-                  sportLocalStatus={sportLocalStatus}
+                  sportLocalStatus={sportMarket?.local_status}
                   marketExternalId={external_id}
                 />
               )}
@@ -258,64 +291,59 @@ function Breadcrumbs({
   );
 }
 
-function StatusStrip({
+function LifecycleHeader({
   source,
   verdict,
-  sportLocalStatus,
-  planMarketStatus,
+  planMarket,
+  sportMarket,
+  sportEvent,
+  cryptoMarket,
+  cryptoEvent,
 }: {
   source: PlanSource;
   verdict: MarketStatusVerdict | null;
-  sportLocalStatus?: SportMarketStatus;
-  planMarketStatus?: string;
+  planMarket?: DeployPlanMarket;
+  sportMarket?: SportMarket;
+  sportEvent?: SportEvent;
+  cryptoMarket?: CryptoMarket;
+  cryptoEvent?: CryptoEvent;
 }) {
-  const items: { label: string; value: string; tone: Tone }[] = [];
-  items.push({ label: "source", value: source, tone: sourceTone(source) });
-  if (planMarketStatus) {
-    items.push({ label: "plan", value: planMarketStatus, tone: tonalize(planMarketStatus) });
-  }
-  if (verdict?.status) {
-    items.push({ label: "verdict", value: verdict.status, tone: tonalize(verdict.status) });
-  }
-  if (verdict?.market?.deployment_status) {
-    items.push({
-      label: "deploy",
-      value: verdict.market.deployment_status,
-      tone: tonalize(verdict.market.deployment_status),
-    });
-  }
-  if (verdict?.market?.uma_resolution_status) {
-    items.push({
-      label: "uma",
-      value: verdict.market.uma_resolution_status,
-      tone: tonalize(verdict.market.uma_resolution_status),
-    });
-  }
-  if (verdict?.market?.resolution_type ?? verdict?.market?.market_type) {
-    items.push({
-      label: "type",
-      value: verdict.market.resolution_type ?? verdict.market.market_type ?? "—",
-      tone: "neutral",
-    });
-  }
-  if (sportLocalStatus) {
-    items.push({ label: "sport", value: sportLocalStatus, tone: tonalize(sportLocalStatus) });
-  }
+  const derived =
+    source === "sport" && sportMarket
+      ? derive({ source: "sport", sportMarket, sportEvent })
+      : source === "crypto" && cryptoMarket
+        ? derive({ source: "crypto", cryptoMarket, cryptoEvent })
+        : derive({
+            source: "manual",
+            planMarket,
+            verdict: verdict ?? undefined,
+          });
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-      {items.map((it) => (
-        <div
-          key={it.label}
-          className="rounded-lg border border-border bg-surface px-3 py-2"
-        >
-          <div className="text-[10px] uppercase tracking-wider text-foreground-muted">
-            {it.label}
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-surface px-5 py-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-foreground-muted">
+              Source
+            </span>
+            <Badge tone={source === "sport" ? "info" : source === "crypto" ? "warning" : "neutral"}>
+              {source}
+            </Badge>
           </div>
-          <div className="mt-1">
-            <Badge tone={it.tone}>{it.value}</Badge>
-          </div>
+          <ResultChip result={derived.result} showReason />
         </div>
-      ))}
+        <div className="mt-4">
+          <LifecycleStepper lifecycle={derived.lifecycle} variant="full" />
+        </div>
+      </div>
+
+      {source === "sport" && sportEvent ? (
+        <SportOutcomeBlock event={sportEvent} />
+      ) : null}
+      {source === "crypto" && cryptoEvent ? (
+        <CryptoOutcomeBlock event={cryptoEvent} />
+      ) : null}
     </div>
   );
 }
@@ -529,41 +557,13 @@ function KV({ k, v, tone }: { k: string; v: string; tone?: "danger" | "muted" })
   );
 }
 
-type Tone = "neutral" | "success" | "warning" | "danger" | "info";
-
-function sourceTone(s: PlanSource): Tone {
-  return s === "sport" ? "info" : s === "crypto" ? "warning" : "neutral";
-}
-
-function tonalize(status: string): Tone {
-  const s = status.toLowerCase();
-  if (s.includes("deployed") || s.includes("resolved") || s.includes("verified") || s.includes("succeed")) return "success";
-  if (s.includes("fail") || s.includes("cancel") || s.includes("refund") || s.includes("dispute")) return "danger";
-  if (s.includes("wait") || s.includes("pending") || s.includes("propos") || s.includes("paused")) return "warning";
-  if (s.includes("running") || s.includes("submit") || s.includes("resolving") || s.includes("created") || s.includes("deploying")) return "info";
-  return "neutral";
-}
-
-function extractSportLocalStatus(
-  raw: Record<string, unknown> | null,
-): SportMarketStatus | undefined {
+function extractParentEventId(raw: Record<string, unknown> | null): number | undefined {
   if (!raw) return undefined;
-  const candidate =
-    (raw as { local_status?: unknown }).local_status ??
-    (raw as { market?: { local_status?: unknown } }).market?.local_status;
-  if (typeof candidate !== "string") return undefined;
-  const valid: SportMarketStatus[] = [
-    "pending",
-    "created",
-    "proposing",
-    "proposed",
-    "resolving",
-    "resolved",
-    "refunded",
-    "cancelled",
-    "failed",
-  ];
-  return (valid as string[]).includes(candidate)
-    ? (candidate as SportMarketStatus)
-    : undefined;
+  // Accept either {sport_event_id:...} or {market:{sport_event_id:...}}
+  const direct = (raw as { sport_event_id?: unknown }).sport_event_id;
+  if (typeof direct === "number" && Number.isFinite(direct)) return direct;
+  const nested = (raw as { market?: { sport_event_id?: unknown } }).market
+    ?.sport_event_id;
+  if (typeof nested === "number" && Number.isFinite(nested)) return nested;
+  return undefined;
 }
