@@ -10,14 +10,17 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { manual } from "@/lib/api";
+import { manual, sports, crypto as cryptoApi } from "@/lib/api";
+import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcome";
 import { formatDateTimeFull, formatRelative } from "@/lib/format";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
+  CryptoEvent,
   DeployPlan,
   DeployPlanMarket,
   EventResponse,
   MarketStatusVerdict,
+  SportEvent,
 } from "@/lib/types";
 
 import { derive } from "@/lib/market-lifecycle";
@@ -58,6 +61,14 @@ export default async function EventDetailPage({
     plans.length > 0 ? inferSourceFromPlan(plans[0]!) : "manual";
   const rows = collectMarketRows(plans);
 
+  let parentSportEvent: SportEvent | undefined;
+  let parentCryptoEvent: CryptoEvent | undefined;
+  if (source === "sport") {
+    parentSportEvent = await findParentSportEvent(external_id);
+  } else if (source === "crypto") {
+    parentCryptoEvent = await findParentCryptoEvent(external_id);
+  }
+
   // Hydrate dpm-api state for every market that already exists on-chain.
   // We fetch in parallel; per-row failures are silently swallowed so the page
   // still renders with whatever data we have.
@@ -91,6 +102,9 @@ export default async function EventDetailPage({
       {fetchError ? <ErrorMessage>{fetchError}</ErrorMessage> : null}
 
       {event ? <EventStatusStrip event={event} source={source} marketCount={rows.length} verdicts={verdicts} /> : null}
+
+      {parentSportEvent ? <SportOutcomeBlock event={parentSportEvent} /> : null}
+      {parentCryptoEvent ? <CryptoOutcomeBlock event={parentCryptoEvent} /> : null}
 
       {event ? (
         <Card>
@@ -582,6 +596,62 @@ function planTone(status: DeployPlan["status"]): Tone {
     default:
       return "neutral";
   }
+}
+
+const TASK_SCAN_LIMIT = 10;
+
+async function findParentSportEvent(
+  externalId: string,
+): Promise<SportEvent | undefined> {
+  let tasks;
+  try {
+    tasks = await sports.listTasks();
+  } catch {
+    return undefined;
+  }
+  for (const t of tasks.slice(0, TASK_SCAN_LIMIT)) {
+    try {
+      const events = await sports.listEvents(t.id);
+      const found = events.find((ev) => ev.event_external_id === externalId);
+      if (found) {
+        try {
+          return await sports.getEvent(found.id);
+        } catch {
+          return found;
+        }
+      }
+    } catch {
+      // skip task
+    }
+  }
+  return undefined;
+}
+
+async function findParentCryptoEvent(
+  externalId: string,
+): Promise<CryptoEvent | undefined> {
+  let tasks;
+  try {
+    tasks = await cryptoApi.listTasks();
+  } catch {
+    return undefined;
+  }
+  for (const t of tasks.slice(0, TASK_SCAN_LIMIT)) {
+    try {
+      const events = await cryptoApi.listCryptoEvents(t.id);
+      const found = events.find((ev) => ev.event_external_id === externalId);
+      if (found) {
+        try {
+          return await cryptoApi.getCryptoEvent(found.id);
+        } catch {
+          return found;
+        }
+      }
+    } catch {
+      // skip task
+    }
+  }
+  return undefined;
 }
 
 function tonalize(status: string): Tone {
