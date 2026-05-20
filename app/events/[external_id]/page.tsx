@@ -145,6 +145,7 @@ export default async function EventDetailPage({
                 row={row}
                 source={source}
                 verdict={row.market.external_id ? verdicts.get(row.market.external_id) : undefined}
+                cryptoEventId={parentCryptoEvent?.id}
               />
             ))}
           </ul>
@@ -410,15 +411,23 @@ function MarketCard({
   row,
   source,
   verdict,
+  cryptoEventId,
 }: {
   row: MarketRow;
   source: PlanSource;
   verdict?: MarketStatusVerdict;
+  cryptoEventId?: number;
 }) {
   const m = row.market;
   const dpm = verdict?.market;
+  const params = new URLSearchParams({
+    source,
+    plan_id: row.planExternalId,
+    pos: String(row.position),
+  });
+  if (cryptoEventId !== undefined) params.set("crypto_event_id", String(cryptoEventId));
   const href = m.external_id
-    ? `/markets/${encodeURIComponent(m.external_id)}?source=${source}&plan_id=${encodeURIComponent(row.planExternalId)}&pos=${row.position}`
+    ? `/markets/${encodeURIComponent(m.external_id)}?${params.toString()}`
     : null;
 
   return (
