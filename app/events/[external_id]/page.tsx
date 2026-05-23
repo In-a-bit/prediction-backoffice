@@ -12,6 +12,7 @@ import {
 } from "@/components/ui";
 import { manual, sports, crypto as cryptoApi } from "@/lib/api";
 import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcome";
+import { MarketOutcomeInline } from "@/components/market-outcome";
 import { formatDateTimeFull, formatRelative } from "@/lib/format";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
@@ -19,6 +20,7 @@ import type {
   DeployPlan,
   DeployPlanMarket,
   EventResponse,
+  MarketOutcome,
   MarketStatusVerdict,
   SportEvent,
 } from "@/lib/types";
@@ -63,15 +65,17 @@ export default async function EventDetailPage({
 
   // Fan out the verdict hydration alongside the parent-event scan — they share
   // no inputs and both can take measurable time on busy events.
-  const [parentSportEvent, parentCryptoEvent, verdicts] = await Promise.all([
-    source === "sport"
-      ? findParentSportEvent(external_id)
-      : Promise.resolve(undefined),
-    source === "crypto"
-      ? findParentCryptoEvent(external_id)
-      : Promise.resolve(undefined),
-    hydrateVerdicts(rows),
-  ]);
+  const [parentSportEvent, parentCryptoEvent, verdicts, outcomes] =
+    await Promise.all([
+      source === "sport"
+        ? findParentSportEvent(external_id)
+        : Promise.resolve(undefined),
+      source === "crypto"
+        ? findParentCryptoEvent(external_id)
+        : Promise.resolve(undefined),
+      hydrateVerdicts(rows),
+      hydrateOutcomes(rows),
+    ]);
 
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
@@ -145,6 +149,7 @@ export default async function EventDetailPage({
                 row={row}
                 source={source}
                 verdict={row.market.external_id ? verdicts.get(row.market.external_id) : undefined}
+                outcome={row.market.external_id ? outcomes.get(row.market.external_id) : undefined}
                 cryptoEventId={parentCryptoEvent?.id}
               />
             ))}
@@ -238,6 +243,28 @@ async function hydrateVerdicts(
     }),
   );
   const out = new Map<string, MarketStatusVerdict>();
+  for (const r of results) if (r) out.set(r[0], r[1]);
+  return out;
+}
+
+async function hydrateOutcomes(
+  rows: MarketRow[],
+): Promise<Map<string, MarketOutcome>> {
+  const ids = rows
+    .map((r) => r.market.external_id)
+    .filter((x): x is string => !!x)
+    .slice(0, MAX_MARKET_STATUS_FETCHES);
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const o = await manual.getMarketOutcome(id);
+        return [id, o] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const out = new Map<string, MarketOutcome>();
   for (const r of results) if (r) out.set(r[0], r[1]);
   return out;
 }
@@ -411,11 +438,13 @@ function MarketCard({
   row,
   source,
   verdict,
+  outcome,
   cryptoEventId,
 }: {
   row: MarketRow;
   source: PlanSource;
   verdict?: MarketStatusVerdict;
+  outcome?: MarketOutcome;
   cryptoEventId?: number;
 }) {
   const m = row.market;
@@ -462,6 +491,7 @@ function MarketCard({
                   <Badge tone="neutral">recreated</Badge>
                 ) : null}
               </div>
+              <MarketOutcomeInline outcome={outcome ?? null} />
             </div>
           </div>
           {href ? (

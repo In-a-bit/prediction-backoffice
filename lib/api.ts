@@ -14,6 +14,7 @@ import type {
   ManualAudit,
   MarketAccepted,
   MarketPayload,
+  MarketOutcome,
   MarketStatusVerdict,
   OperatorLogEntry,
   OperatorLogFilters,
@@ -132,6 +133,12 @@ export const manual = {
   getMarketStatus: (externalId: string) =>
     request<MarketStatusVerdict>(
       `/manual/markets/${encodeURIComponent(externalId)}/status`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/outcome — returns the
+  // proposed answer (UMA only) and per-token resolution winners.
+  getMarketOutcome: (externalId: string) =>
+    request<MarketOutcome>(
+      `/manual/markets/${encodeURIComponent(externalId)}/outcome`,
     ),
   signalMarketBalance: (workflowId: string) =>
     request<{ status: string; workflow_id: string }>(

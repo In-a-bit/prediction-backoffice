@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcome";
 import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
+import { MarketOutcomeCard } from "@/components/market-outcome";
 import { manual, sports, crypto as cryptoApi } from "@/lib/api";
 import { formatDateTimeFull } from "@/lib/format";
 import { derive } from "@/lib/market-lifecycle";
@@ -20,6 +21,7 @@ import type {
   CryptoMarket,
   DeployPlan,
   DeployPlanMarket,
+  MarketOutcome,
   MarketStatusVerdict,
   SportEvent,
   SportMarket,
@@ -69,7 +71,8 @@ export default async function MarketDetailPage({
   let sportEvent: SportEvent | undefined;
   let sportMarket: SportMarket | undefined;
   let cryptoEvent: CryptoEvent | undefined;
-  let cryptoMarketRecord: import("@/lib/types").CryptoMarket | undefined;
+  let cryptoMarketRecord: CryptoMarket | undefined;
+  let marketOutcome: MarketOutcome | null = null;
   let fetchError: string | null = null;
 
   // Fan out every independent fetch we know we need. Each catch-block keeps
@@ -78,23 +81,26 @@ export default async function MarketDetailPage({
   const wantSport = sourceHint === "sport" && sportMarketId !== undefined;
   const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
 
-  const [verdictRes, planRes, sportStatusRes, cryptoEventRes] = await Promise.all([
-    manual.getMarketStatus(external_id).catch((err) => {
-      fetchError = err instanceof Error ? err.message : String(err);
-      return null;
-    }),
-    wantPlan
-      ? manual.getDeployPlan(planId as string).catch(() => null)
-      : Promise.resolve(null),
-    wantSport
-      ? sports.getMarketStatus(sportMarketId as number).catch(() => null)
-      : Promise.resolve(null),
-    wantCrypto
-      ? cryptoApi.getCryptoEvent(cryptoEventId as number).catch(() => null)
-      : Promise.resolve(null),
-  ]);
+  const [verdictRes, planRes, sportStatusRes, cryptoEventRes, outcomeRes] =
+    await Promise.all([
+      manual.getMarketStatus(external_id).catch((err) => {
+        fetchError = err instanceof Error ? err.message : String(err);
+        return null;
+      }),
+      wantPlan
+        ? manual.getDeployPlan(planId as string).catch(() => null)
+        : Promise.resolve(null),
+      wantSport
+        ? sports.getMarketStatus(sportMarketId as number).catch(() => null)
+        : Promise.resolve(null),
+      wantCrypto
+        ? cryptoApi.getCryptoEvent(cryptoEventId as number).catch(() => null)
+        : Promise.resolve(null),
+      manual.getMarketOutcome(external_id).catch(() => null),
+    ]);
 
   verdict = verdictRes;
+  marketOutcome = outcomeRes;
   if (planRes) {
     plan = planRes;
     planMarket = planRes.markets.find((m) => m.position === pos);
@@ -161,6 +167,8 @@ export default async function MarketDetailPage({
               />
             </CardBody>
           </Card>
+
+          <MarketOutcomeCard outcome={marketOutcome} />
 
           {verdict?.workflow_id || verdict?.workflow ? (
             <Card>

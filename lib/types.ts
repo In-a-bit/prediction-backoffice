@@ -391,6 +391,32 @@ export type MarketStatusVerdict = {
   can_recreate: boolean;
 };
 
+// MarketOutcomeResponse mirrors dpm-api's GET /markets/by-external-id/:id/outcome.
+// `proposed` is null for CTF_Oracle markets (no propose step) and for UMA
+// markets where no PROPOSE uma_request has been recorded yet. `tokens` is
+// empty until the oracle reports a winner — each entry carries the outcome
+// label (YES/NO/UP/DOWN/etc) and a tristate `winner` (null = unresolved).
+export type ProposedAnswer = {
+  // Raw 18-decimal fixed-point string, e.g. "1000000000000000000".
+  proposed_price: string;
+  // Server-derived label. The UI maps this to the correct outcome label.
+  // "first_outcome_yes" | "second_outcome_yes" | "fifty_fifty" | "unknown".
+  label: "first_outcome_yes" | "second_outcome_yes" | "fifty_fifty" | "unknown";
+};
+
+export type TokenOutcome = {
+  outcome: string;
+  winner: boolean | null;
+};
+
+export type MarketOutcome = {
+  external_id: string;
+  resolution_type: "UMA" | "CTF_ORACLE" | string;
+  uma_resolution_status?: string | null;
+  proposed?: ProposedAnswer | null;
+  tokens: TokenOutcome[];
+};
+
 export type OperatorLogEntry = {
   id: number;
   external_id: string;

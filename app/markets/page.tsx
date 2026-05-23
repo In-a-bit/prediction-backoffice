@@ -12,16 +12,23 @@ import {
 } from "@/components/ui";
 import { crypto, manual, sports } from "@/lib/api";
 import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
+import { MarketOutcomeInline } from "@/components/market-outcome";
 import { derive, type Lifecycle, type Result } from "@/lib/market-lifecycle";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   DeployPlan,
   DeployPlanMarket,
+  MarketOutcome,
   SportEvent,
   SportMarket,
   CryptoEvent,
   CryptoMarket,
 } from "@/lib/types";
+
+// Cap parallel outcome hydrations for the visible rows so a busy /markets
+// page doesn't kick off hundreds of dpm-api calls. Same shape as the cap on
+// /events/[external_id]'s verdict hydration.
+const MAX_OUTCOME_FETCHES = 50;
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +124,26 @@ export default async function MarketsPage({
       )
     : rows;
 
+  // Hydrate outcomes for the first N visible rows in parallel. Rows past the
+  // cap render without the inline outcome — that's a deliberate trade-off
+  // against firing hundreds of calls when an operator opens "All".
+  const outcomeIds = filtered
+    .map((r) => r.marketExternalId)
+    .filter((x): x is string => !!x)
+    .slice(0, MAX_OUTCOME_FETCHES);
+  const outcomeEntries = await Promise.all(
+    outcomeIds.map(async (id) => {
+      try {
+        const o = await manual.getMarketOutcome(id);
+        return [id, o] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const outcomes = new Map<string, MarketOutcome>();
+  for (const e of outcomeEntries) if (e) outcomes.set(e[0], e[1]);
+
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
       <PageHeader
@@ -165,7 +192,11 @@ export default async function MarketsPage({
       ) : (
         <ul className="space-y-2">
           {filtered.map((r, i) => (
-            <RowItem key={`${r.source}-${r.marketExternalId ?? i}`} row={r} />
+            <RowItem
+              key={`${r.source}-${r.marketExternalId ?? i}`}
+              row={r}
+              outcome={r.marketExternalId ? outcomes.get(r.marketExternalId) : undefined}
+            />
           ))}
         </ul>
       )}
@@ -182,7 +213,7 @@ function buildSourceTabs(): Tab<Filter>[] {
   ];
 }
 
-function RowItem({ row }: { row: Row }) {
+function RowItem({ row, outcome }: { row: Row; outcome?: MarketOutcome }) {
   const params = new URLSearchParams();
   params.set("source", row.source);
   if (row.planExternalId) params.set("plan_id", row.planExternalId);
@@ -199,11 +230,14 @@ function RowItem({ row }: { row: Row }) {
     <li>
       <div className="rounded-lg border border-border bg-surface px-4 py-3 flex items-center gap-3 flex-wrap hover:border-foreground/30 transition-colors">
         <Badge tone={sourceTone(row.source)}>{row.source}</Badge>
-        <span className="text-sm font-medium truncate flex-1 min-w-0">
-          {row.question || (
-            <span className="text-foreground-muted italic">(untitled)</span>
-          )}
-        </span>
+        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+          <span className="text-sm font-medium truncate">
+            {row.question || (
+              <span className="text-foreground-muted italic">(untitled)</span>
+            )}
+          </span>
+          <MarketOutcomeInline outcome={outcome ?? null} />
+        </div>
         <div className="flex items-center gap-2 shrink-0">
           <LifecycleStepper lifecycle={row.lifecycle} variant="compact" />
           <ResultChip result={row.result} />
