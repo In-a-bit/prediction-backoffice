@@ -38,30 +38,13 @@ const MARKET_TYPES = [
   },
 ] as const;
 
-// api-football's season convention is the season's *start year*:
-//   2025/26 → season=2025
-//   2026/27 → season=2026
-// European football seasons start in August, so before August we're still
-// inside last-year's season and should default to currentYear-1.
-function defaultFootballSeason(now: Date = new Date()): number {
-  const y = now.getUTCFullYear();
-  // months are 0-indexed; August = 7
-  return now.getUTCMonth() >= 7 ? y : y - 1;
-}
-
 const currentYear = new Date().getUTCFullYear();
-const defaultSeason = defaultFootballSeason();
-
-// formatSeason renders an integer "start year" as the operator-facing
-// "YYYY/YYYY+1" label. The wire format stays integer (api-football's
-// convention); only the UI swaps in the prettier form.
-function formatSeason(startYear: number): string {
-  return `${startYear}/${startYear + 1}`;
-}
+// api-football uses a single calendar year as the season identifier.
+// Default to the current calendar year.
+const defaultSeason = currentYear;
 
 // availableSeasons returns a sensible list of seasons for the dropdown:
 // 3 years back through 1 year forward from the current calendar year.
-// More than enough range; covers in-progress, past, and upcoming seasons.
 function availableSeasons(): number[] {
   const years: number[] = [];
   for (let y = currentYear + 1; y >= currentYear - 3; y--) {
@@ -322,7 +305,7 @@ export function NewSportTaskForm() {
           <div className="flex items-end gap-3 flex-wrap">
             <Field
               label="Season"
-              hint={`Default ${formatSeason(defaultSeason)}. The dropdown lists adjacent seasons too — future seasons may return 0 leagues until populated.`}
+              hint={`Default ${defaultSeason} (current year). api-football uses a single year as the season identifier.`}
             >
               <select
                 className="border rounded px-3 py-2 w-40"
@@ -337,7 +320,7 @@ export function NewSportTaskForm() {
               >
                 {availableSeasons().map((y) => (
                   <option key={y} value={y}>
-                    {formatSeason(y)}
+                    {y}
                     {y === defaultSeason ? " (current)" : ""}
                   </option>
                 ))}
@@ -378,9 +361,9 @@ export function NewSportTaskForm() {
 
           {!loadingLeagues && allLeagues.length === 0 && !leagueError && (
             <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-              api-football returned 0 leagues for season <strong>{formatSeason(season)}</strong>.
+              api-football returned 0 leagues for season <strong>{season}</strong>.
               That season probably isn't populated yet — try{" "}
-              <strong>{formatSeason(defaultSeason)}</strong> instead. (If you don't see {" "}
+              <strong>{defaultSeason}</strong> instead. (If you don't see {" "}
               <code>APIFOOTBALL_API_KEY</code> errors in the backoffice logs, this is the most
               likely cause.)
             </div>

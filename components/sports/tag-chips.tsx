@@ -135,7 +135,7 @@ export function suggestSoccerTags(opts: {
     out.push({ slug, label: trimmed });
   };
   if (opts.leagueName) push(opts.leagueName);
-  push(`${opts.season}/${opts.season + 1}`);
+  push(`${opts.season}`);
   if (opts.country) push(opts.country);
   push("Soccer");
   push("Football");
