@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { dpm } from "@/lib/api";
+import { manual } from "@/lib/api";
 
 export async function POST(
   req: NextRequest,
@@ -12,13 +12,14 @@ export async function POST(
       proposer_address?: string;
       proposed_price?: string;
     };
-    if (!body?.proposer_address) {
-      return NextResponse.json({ error: "proposer_address required" }, { status: 400 });
-    }
     if (!body?.proposed_price) {
       return NextResponse.json({ error: "proposed_price required" }, { status: 400 });
     }
-    const data = await dpm.umaPropose(external_id, body.proposer_address, body.proposed_price);
+    const data = await manual.umaPropose(
+      external_id,
+      body.proposer_address ?? "",
+      body.proposed_price,
+    );
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

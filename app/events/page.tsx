@@ -1,521 +1,387 @@
-import Link from "next/link";
-
 import {
-  Badge,
   Card,
   CardBody,
-  EmptyState,
   ErrorMessage,
   PageHeader,
   Tabs,
+  buttonVariants,
   type Tab,
 } from "@/components/ui";
-import { inlineSportOutcome, inlineCryptoOutcome } from "@/components/event-outcome";
 import { crypto, manual, sports } from "@/lib/api";
-import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   Asset,
   CryptoEvent,
   DeployPlan,
+  EventResponse,
   Interval,
   SportEvent,
   SportTask,
   Task,
 } from "@/lib/types";
 
+import { CryptoEventsTab } from "./_crypto-tab";
+import { ManualEventsTab } from "./_manual-tab";
+import { SportEventsTab } from "./_sport-tab";
+import type {
+  CryptoEventRow,
+  CryptoPayload,
+  ManualEventRow,
+  ManualPayload,
+  SportEventRow,
+  SportPayload,
+} from "./_types";
+
 export const dynamic = "force-dynamic";
 
-// Inventory ▸ Events — flat list of recent events across all sources. Each
-// row links into the unified /events/[external_id] detail page (where every
-// market is shown with inline actions).
+// /events — per-source tabs (Manual / Crypto / Sport). Each tab fetches the
+// data shape it actually needs and renders a DataTable with columns that
+// match. Layout follows the events-a v2 canvas.
 
-type SearchParams = {
-  source?: string;
-  status?: string;
-  task_id?: string;
-};
+type Source = "manual" | "crypto" | "sport";
 
-type Filter = "all" | PlanSource;
-
-const TASK_PREVIEW_LIMIT = 5;
-
-function parseFilter(v: string | undefined): Filter {
-  if (v === "manual" || v === "crypto" || v === "sport") return v;
-  return "all";
+function isSource(v: unknown): v is Source {
+  return v === "manual" || v === "crypto" || v === "sport";
 }
 
-type Row = {
-  eventExternalId: string;
-  title: string;
-  source: PlanSource;
-  marketCount: number;
-  deploymentStatus?: string;
-  subtitle?: string;
-  flags: {
-    paused?: boolean;
-    closed?: boolean;
-    archived?: boolean;
-    active?: boolean;
-    // fromPlan marks rows that came from manualRows() so mergeRows() knows
-    // to trust their inferSourceFromPlan classification over the hardcoded
-    // source from cryptoRows/sportRows.
-    fromPlan?: boolean;
-  };
-  sortKey: number;
-};
+const PREVIEW_TASKS = 5;
 
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<SearchParams>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const filter = parseFilter(sp.source);
-  const statusFilter = sp.status?.trim() || undefined;
-  const taskId = sp.task_id ? Number.parseInt(sp.task_id, 10) : undefined;
-  const taskScoped = taskId !== undefined && Number.isFinite(taskId);
+  const source: Source = isSource(sp.source) ? sp.source : "manual";
 
-  // Tasks are needed both for the picker UI and (when one is selected) to
-  // scope crypto/sport loaders. Fetch once and reuse.
-  const [cryptoTasks, cryptoAssets, cryptoIntervals, sportTasks] =
-    await Promise.all([
-      filter === "crypto" || filter === "all"
-        ? crypto.listTasks().catch(() => [] as Task[])
-        : Promise.resolve([] as Task[]),
-      filter === "crypto" || filter === "all"
-        ? crypto.listAssets().catch(() => [] as Asset[])
-        : Promise.resolve([] as Asset[]),
-      filter === "crypto" || filter === "all"
-        ? crypto.listIntervals().catch(() => [] as Interval[])
-        : Promise.resolve([] as Interval[]),
-      filter === "sport" || filter === "all"
-        ? sports.listTasks().catch(() => [] as SportTask[])
-        : Promise.resolve([] as SportTask[]),
-    ]);
+  // Fan out per-source loaders. Each loader returns a small data envelope so
+  // the tab component can stay free of fetch wiring.
+  const [
+    manualPayload,
+    cryptoPayload,
+    sportPayload,
+    sourceCounts,
+  ] = await Promise.all([
+    source === "manual" ? loadManual() : Promise.resolve(emptyManualPayload()),
+    source === "crypto" ? loadCrypto() : Promise.resolve(emptyCryptoPayload()),
+    source === "sport" ? loadSport() : Promise.resolve(emptySportPayload()),
+    countAcrossSources(),
+  ]);
 
-  let rows: Row[] = [];
-  let error: string | null = null;
+  const tabs: Tab<Source>[] = [
+    {
+      key: "manual",
+      label: "Manual",
+      href: "/events?source=manual",
+      count: sourceCounts.manual,
+    },
+    {
+      key: "crypto",
+      label: "Crypto",
+      href: "/events?source=crypto",
+      count: sourceCounts.crypto,
+    },
+    {
+      key: "sport",
+      label: "Sport",
+      href: "/events?source=sport",
+      count: sourceCounts.sport,
+    },
+  ];
 
-  try {
-    // Always pull manual side — it's the only source with the dpm-api event
-    // title AND a real marketCount (via plan.markets). The crypto/sport task
-    // listings don't nest markets in their response, so without manual we'd
-    // always show 0 markets for those rows.
-    const loaders: Promise<Row[]>[] = [manualRows()];
-    if (filter === "all" || filter === "crypto") {
-      loaders.push(cryptoRows(cryptoTasks, taskScoped && filter === "crypto" ? taskId : undefined));
-    }
-    if (filter === "all" || filter === "sport") {
-      loaders.push(sportRows(sportTasks, taskScoped && filter === "sport" ? taskId : undefined));
-    }
-    rows = (await Promise.all(loaders)).flat();
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-  }
-
-  // Merge by event_external_id — same event reported by multiple loaders
-  // contributes different metadata: manual side has title + marketCount;
-  // crypto/sport side has slot/kickoff subtitle. Take the best of each.
-  const byEvent = new Map<string, Row>();
-  for (const r of rows) {
-    const existing = byEvent.get(r.eventExternalId);
-    byEvent.set(r.eventExternalId, existing ? mergeRows(existing, r) : r);
-  }
-  rows = [...byEvent.values()];
-
-  // Filter by selected source AFTER the merge so a crypto-auto plan surfaces
-  // under the "crypto" tab (via inferSourceFromPlan), not under "manual".
-  if (filter !== "all") {
-    rows = rows.filter((r) => r.source === filter);
-  }
-
-  rows.sort((a, b) => b.sortKey - a.sortKey);
-
-  const filtered = statusFilter
-    ? rows.filter(
-        (r) =>
-          (r.deploymentStatus ?? "").toLowerCase() ===
-          statusFilter.toLowerCase(),
-      )
-    : rows;
+  const apiError =
+    source === "manual"
+      ? manualPayload.error
+      : source === "crypto"
+        ? cryptoPayload.error
+        : sportPayload.error;
 
   return (
-    <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title="Events"
-        description="Every event the backoffice has touched, across every automation source. Each row drills into the unified event page — same view as /events/[external_id]."
+        description="Per-source tabs swap the column set + filters so each tab matches the data shape behind it."
+        actions={
+          source === "manual" ? (
+            <a
+              href="/automations/manual/events/new"
+              className={buttonVariants.primary}
+            >
+              New event
+            </a>
+          ) : null
+        }
       />
 
-      <Tabs current={filter} tabs={buildSourceTabs()} label="Event source" />
+      <div className="flex items-center gap-3 flex-wrap">
+        <Tabs current={source} tabs={tabs} label="Event source" />
+        <span className="text-xs text-foreground-muted">
+          counts reflect the source-specific data preview
+        </span>
+      </div>
+
+      {apiError ? (
+        <ErrorMessage>Source unreachable: {apiError}</ErrorMessage>
+      ) : null}
 
       <Card>
         <CardBody>
-          <form method="get" className="flex items-end gap-3 flex-wrap">
-            {filter !== "all" ? (
-              <input type="hidden" name="source" value={filter} />
-            ) : null}
-            {filter === "crypto" ? (
-              <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
-                Task
-                <select
-                  name="task_id"
-                  defaultValue={taskScoped ? String(taskId) : ""}
-                  className="rounded-md border border-border bg-surface px-2 h-9 text-sm font-normal text-foreground"
-                >
-                  <option value="">— All tasks —</option>
-                  {cryptoTasks.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {labelCryptoTask(t, cryptoAssets, cryptoIntervals)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {filter === "sport" ? (
-              <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
-                Task
-                <select
-                  name="task_id"
-                  defaultValue={taskScoped ? String(taskId) : ""}
-                  className="rounded-md border border-border bg-surface px-2 h-9 text-sm font-normal text-foreground"
-                >
-                  <option value="">— All tasks —</option>
-                  {[...groupBySport(sportTasks).entries()].map(([sport, list]) => (
-                    <optgroup key={sport} label={sport}>
-                      {list.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.league_slug} · {t.api_season}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label className="flex flex-col gap-1 text-xs font-medium text-foreground-muted">
-              Deployment status
-              <input
-                type="text"
-                name="status"
-                defaultValue={statusFilter ?? ""}
-                placeholder="e.g. REGISTERED, PENDING"
-                className="rounded-md border border-border bg-surface px-2 h-9 text-sm w-56 font-normal text-foreground"
-              />
-            </label>
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center h-9 px-3 rounded-md text-sm border border-border hover:bg-foreground/[0.04] cursor-pointer"
-            >
-              Apply
-            </button>
-            <p className="text-xs text-foreground-muted ml-auto">
-              {summaryFor(filter, rows.length, taskScoped)}
-            </p>
-          </form>
+          {source === "manual" ? (
+            <ManualEventsTab data={manualPayload} />
+          ) : source === "crypto" ? (
+            <CryptoEventsTab data={cryptoPayload} />
+          ) : (
+            <SportEventsTab data={sportPayload} />
+          )}
         </CardBody>
       </Card>
-
-      {error ? (
-        <ErrorMessage>{error}</ErrorMessage>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          title="No events match"
-          description="Try a different source tab or clear the filter."
-        />
-      ) : (
-        <ul className="space-y-2">
-          {filtered.map((r) => (
-            <RowItem key={`${r.source}-${r.eventExternalId}`} row={r} />
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
 
-function buildSourceTabs(): Tab<Filter>[] {
-  return [
-    { key: "all", label: "All", href: "/events" },
-    { key: "manual", label: "Manual", href: "/events?source=manual" },
-    { key: "crypto", label: "Crypto", href: "/events?source=crypto" },
-    { key: "sport", label: "Sport", href: "/events?source=sport" },
-  ];
+// ---------------------------------------------------------------------------
+// Data loaders — one per source. Each returns its own envelope shape.
+// ---------------------------------------------------------------------------
+
+function emptyManualPayload(): ManualPayload {
+  return { rows: [], knownSeries: [], error: null };
 }
 
-function RowItem({ row }: { row: Row }) {
-  const href = `/events/${encodeURIComponent(row.eventExternalId)}`;
-  return (
-    <li>
-      <Link
-        href={href}
-        className="block rounded-lg border border-border bg-surface px-4 py-3 hover:border-foreground/30 transition-colors"
-      >
-        <div className="flex items-center gap-3 flex-wrap">
-          <Badge tone={sourceTone(row.source)}>{row.source}</Badge>
-          <span className="text-sm font-medium truncate flex-1 min-w-0">
-            {row.title || (
-              <span className="text-foreground-muted italic">
-                {row.eventExternalId.slice(0, 8)}…
-              </span>
-            )}
-          </span>
-          <span className="text-xs text-foreground-muted shrink-0 tabular-nums">
-            {row.marketCount} market{row.marketCount === 1 ? "" : "s"}
-          </span>
-          {row.deploymentStatus ? (
-            <Badge tone={tonalize(row.deploymentStatus)}>
-              {row.deploymentStatus}
-            </Badge>
-          ) : null}
-          {row.flags.paused ? <Badge tone="warning">paused</Badge> : null}
-          {row.flags.closed ? <Badge tone="neutral">closed</Badge> : null}
-          {row.flags.archived ? <Badge tone="neutral">archived</Badge> : null}
-          {row.flags.active ? <Badge tone="success">active</Badge> : null}
-        </div>
-        {row.subtitle ? (
-          <p className="mt-1 text-xs text-foreground-muted truncate">
-            {row.subtitle}
-          </p>
-        ) : null}
-      </Link>
-    </li>
-  );
-}
-
-// mergeRows combines two rows that describe the same event_external_id but
-// were assembled by different loaders. Source comes from manualRows
-// (inferSourceFromPlan is authoritative — it knows whether the plan was
-// crypto-auto / sports-auto / manual-operator). Title prefers a real value
-// over the "Event xxx…" UUID fallback. marketCount takes the max (manual
-// side has the real plan.markets count; crypto/sport task list endpoints
-// don't nest markets and report 0). Subtitle prefers the slot/kickoff
-// metadata that crypto and sport loaders contribute.
-function mergeRows(a: Row, b: Row): Row {
-  // Source: trust whichever was derived from a deploy plan (manual loader)
-  // because inferSourceFromPlan reads the actor. cryptoRows/sportRows
-  // hardcode their source from the task type; if a plan disagrees, the
-  // plan wins because it's closer to the actual provenance.
-  const aFromPlan = a.flags.fromPlan === true;
-  const bFromPlan = b.flags.fromPlan === true;
-  const source = aFromPlan ? a.source : bFromPlan ? b.source : a.source;
-
-  const aFallback = isFallbackTitle(a.title);
-  const bFallback = isFallbackTitle(b.title);
-  let title = a.title;
-  if (aFallback && !bFallback) title = b.title;
-  else if (!aFallback && bFallback) title = a.title;
-
-  return {
-    eventExternalId: a.eventExternalId,
-    title,
-    source,
-    marketCount: Math.max(a.marketCount, b.marketCount),
-    deploymentStatus: a.deploymentStatus ?? b.deploymentStatus,
-    flags: { ...a.flags, ...b.flags },
-    subtitle: a.subtitle ?? b.subtitle,
-    sortKey: Math.max(a.sortKey, b.sortKey),
-  };
-}
-
-function isFallbackTitle(t: string): boolean {
-  return !t || /^Event [0-9a-f]{8}…$/i.test(t);
-}
-
-// ----- Data loaders -----
-
-async function manualRows(): Promise<Row[]> {
+async function loadManual(): Promise<ManualPayload> {
   let plans: DeployPlan[] = [];
   try {
-    plans = await manual.listDeployPlans({ limit: 50 });
-  } catch {
-    return [];
+    plans = await manual.listDeployPlans({ limit: 80 });
+  } catch (err) {
+    return { rows: [], knownSeries: [], error: stringifyError(err) };
   }
-  // Dedupe plans by event_external_id, keeping the most recent.
+
+  // Filter to operator-driven plans (skip auto plans — those go on their tabs).
+  const manualPlans = plans.filter(
+    (p) => p.actor !== "crypto-auto" && p.actor !== "sports-auto",
+  );
+
+  // Bucket by event so the row count is per-event rather than per-plan.
   const byEvent = new Map<string, DeployPlan[]>();
-  for (const p of plans) {
+  for (const p of manualPlans) {
     const list = byEvent.get(p.event_external_id) ?? [];
     list.push(p);
     byEvent.set(p.event_external_id, list);
   }
-  // Resolve event titles in parallel (capped to keep the page snappy).
-  const ids = [...byEvent.keys()].slice(0, 30);
-  const titles = await Promise.all(
+
+  // Resolve titles in parallel — capped to keep TTFB low.
+  const ids = [...byEvent.keys()].slice(0, 50);
+  const events = await Promise.all(
     ids.map(async (id) => {
       try {
-        const ev = await manual.getEventByExternalId(id);
-        return [id, ev] as const;
+        return [id, await manual.getEventByExternalId(id)] as const;
       } catch {
         return null;
       }
     }),
   );
-  const titleMap = new Map<
-    string,
-    { title: string; slug: string; deployment_status: string }
-  >();
-  for (const r of titles) {
-    if (r) {
-      titleMap.set(r[0], {
-        title: r[1].title,
-        slug: r[1].slug,
-        deployment_status: r[1].deployment_status,
-      });
-    }
-  }
+  const byId = new Map<string, EventResponse>();
+  for (const r of events) if (r) byId.set(r[0], r[1]);
 
-  const out: Row[] = [];
-  for (const [eventExternalId, ps] of byEvent.entries()) {
+  // Series map — we'll derive slug from the event metadata if exposed; otherwise
+  // we display the series_id and let the operator pick from a future series list.
+  // The /manual/series/by-slug endpoint is keyed on slug, not id, so we don't
+  // resolve every series id here. The known-series list is built below from
+  // whatever rows surface a series_id so the filter dropdown stays scoped.
+  const knownSeries = new Map<number, { id: number; slug: string }>();
+
+  const rows: ManualEventRow[] = [];
+  for (const [externalId, ps] of byEvent.entries()) {
+    const ev = byId.get(externalId);
     const newest = ps.reduce((a, b) =>
       new Date(a.updated_at) > new Date(b.updated_at) ? a : b,
     );
-    const meta = titleMap.get(eventExternalId);
     const marketCount = new Set(
       ps.flatMap((p) =>
         p.markets.map((m) => m.external_id ?? `pos-${p.id}-${m.position}`),
       ),
     ).size;
-    // Title fallback chain: dpm-api title → dpm-api slug → "Event xxx…".
-    // Crypto-auto plans often have an empty event.title on dpm-api (the
-    // event is auto-generated), but the slug carries the useful info.
-    const title =
-      (meta?.title && meta.title.trim()) ||
-      (meta?.slug && meta.slug.trim()) ||
-      `Event ${eventExternalId.slice(0, 8)}…`;
-    out.push({
-      eventExternalId,
-      title,
-      source: inferSourceFromPlan(newest),
-      marketCount,
-      deploymentStatus: meta?.deployment_status,
-      flags: { fromPlan: true },
-      sortKey: new Date(newest.updated_at).getTime(),
+    const seriesId = ev?.series_id ?? null;
+    const seriesSlug = ev?.metadata?.series_slug as string | undefined;
+    if (seriesId !== null && seriesSlug) {
+      knownSeries.set(seriesId, { id: seriesId, slug: seriesSlug });
+    }
+
+    rows.push({
+      external_id: externalId,
+      title:
+        (ev?.title && ev.title.trim()) ||
+        (ev?.slug && ev.slug.trim()) ||
+        `Event ${externalId.slice(0, 8)}…`,
+      series: seriesSlug ?? null,
+      series_id: seriesId,
+      created_at: ev?.created_at ?? newest.created_at,
+      active: !!ev?.active,
+      closed: !!ev?.closed,
+      archived: !!ev?.archived,
+      paused: !!ev?.paused,
+      market_count: marketCount,
+      deployment_status: ev?.deployment_status ?? newest.status,
     });
   }
-  return out;
-}
-
-async function cryptoRows(tasks: Task[], taskId?: number): Promise<Row[]> {
-  // When the operator picked a specific task, restrict to it. Otherwise show
-  // a preview across the first few tasks.
-  const subset = taskId
-    ? tasks.filter((t) => t.id === taskId)
-    : tasks.slice(0, TASK_PREVIEW_LIMIT);
-  const events = await Promise.all(
-    subset.map(async (t) => {
-      try {
-        return await crypto.listCryptoEvents(t.id);
-      } catch {
-        return [] as CryptoEvent[];
-      }
-    }),
+  rows.sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
-  // Dedupe by event_external_id — the same event can be referenced by
-  // multiple tasks (e.g. backfill plans).
-  const byEvent = new Map<string, Row>();
-  for (const list of events) {
-    for (const ev of list) {
-      if (!ev.event_external_id) continue;
-      const existing = byEvent.get(ev.event_external_id);
-      const outcomeLine = inlineCryptoOutcome(ev);
-      const row: Row = {
-        eventExternalId: ev.event_external_id,
-        title: ev.event_slug || `crypto_event#${ev.id}`,
-        source: "crypto",
-        marketCount: ev.markets?.length ?? 0,
-        flags: {},
-        subtitle: outcomeLine
-          ? `${outcomeLine} · ${ev.slot_start} → ${ev.slot_end}`
-          : `${ev.slot_start} → ${ev.slot_end}`,
-        sortKey: new Date(ev.slot_end ?? ev.created_at).getTime(),
-      };
-      if (!existing || row.sortKey > existing.sortKey) {
-        byEvent.set(ev.event_external_id, row);
+  return { rows, knownSeries: [...knownSeries.values()], error: null };
+}
+
+function emptyCryptoPayload(): CryptoPayload {
+  return { rows: [], assets: [], intervals: [], tasks: [], error: null };
+}
+
+async function loadCrypto(): Promise<CryptoPayload> {
+  try {
+    const [tasks, assets, intervals] = await Promise.all([
+      crypto.listTasks(),
+      crypto.listAssets(),
+      crypto.listIntervals(),
+    ]);
+    const subset = tasks.slice(0, PREVIEW_TASKS);
+    const events = await Promise.all(
+      subset.map((t) =>
+        crypto.listCryptoEvents(t.id).catch(() => [] as CryptoEvent[]),
+      ),
+    );
+    const assetById = new Map(assets.map((a) => [a.id, a]));
+    const intervalById = new Map(intervals.map((i) => [i.id, i]));
+    const taskMeta = new Map(
+      tasks.map((t) => [
+        t.id,
+        {
+          asset:
+            assetById.get(t.asset_id)?.display_name ??
+            assetById.get(t.asset_id)?.base ??
+            `asset#${t.asset_id}`,
+          interval: intervalById.get(t.interval_id)?.label ?? `interval#${t.interval_id}`,
+        },
+      ]),
+    );
+
+    const rows: CryptoEventRow[] = [];
+    subset.forEach((t, idx) => {
+      const meta = taskMeta.get(t.id);
+      for (const ev of events[idx]) {
+        if (!ev.event_external_id) continue;
+        rows.push({
+          event_external_id: ev.event_external_id,
+          asset: meta?.asset ?? "—",
+          interval: meta?.interval ?? "—",
+          slot_start: ev.slot_start,
+          slot_end: ev.slot_end,
+          price_to_beat: ev.price_to_beat ?? null,
+          price_at_close: ev.price_at_close ?? null,
+          outcome: ev.decision?.outcome ?? null,
+          market_count: ev.markets?.length ?? 0,
+          is_skipped: ev.is_skipped_by_operator,
+        });
       }
-    }
+    });
+    rows.sort(
+      (a, b) => new Date(b.slot_end).getTime() - new Date(a.slot_end).getTime(),
+    );
+    return { rows, assets, intervals, tasks, error: null };
+  } catch (err) {
+    return {
+      rows: [],
+      assets: [],
+      intervals: [],
+      tasks: [],
+      error: stringifyError(err),
+    };
   }
-  return [...byEvent.values()];
 }
 
-async function sportRows(tasks: SportTask[], taskId?: number): Promise<Row[]> {
-  const subset = taskId
-    ? tasks.filter((t) => t.id === taskId)
-    : tasks.slice(0, TASK_PREVIEW_LIMIT);
-  const events = await Promise.all(
-    subset.map(async (t) => {
-      try {
-        return await sports.listEvents(t.id);
-      } catch {
-        return [] as SportEvent[];
+function emptySportPayload(): SportPayload {
+  return { rows: [], tasks: [], error: null };
+}
+
+async function loadSport(): Promise<SportPayload> {
+  try {
+    const tasks = await sports.listTasks();
+    const subset = tasks.slice(0, PREVIEW_TASKS);
+    const events = await Promise.all(
+      subset.map((t) =>
+        sports.listEvents(t.id).catch(() => [] as SportEvent[]),
+      ),
+    );
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    const rows: SportEventRow[] = [];
+    subset.forEach((t, idx) => {
+      const task = taskById.get(t.id);
+      for (const ev of events[idx]) {
+        if (!ev.event_external_id) continue;
+        const fp = (ev.fixture_payload ?? {}) as Record<string, unknown>;
+        const teams = (fp.teams ?? {}) as Record<string, unknown>;
+        const home = (teams.home ?? {}) as Record<string, unknown>;
+        const away = (teams.away ?? {}) as Record<string, unknown>;
+        const league = (fp.league ?? {}) as Record<string, unknown>;
+        rows.push({
+          event_external_id: ev.event_external_id,
+          sport: task?.sport_key ?? "—",
+          country:
+            (typeof league.country === "string" ? league.country : "") ||
+            "—",
+          league:
+            (typeof league.name === "string" ? league.name : "") ||
+            task?.league_slug ||
+            "—",
+          match:
+            home.name && away.name
+              ? `${home.name} vs ${away.name}`
+              : ev.event_slug,
+          kickoff_at: ev.kickoff_at,
+          fixture_status_short: ev.fixture_status_short,
+          market_count: ev.markets?.length ?? 0,
+        });
       }
-    }),
-  );
-  const byEvent = new Map<string, Row>();
-  for (const list of events) {
-    for (const ev of list) {
-      if (!ev.event_external_id) continue;
-      const existing = byEvent.get(ev.event_external_id);
-      const outcomeLine = inlineSportOutcome(ev);
-      const row: Row = {
-        eventExternalId: ev.event_external_id,
-        title: ev.event_slug || `sport_event#${ev.id}`,
-        source: "sport",
-        marketCount: ev.markets?.length ?? 0,
-        flags: {},
-        subtitle: outcomeLine
-          ? `${outcomeLine} · kickoff ${ev.kickoff_at} · ${ev.fixture_status_short}`
-          : `kickoff ${ev.kickoff_at} · ${ev.fixture_status_short}`,
-        sortKey: new Date(ev.kickoff_at).getTime(),
-      };
-      if (!existing || row.sortKey > existing.sortKey) {
-        byEvent.set(ev.event_external_id, row);
-      }
-    }
+    });
+    rows.sort(
+      (a, b) =>
+        new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime(),
+    );
+    return { rows, tasks, error: null };
+  } catch (err) {
+    return { rows: [], tasks: [], error: stringifyError(err) };
   }
-  return [...byEvent.values()];
 }
 
-// ----- Helpers -----
-
-function summaryFor(filter: Filter, total: number, taskScoped: boolean): string {
-  if (filter === "all") return `${total} most recent events across all sources`;
-  if (filter === "manual") return `events from the 50 most recent deploy plans`;
-  if (taskScoped) return `events for the selected ${filter} task`;
-  return `events from the ${TASK_PREVIEW_LIMIT} most recent ${filter} tasks`;
+// Cheap counts for the tab badges — separate calls so a slow source doesn't
+// block the others.
+async function countAcrossSources(): Promise<{
+  manual: number;
+  crypto: number;
+  sport: number;
+}> {
+  const [manualCount, cryptoCount, sportCount] = await Promise.all([
+    manual
+      .listDeployPlans({ limit: 80 })
+      .then(
+        (plans) =>
+          new Set(
+            plans
+              .filter((p) => p.actor !== "crypto-auto" && p.actor !== "sports-auto")
+              .map((p) => p.event_external_id),
+          ).size,
+      )
+      .catch(() => 0),
+    crypto
+      .listTasks()
+      .then((tasks) => tasks.length)
+      .catch(() => 0),
+    sports
+      .listTasks()
+      .then((tasks) => tasks.length)
+      .catch(() => 0),
+  ]);
+  return { manual: manualCount, crypto: cryptoCount, sport: sportCount };
 }
 
-function labelCryptoTask(
-  t: Task,
-  assets: Asset[],
-  intervals: Interval[],
-): string {
-  const a = t.asset ?? assets.find((x) => x.id === t.asset_id);
-  const i = t.interval ?? intervals.find((x) => x.id === t.interval_id);
-  const assetLabel = a?.display_name ?? a?.base ?? `asset#${t.asset_id}`;
-  const intLabel = i?.label ?? `interval#${t.interval_id}`;
-  return `${assetLabel} · ${intLabel}`;
-}
-
-function groupBySport(tasks: SportTask[]): Map<string, SportTask[]> {
-  const out = new Map<string, SportTask[]>();
-  for (const t of tasks) {
-    const list = out.get(t.sport_key) ?? [];
-    list.push(t);
-    out.set(t.sport_key, list);
-  }
-  return out;
-}
-
-type Tone = "neutral" | "success" | "warning" | "danger" | "info";
-
-function sourceTone(s: PlanSource): Tone {
-  return s === "sport" ? "info" : s === "crypto" ? "warning" : "neutral";
-}
-
-function tonalize(status: string): Tone {
-  const s = status.toLowerCase();
-  if (s.includes("deployed") || s.includes("registered") || s.includes("resolved") || s.includes("succeed")) return "success";
-  if (s.includes("fail") || s.includes("cancel") || s.includes("refund")) return "danger";
-  if (s.includes("wait") || s.includes("pending") || s.includes("paused")) return "warning";
-  if (s.includes("running") || s.includes("submit") || s.includes("resolving") || s.includes("created") || s.includes("deploying")) return "info";
-  return "neutral";
+function stringifyError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return JSON.stringify(err);
 }

@@ -150,13 +150,18 @@ export function EventEditor({
         </Field>
       </div>
 
-      <Field label="Description" htmlFor={`${idPrefix}-description`}>
+      <Field
+        label="Description"
+        htmlFor={`${idPrefix}-description`}
+        hint="Markdown-friendly. Operators see this verbatim on the event detail page — keep it specific so the rationale isn't lost when the market resolves weeks later."
+      >
         <textarea
           id={`${idPrefix}-description`}
-          className={inputClass}
-          rows={3}
+          className={`${inputClass} min-h-[10rem] leading-relaxed`}
+          rows={8}
           value={value.description ?? ""}
           onChange={(e) => set("description", e.target.value)}
+          placeholder="Why this market exists, what counts as YES/NO, where the resolution data comes from, edge cases…"
         />
       </Field>
 

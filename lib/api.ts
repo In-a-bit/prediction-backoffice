@@ -102,6 +102,14 @@ export const manual = {
     }),
   getSeriesBySlug: (slug: string) =>
     request<SeriesResponse>(`/manual/series/by-slug/${encodeURIComponent(slug)}`),
+  // Fuzzy search across series name + slug. Owned by prediction-bundler
+  // (Phase 5 backend carve-out); until the endpoint lands the call returns
+  // 404 and the caller (components/manual/series-search-select.tsx) falls
+  // back to slug-exact lookup.
+  searchSeries: (query: string, limit = 8) => {
+    const q = new URLSearchParams({ q: query, limit: String(limit) });
+    return request<SeriesResponse[]>(`/manual/series/search?${q.toString()}`);
+  },
 
   // ----- Events -----
   createEvent: (payload: EventPayload, audit: ManualAudit = {}) =>
@@ -148,6 +156,70 @@ export const manual = {
         body: { workflow_id: workflowId },
         authed: true,
       },
+    ),
+  pauseMarket: (externalId: string) =>
+    request<void>(
+      `/manual/markets/${encodeURIComponent(externalId)}/pause`,
+      { method: "POST", authed: true },
+    ),
+  unpauseMarket: (externalId: string) =>
+    request<void>(
+      `/manual/markets/${encodeURIComponent(externalId)}/unpause`,
+      { method: "POST", authed: true },
+    ),
+  activateMarket: (externalId: string) =>
+    request<void>(
+      `/manual/markets/${encodeURIComponent(externalId)}/activate`,
+      { method: "POST", authed: true },
+    ),
+  umaResolveManually: (externalId: string, payouts: string[]) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/resolve-manually`,
+      { method: "POST", body: { payouts }, authed: true },
+    ),
+  umaPropose: (externalId: string, proposerAddress: string, proposedPrice: string) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/propose`,
+      {
+        method: "POST",
+        body: { proposer_address: proposerAddress, proposed_price: proposedPrice },
+        authed: true,
+      },
+    ),
+  umaReset: (externalId: string) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/reset`,
+      { method: "POST", authed: true },
+    ),
+  umaResolve: (externalId: string) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/resolve`,
+      { method: "POST", authed: true },
+    ),
+  ctfOracleReportPayouts: (externalId: string, payouts: string[]) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/markets/${encodeURIComponent(externalId)}/ctf-oracle/report-payouts`,
+      { method: "POST", body: { payouts }, authed: true },
+    ),
+  pauseEvent: (externalId: string) =>
+    request<void>(
+      `/manual/events/${encodeURIComponent(externalId)}/pause`,
+      { method: "POST", authed: true },
+    ),
+  unpauseEvent: (externalId: string) =>
+    request<void>(
+      `/manual/events/${encodeURIComponent(externalId)}/unpause`,
+      { method: "POST", authed: true },
+    ),
+  activateEvent: (externalId: string) =>
+    request<void>(
+      `/manual/events/${encodeURIComponent(externalId)}/activate`,
+      { method: "POST", authed: true },
+    ),
+  deactivateEvent: (externalId: string) =>
+    request<void>(
+      `/manual/events/${encodeURIComponent(externalId)}/deactivate`,
+      { method: "POST", authed: true },
     ),
 
   // ----- Audit log -----
@@ -217,6 +289,63 @@ export const manual = {
     request<DeployPlan>(
       `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/signal-balance`,
       { method: "POST", authed: true },
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// Operator alerts — durable error/warning feed surfaced on /operations/alerts.
+// The endpoints below are owned by prediction-bundler (see plan §Phase 1) and
+// are wrapped by lib/observability/store.ts which transparently falls back to
+// an in-process ring when they're unavailable. Importers should generally hit
+// the store; only call these directly if you specifically want the remote.
+// ---------------------------------------------------------------------------
+
+import type {
+  AlertCounts,
+  AlertFilters,
+  OperatorAlert,
+} from "./observability/types";
+
+function alertFiltersToQuery(filters: AlertFilters): string {
+  const q = new URLSearchParams();
+  const append = (k: string, v: string | number | boolean | undefined | null) => {
+    if (v === undefined || v === null || v === "") return;
+    q.append(k, String(v));
+  };
+  if (Array.isArray(filters.severity))
+    filters.severity.forEach((s) => append("severity", s));
+  else append("severity", filters.severity);
+  if (Array.isArray(filters.source))
+    filters.source.forEach((s) => append("source", s));
+  else append("source", filters.source);
+  if (Array.isArray(filters.resource_type))
+    filters.resource_type.forEach((s) => append("resource_type", s));
+  else append("resource_type", filters.resource_type);
+  append("action", filters.action);
+  if (filters.acknowledged !== undefined)
+    append("acknowledged", filters.acknowledged);
+  append("q", filters.q);
+  append("since", filters.since);
+  append("limit", filters.limit);
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export const alerts = {
+  record: (alert: OperatorAlert) =>
+    request<OperatorAlert>("/operations/alerts", {
+      method: "POST",
+      body: alert,
+      authed: true,
+    }),
+  list: (filters: AlertFilters = {}) =>
+    request<OperatorAlert[]>(`/operations/alerts${alertFiltersToQuery(filters)}`),
+  counts: (filters: AlertFilters = {}) =>
+    request<AlertCounts>(`/operations/alerts/counts${alertFiltersToQuery(filters)}`),
+  acknowledge: (externalId: string, actor: string) =>
+    request<OperatorAlert>(
+      `/operations/alerts/${encodeURIComponent(externalId)}/acknowledge`,
+      { method: "PATCH", body: { actor }, authed: true },
     ),
 };
 

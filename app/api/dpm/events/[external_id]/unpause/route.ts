@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { dpm, manual } from "@/lib/api";
+import { manual } from "@/lib/api";
 
 export async function POST(
   _req: NextRequest,
@@ -8,9 +8,8 @@ export async function POST(
 ) {
   try {
     const { external_id } = await ctx.params;
-    const event = await manual.getEventByExternalId(external_id);
-    const data = await dpm.unpauseEvent(event.id);
-    return NextResponse.json(data);
+    await manual.unpauseEvent(external_id);
+    return NextResponse.json({});
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });

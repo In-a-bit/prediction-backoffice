@@ -81,12 +81,17 @@ export default async function MarketDetailPage({
   const wantSport = sourceHint === "sport" && sportMarketId !== undefined;
   const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isDpmId = UUID_RE.test(external_id);
+
   const [verdictRes, planRes, sportStatusRes, cryptoEventRes, outcomeRes] =
     await Promise.all([
-      manual.getMarketStatus(external_id).catch((err) => {
-        fetchError = err instanceof Error ? err.message : String(err);
-        return null;
-      }),
+      isDpmId
+        ? manual.getMarketStatus(external_id).catch((err) => {
+            fetchError = err instanceof Error ? err.message : String(err);
+            return null;
+          })
+        : Promise.resolve(null),
       wantPlan
         ? manual.getDeployPlan(planId as string).catch(() => null)
         : Promise.resolve(null),
@@ -96,7 +101,9 @@ export default async function MarketDetailPage({
       wantCrypto
         ? cryptoApi.getCryptoEvent(cryptoEventId as number).catch(() => null)
         : Promise.resolve(null),
-      manual.getMarketOutcome(external_id).catch(() => null),
+      isDpmId
+        ? manual.getMarketOutcome(external_id).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
   verdict = verdictRes;
@@ -325,7 +332,7 @@ function LifecycleHeader({
     source === "sport" && sportMarket
       ? derive({ source: "sport", sportMarket, sportEvent })
       : source === "crypto" && cryptoMarket
-        ? derive({ source: "crypto", cryptoMarket, cryptoEvent })
+        ? derive({ source: "crypto", cryptoMarket, cryptoEvent, verdict: verdict ?? undefined })
         : derive({
             source: "manual",
             planMarket,

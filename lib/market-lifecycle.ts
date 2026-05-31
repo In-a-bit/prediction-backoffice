@@ -149,26 +149,42 @@ export function findSportDecisionFor(
 // Crypto
 // ---------------------------------------------------------------------------
 
+// Crypto markets have no UMA propose step — only created → resolved.
 const CRYPTO_STAGE_TABLE: Record<
   CryptoEventMarketStatus,
-  [LifecycleStageStatus, LifecycleStageStatus, LifecycleStageStatus]
+  [LifecycleStageStatus, LifecycleStageStatus]
 > = {
-  pending:    ["active",  "pending", "pending"],
-  created:    ["done",    "pending", "pending"],
-  verified:   ["done",    "done",    "pending"],
-  resolving:  ["done",    "done",    "active"],
-  resolved:   ["done",    "done",    "done"],
-  cancelled:  ["done",    "skipped", "skipped"],
-  failed:     ["failed",  "pending", "pending"],
+  pending:    ["active",  "pending"],
+  created:    ["done",    "pending"],
+  verified:   ["done",    "pending"],
+  resolving:  ["done",    "active"],
+  resolved:   ["done",    "done"],
+  cancelled:  ["done",    "skipped"],
+  failed:     ["failed",  "pending"],
 };
 
-export function deriveCryptoLifecycle(market: CryptoMarket): Lifecycle {
+export function deriveCryptoLifecycle(
+  market: CryptoMarket,
+  verdict?: MarketStatusVerdict | null,
+): Lifecycle {
   const row = CRYPTO_STAGE_TABLE[market.local_status] ?? CRYPTO_STAGE_TABLE.pending;
+  let resolvedStatus = row[1];
+
+  // Use the dpm-api uma_resolution_status as the authoritative source for the
+  // resolved step. This covers markets whose local_status is stuck at
+  // "resolving" (resolved before the backoffice activity was fixed) and manual
+  // resolutions where the on-chain workflow has since completed.
+  if (resolvedStatus !== "done") {
+    const uma = verdict?.market?.uma_resolution_status?.toLowerCase();
+    if (uma === "resolved" || uma === "manually_resolved") {
+      resolvedStatus = "done";
+    }
+  }
+
   return {
     stages: [
       { key: "created",  status: row[0] },
-      { key: "proposed", status: row[1] },
-      { key: "resolved", status: row[2] },
+      { key: "resolved", status: resolvedStatus },
     ],
   };
 }
@@ -180,36 +196,13 @@ export function deriveCryptoResult(
   if (market.local_status === "cancelled") {
     return { kind: "refund", label: "Cancelled", reason: "Market was cancelled" };
   }
-  if (market.local_status !== "resolved") {
-    return { kind: "pending", label: "Pending" };
-  }
+  // Show the decision outcome whenever it is available — a decision record is
+  // authoritative regardless of whether local_status has caught up to "resolved".
   const outcome = event?.decision?.outcome;
-  if (!outcome) {
-    return { kind: "pending", label: "Pending", reason: "Awaiting decision record" };
+  if (outcome) {
+    return { kind: "won", label: outcome.toUpperCase() };
   }
-  const slugLower = market.market_slug.toLowerCase();
-  let marketSide: "up" | "down" | undefined;
-  if (slugLower.endsWith("-up") || slugLower.endsWith("_up")) marketSide = "up";
-  else if (slugLower.endsWith("-down") || slugLower.endsWith("_down")) marketSide = "down";
-  if (!marketSide) {
-    return {
-      kind: "pending",
-      label: "Pending",
-      reason: `Could not match slug ${market.market_slug} to up/down`,
-    };
-  }
-  if (marketSide === outcome) {
-    return {
-      kind: "won",
-      label: "Won",
-      reason: `Outcome was ${outcome.toUpperCase()} and this market is ${marketSide.toUpperCase()}`,
-    };
-  }
-  return {
-    kind: "lost",
-    label: "Lost",
-    reason: `Outcome was ${outcome.toUpperCase()} but this market is ${marketSide.toUpperCase()}`,
-  };
+  return { kind: "pending", label: "Pending" };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,11 +236,16 @@ export function deriveManualLifecycle(
   const uma = verdict?.market?.uma_resolution_status?.toLowerCase();
   let proposed: LifecycleStageStatus = "pending";
   let resolved: LifecycleStageStatus = "pending";
-  if (uma === "proposed") {
+  if (uma === "proposing") {
+    proposed = "active";
+  } else if (uma === "proposed") {
     proposed = "done";
   } else if (uma === "disputed") {
     proposed = "failed";
-  } else if (uma === "resolved" || uma === "settled") {
+  } else if (uma === "resolving") {
+    proposed = "done";
+    resolved = "active";
+  } else if (uma === "resolved" || uma === "manually_resolved") {
     proposed = "done";
     resolved = "done";
   }
@@ -273,7 +271,7 @@ export function deriveManualResult(): Result {
 
 export type DeriveInput =
   | { source: "sport"; sportMarket: SportMarket; sportEvent?: SportEvent }
-  | { source: "crypto"; cryptoMarket: CryptoMarket; cryptoEvent?: CryptoEvent }
+  | { source: "crypto"; cryptoMarket: CryptoMarket; cryptoEvent?: CryptoEvent; verdict?: MarketStatusVerdict | null }
   | {
       source: "manual";
       planMarket?: DeployPlanMarket;
@@ -292,7 +290,7 @@ export function derive(
   }
   if (input.source === "crypto") {
     return {
-      lifecycle: deriveCryptoLifecycle(input.cryptoMarket),
+      lifecycle: deriveCryptoLifecycle(input.cryptoMarket, input.verdict),
       result: deriveCryptoResult(input.cryptoMarket, input.cryptoEvent),
     };
   }

@@ -317,6 +317,9 @@ function PayoutsForm({
 
   function submit() {
     setError(null);
+    // CTF reportPayouts uses a pure ratio: [1,0]=YES wins, [0,1]=NO wins, [1,1]=50/50.
+    // The denominator is the sum, so each numerator/denominator = 100%, 0%, or 50%.
+    // Absolute values don't matter — only the ratio does.
     const payouts =
       outcome === "yes"
         ? ["1", "0"]

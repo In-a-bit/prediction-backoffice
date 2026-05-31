@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { dpm } from "@/lib/api";
+import { manual } from "@/lib/api";
 
 export async function POST(
   req: NextRequest,
@@ -15,7 +15,7 @@ export async function POST(
         { status: 400 },
       );
     }
-    const data = await dpm.umaResolveManually(external_id, body.payouts);
+    const data = await manual.umaResolveManually(external_id, body.payouts);
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

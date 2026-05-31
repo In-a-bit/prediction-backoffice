@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { dpm } from "@/lib/api";
+import { manual } from "@/lib/api";
 
 export async function POST(
   _req: NextRequest,
@@ -8,7 +8,7 @@ export async function POST(
 ) {
   try {
     const { external_id } = await ctx.params;
-    const data = await dpm.umaResolve(external_id);
+    const data = await manual.umaResolve(external_id);
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

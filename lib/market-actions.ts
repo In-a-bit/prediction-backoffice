@@ -153,7 +153,10 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   if (!isOnChain(ctx)) return actions;
 
   // Resolution-type-specific actions.
-  if (isCtfOracle(ctx.dpmMarket)) {
+  // Crypto markets are always CTF_ORACLE (resolved via the price-ticker
+  // decision flow), never UMA — skip UMA actions regardless of what
+  // dpm-api reports for resolution_type.
+  if (isCtfOracle(ctx.dpmMarket) || ctx.source === "crypto") {
     if (!ctfIsTerminal(ctx.dpmMarket)) {
       actions.push("ctf-oracle-report-payouts");
     }
@@ -250,7 +253,7 @@ export const ACTION_META: Record<
       "Force-resolve via the UMA CTF Adapter's manual path (requires the market to be flagged). Destructive.",
   },
   "ctf-oracle-report-payouts": {
-    label: "Propose price",
+    label: "Report payouts",
     tone: "primary",
     title:
       "Admin-settle this managed-oracle market by reporting payouts. Pick the winning outcome.",

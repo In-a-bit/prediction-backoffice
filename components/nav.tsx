@@ -39,10 +39,10 @@ function dot(color: string) {
 
 const sections: Section[] = [
   {
-    title: "Overview",
+    title: "Operations",
     items: [
       {
-        href: "/",
+        href: "/operations",
         label: "Dashboard",
         icon: (
           <svg
@@ -57,6 +57,40 @@ const sections: Section[] = [
             <rect x="14" y="3" width="7" height="5" rx="1.5" />
             <rect x="14" y="12" width="7" height="9" rx="1.5" />
             <rect x="3" y="16" width="7" height="5" rx="1.5" />
+          </svg>
+        ),
+      },
+      {
+        href: "/operations/alerts",
+        label: "Alerts",
+        icon: (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 2a7 7 0 00-7 7v4l-2 3h18l-2-3V9a7 7 0 00-7-7z" />
+            <path d="M9 19a3 3 0 006 0" />
+          </svg>
+        ),
+      },
+      {
+        href: "/resolutions",
+        label: "Resolutions",
+        icon: (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M9 12l2 2 4-4" />
+            <circle cx="12" cy="12" r="9" />
           </svg>
         ),
       },
