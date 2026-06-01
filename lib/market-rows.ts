@@ -14,6 +14,7 @@ import type {
   MarketStatusVerdict,
   SportEvent,
   SportMarket,
+  Task,
 } from "./types";
 
 // Shared market loader powering /markets, /resolutions, and /operations.
@@ -187,7 +188,7 @@ function preferRow(a: MarketRow, b: MarketRow): boolean {
 async function manualRows(planLimit: number): Promise<MarketRow[]> {
   let plans: DeployPlan[];
   try {
-    plans = await manual.listDeployPlans({ limit: planLimit });
+    plans = (await manual.listDeployPlans({ limit: planLimit })).data;
   } catch {
     return [];
   }
@@ -227,9 +228,9 @@ async function cryptoRows(
   taskLimit: number,
   marketsPerTask: number,
 ): Promise<MarketRow[]> {
-  let tasks: Awaited<ReturnType<typeof crypto.listTasks>>;
+  let tasks: Task[];
   try {
-    tasks = await crypto.listTasks();
+    tasks = (await crypto.listTasks()).data;
   } catch {
     return [];
   }

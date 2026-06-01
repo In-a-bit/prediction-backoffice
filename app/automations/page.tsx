@@ -17,7 +17,7 @@ export default async function AutomationsHubPage() {
   let tasks: Task[] = [];
   let error: string | null = null;
   try {
-    tasks = await crypto.listTasks({ withStats: true });
+    tasks = (await crypto.listTasks({ withStats: true })).data;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

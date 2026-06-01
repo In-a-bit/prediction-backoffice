@@ -54,7 +54,7 @@ export default async function EventDetailPage({
   }
 
   try {
-    plans = await manual.listDeployPlans({ event_external_id: external_id });
+    plans = (await manual.listDeployPlans({ event_external_id: external_id })).data;
   } catch {
     // Soft-fail.
   }
@@ -673,7 +673,7 @@ async function findParentCryptoEvent(
 ): Promise<CryptoEvent | undefined> {
   let tasks;
   try {
-    tasks = await cryptoApi.listTasks();
+    tasks = (await cryptoApi.listTasks()).data;
   } catch {
     return undefined;
   }

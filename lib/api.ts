@@ -27,6 +27,14 @@ import type {
   UpdateTaskRequest,
 } from "./types";
 
+/** Paginated envelope returned by list endpoints that support offset-based paging. */
+export type Paginated<T> = {
+  data: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 const baseUrl = process.env.BACKOFFICE_API_URL ?? "http://localhost:8092";
 const apiKey = process.env.BACKOFFICE_API_KEY ?? "";
 const dpmUrl = process.env.DPM_API_URL ?? "http://localhost:8082";
@@ -223,13 +231,13 @@ export const manual = {
     ),
 
   // ----- Audit log -----
-  listOperatorLog: (filters: OperatorLogFilters = {}) => {
+  listOperatorLog: (filters: OperatorLogFilters & { offset?: number } = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
     }
     const qs = q.toString();
-    return request<OperatorLogEntry[]>(
+    return request<Paginated<OperatorLogEntry>>(
       `/manual/operator-log${qs ? `?${qs}` : ""}`,
     );
   },
@@ -245,13 +253,13 @@ export const manual = {
     request<DeployPlan>(
       `/manual/deploy-plans/${encodeURIComponent(externalId)}`,
     ),
-  listDeployPlans: (filters: { event_external_id?: string; status?: string; limit?: number } = {}) => {
+  listDeployPlans: (filters: { event_external_id?: string; status?: string; limit?: number; offset?: number } = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
     }
     const qs = q.toString();
-    return request<DeployPlan[]>(
+    return request<Paginated<DeployPlan>>(
       `/manual/deploy-plans${qs ? `?${qs}` : ""}`,
     );
   },
@@ -484,12 +492,23 @@ export const crypto = {
   listIntervals: () => request<Interval[]>("/crypto/intervals"),
 
   // ----- Tasks -----
-  listTasks: (opts?: { withStats?: boolean }) =>
-    request<Task[]>(opts?.withStats ? "/crypto/tasks?include=stats" : "/crypto/tasks"),
+  listTasks: (opts?: { withStats?: boolean; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (opts?.withStats) q.set("include", "stats");
+    if (opts?.limit !== undefined) q.set("limit", String(opts.limit));
+    if (opts?.offset !== undefined) q.set("offset", String(opts.offset));
+    const qs = q.toString();
+    return request<Paginated<Task>>(`/crypto/tasks${qs ? `?${qs}` : ""}`);
+  },
   getTask: (id: number | string) =>
     request<Task>(`/crypto/tasks/${id}`),
-  listTaskMarkets: (id: number | string, limit = 50) =>
-    request<CreatedMarket[]>(`/crypto/tasks/${id}/markets?limit=${limit}`),
+  listTaskMarkets: (id: number | string, opts?: { limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (opts?.limit !== undefined) q.set("limit", String(opts.limit));
+    if (opts?.offset !== undefined) q.set("offset", String(opts.offset));
+    const qs = q.toString();
+    return request<Paginated<CreatedMarket>>(`/crypto/tasks/${id}/markets${qs ? `?${qs}` : ""}`);
+  },
   createTask: (body: CreateTaskRequest) =>
     request<Task>("/crypto/tasks", { method: "POST", body, authed: true }),
   updateTask: (id: number, body: UpdateTaskRequest) =>

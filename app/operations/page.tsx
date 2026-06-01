@@ -59,10 +59,10 @@ export default async function OperationsPage({
     countAlerts({ acknowledged: false }),
   ]);
 
-  const cryptoTasks = unwrap(cryptoTasksResult, [] as Task[]);
+  const cryptoTasks = (unwrap(cryptoTasksResult, { data: [] as Task[], total: 0, limit: 60, offset: 0 })).data;
   const sportTasks = unwrap(sportTasksResult, [] as SportTask[]);
-  const plans = unwrap(plansResult, [] as DeployPlan[]);
-  const log = unwrap(logResult, [] as OperatorLogEntry[]);
+  const plans = (unwrap(plansResult, { data: [] as DeployPlan[], total: 0, limit: 60, offset: 0 })).data;
+  const log = (unwrap(logResult, { data: [] as OperatorLogEntry[], total: 0, limit: 60, offset: 0 })).data;
   const alertCounts = unwrap(alertCountsResult, {
     total: 0,
     unacknowledged: 0,

@@ -11,7 +11,7 @@ import {
   formatRelative,
   shortId,
 } from "@/lib/format";
-import type { CreatedMarket } from "@/lib/types";
+import type { CreatedMarket, TaskStats } from "@/lib/types";
 
 type FilterKey = "active" | "verified" | "failed" | "awaiting_price" | "all";
 
@@ -43,17 +43,41 @@ const FILTERS: FilterDef[] = [
   { key: "all", label: "All", match: () => true },
 ];
 
-const PAGE_SIZES = [10, 25, 100, Number.POSITIVE_INFINITY] as const;
+type GlobalCounts = {
+  active: number;
+  verified: number;
+  failed: number;
+  awaiting_price: number;
+  all: number;
+};
 
-export function MarketsPanel({ markets }: { markets: CreatedMarket[] }) {
+function statsToGlobalCounts(stats: TaskStats): GlobalCounts {
+  return {
+    // active = PENDING (not yet past slot_end) + CREATED but not yet verified
+    active: (stats.pending_now ?? 0) + (stats.awaiting_verify_now ?? 0),
+    verified: stats.total_verified ?? 0,
+    // failed_last_24h is the best available proxy for failed total
+    failed: stats.failed_last_24h ?? 0,
+    awaiting_price: stats.awaiting_price_count ?? 0,
+    all: stats.total_created ?? 0,
+  };
+}
+
+export function MarketsPanel({
+  markets,
+  taskStats,
+}: {
+  markets: CreatedMarket[];
+  taskStats?: TaskStats;
+}) {
   const [filter, setFilter] = useState<FilterKey>("active");
   const [query, setQuery] = useState("");
-  const [pageSize, setPageSize] = useState<number>(10);
   const [selected, setSelected] = useState<CreatedMarket | null>(null);
 
   const nowMs = useNowMs();
 
-  const counts = useMemo(() => {
+  // Page-local counts — used for the status bar summary.
+  const pageCounts = useMemo(() => {
     const c = { active: 0, verified: 0, failed: 0, awaiting_price: 0 };
     for (const m of markets) {
       if (FILTERS[0].match(m, nowMs)) c.active++;
@@ -63,6 +87,16 @@ export function MarketsPanel({ markets }: { markets: CreatedMarket[] }) {
     }
     return c;
   }, [markets, nowMs]);
+
+  // Global counts for the filter tab badges — from task.stats when available,
+  // otherwise fall back to the page-local tally.
+  const counts: GlobalCounts = useMemo(
+    () =>
+      taskStats
+        ? statsToGlobalCounts(taskStats)
+        : { ...pageCounts, all: markets.length },
+    [taskStats, pageCounts, markets.length],
+  );
 
   const filtered = useMemo(() => {
     const match = FILTERS.find((f) => f.key === filter)?.match ?? (() => true);
@@ -77,21 +111,15 @@ export function MarketsPanel({ markets }: { markets: CreatedMarket[] }) {
     });
   }, [markets, filter, query, nowMs]);
 
-  const visible = useMemo(
-    () =>
-      Number.isFinite(pageSize) ? filtered.slice(0, pageSize) : filtered,
-    [filtered, pageSize],
-  );
+  // Server already delivers one page; filter locally within that page only.
+  const visible = filtered;
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border">
         {FILTERS.map((f) => {
           const isActive = filter === f.key;
-          const count =
-            f.key === "all"
-              ? markets.length
-              : counts[f.key as keyof typeof counts];
+          const count = counts[f.key as keyof typeof counts];
           return (
             <button
               key={f.key}
@@ -124,39 +152,8 @@ export function MarketsPanel({ markets }: { markets: CreatedMarket[] }) {
           placeholder="Filter by slug or market id…"
           className="w-56 px-2.5 py-1 text-xs rounded-md border border-border bg-background placeholder:text-foreground-muted focus:outline-none focus:ring-1 focus:ring-accent"
         />
-        <label className="flex items-center gap-1.5 text-xs text-foreground-muted">
-          Show
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-            className="px-1.5 py-1 text-xs rounded-md border border-border bg-background focus:outline-none focus:ring-1 focus:ring-accent"
-          >
-            {PAGE_SIZES.map((n) => (
-              <option key={n} value={n}>
-                {Number.isFinite(n) ? n : "All"}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
 
-      <div className="px-4 py-2 text-xs text-foreground-muted border-b border-border">
-        {visible.length === filtered.length
-          ? `${filtered.length} matching`
-          : `${visible.length} of ${filtered.length} matching`}
-        <span className="mx-1.5">·</span>
-        {markets.length} loaded
-        <span className="mx-1.5">·</span>
-        <span className="text-success">{counts.verified} verified</span>
-        <span className="mx-1.5">·</span>
-        <span className={counts.active > 0 ? "text-info" : ""}>
-          {counts.active} active
-        </span>
-        <span className="mx-1.5">·</span>
-        <span className={counts.failed > 0 ? "text-danger" : ""}>
-          {counts.failed} failed
-        </span>
-      </div>
 
       {visible.length === 0 ? (
         <EmptyState
@@ -190,12 +187,6 @@ export function MarketsPanel({ markets }: { markets: CreatedMarket[] }) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {filtered.length > visible.length && (
-        <div className="px-4 py-3 text-center text-xs text-foreground-muted border-t border-border">
-          {filtered.length - visible.length} more hidden · choose a larger page size to see them
         </div>
       )}
 

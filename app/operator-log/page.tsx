@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Pagination } from "@/components/pagination";
 import {
   Badge,
   Card,
@@ -31,6 +32,11 @@ function classifySource(action: string): Exclude<Source, "all"> {
   return "manual";
 }
 
+const DEFAULT_PER_PAGE = 25;
+function clampPerPage(n: number): number {
+  return [10, 25, 50, 100].includes(n) ? n : DEFAULT_PER_PAGE;
+}
+
 type SearchParams = {
   source?: string;
   resource_type?: string;
@@ -39,6 +45,8 @@ type SearchParams = {
   correlation_id?: string;
   status?: string;
   limit?: string;
+  page?: string;
+  per_page?: string;
 };
 
 export default async function OperatorLogPage({
@@ -52,6 +60,10 @@ export default async function OperatorLogPage({
       ? sp.source
       : "all";
 
+  const perPage = clampPerPage(Number(sp.per_page) || DEFAULT_PER_PAGE);
+  const page = Math.max(1, Number(sp.page) || 1);
+  const offset = (page - 1) * perPage;
+
   const filters: OperatorLogFilters = {};
   if (
     sp.resource_type === "series" ||
@@ -63,21 +75,34 @@ export default async function OperatorLogPage({
   if (sp.actor) filters.actor = sp.actor;
   if (sp.correlation_id) filters.correlation_id = sp.correlation_id;
   if (sp.status) filters.status = sp.status as OperatorLogEntry["status"];
-  if (sp.limit) filters.limit = Number(sp.limit);
 
   let entries: OperatorLogEntry[] = [];
+  let total = 0;
   let error: string | null = null;
   try {
-    entries = await manual.listOperatorLog(filters);
+    const result = await manual.listOperatorLog({ ...filters, limit: perPage, offset });
+    entries = result.data;
+    total = result.total;
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 
-  // Source partition is applied after fetch — the backend endpoint
-  // doesn't distinguish manual vs sports rows, so we filter by action
-  // prefix here. Cheap: the operator log is paginated to <=200 rows.
+  // Source partition is applied after fetch — the backend doesn't filter by action
+  // family, so we filter client-side on the current page.
   const filteredEntries =
     source === "all" ? entries : entries.filter((e) => classifySource(e.action) === source);
+
+  const paginationBasePath = (() => {
+    const q = new URLSearchParams();
+    if (source !== "all") q.set("source", source);
+    if (sp.resource_type) q.set("resource_type", sp.resource_type);
+    if (sp.action) q.set("action", sp.action);
+    if (sp.actor) q.set("actor", sp.actor);
+    if (sp.correlation_id) q.set("correlation_id", sp.correlation_id);
+    if (sp.status) q.set("status", sp.status);
+    const qs = q.toString();
+    return `/operator-log${qs ? `?${qs}` : ""}`;
+  })();
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto space-y-4">
@@ -103,11 +128,19 @@ export default async function OperatorLogPage({
           }
         />
       ) : (
-        <ul className="space-y-2">
-          {filteredEntries.map((e) => (
-            <LogRow key={e.id} entry={e} />
-          ))}
-        </ul>
+        <>
+          <Card>
+            <Pagination total={total} page={page} perPage={perPage} basePath={paginationBasePath} />
+          </Card>
+          <ul className="space-y-2">
+            {filteredEntries.map((e) => (
+              <LogRow key={e.id} entry={e} />
+            ))}
+          </ul>
+          <Card>
+            <Pagination total={total} page={page} perPage={perPage} basePath={paginationBasePath} />
+          </Card>
+        </>
       )}
     </div>
   );

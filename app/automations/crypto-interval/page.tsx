@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Pagination } from "@/components/pagination";
 import { TaskToggle } from "@/components/task-toggle";
 import {
   Badge,
@@ -9,7 +10,7 @@ import {
   PageHeader,
   buttonVariants,
 } from "@/components/ui";
-import { crypto } from "@/lib/api";
+import { type Paginated, crypto } from "@/lib/api";
 import { behaviors } from "@/lib/behaviors";
 import { formatDateTime, formatDuration } from "@/lib/format";
 import type { Task } from "@/lib/types";
@@ -17,15 +18,35 @@ import type { Task } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const behavior = behaviors["crypto-interval"];
+const DEFAULT_PER_PAGE = 25;
 
-export default async function CryptoIntervalListPage() {
-  let tasks: Task[] = [];
+type SearchParams = { page?: string; per_page?: string };
+
+function clampPerPage(n: number): number {
+  return [10, 25, 50, 100].includes(n) ? n : DEFAULT_PER_PAGE;
+}
+
+export default async function CryptoIntervalListPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
+  const perPage = clampPerPage(Number(sp.per_page) || DEFAULT_PER_PAGE);
+  const page = Math.max(1, Number(sp.page) || 1);
+  const offset = (page - 1) * perPage;
+
+  let result: Paginated<Task> = { data: [], total: 0, limit: perPage, offset };
   let error: string | null = null;
   try {
-    tasks = await crypto.listTasks({ withStats: true });
+    result = await crypto.listTasks({ withStats: true, limit: perPage, offset });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
+
+  const tasks = result.data;
+
+  const basePath = "/automations/crypto-interval";
 
   return (
     <div className="space-y-6">
@@ -63,6 +84,12 @@ export default async function CryptoIntervalListPage() {
         </Card>
       ) : (
         <Card>
+          <Pagination
+            total={result.total}
+            page={page}
+            perPage={perPage}
+            basePath={basePath}
+          />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -85,6 +112,12 @@ export default async function CryptoIntervalListPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={result.total}
+            page={page}
+            perPage={perPage}
+            basePath={basePath}
+          />
         </Card>
       )}
     </div>

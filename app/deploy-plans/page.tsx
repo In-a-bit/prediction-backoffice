@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Pagination } from "@/components/pagination";
 import {
   Badge,
   Card,
@@ -11,7 +12,7 @@ import {
   type Tab,
   buttonVariants,
 } from "@/components/ui";
-import { manual } from "@/lib/api";
+import { type Paginated, manual } from "@/lib/api";
 import { formatDateTimeFull, formatRelative } from "@/lib/format";
 import type { DeployPlan, DeployPlanMarketStatus, DeployPlanStatus } from "@/lib/types";
 
@@ -48,7 +49,15 @@ type SearchParams = {
   source?: string;
   status?: string;
   event_external_id?: string;
+  page?: string;
+  per_page?: string;
 };
+
+const DEFAULT_PER_PAGE = 25;
+
+function clampPerPage(n: number): number {
+  return [10, 25, 50, 100].includes(n) ? n : DEFAULT_PER_PAGE;
+}
 
 const ACTIVE_STATUSES: DeployPlanStatus[] = ["pending", "running", "paused"];
 
@@ -63,25 +72,40 @@ export default async function DeployPlansPage({
       ? sp.source
       : "all";
 
-  let plans: DeployPlan[] = [];
+  const perPage = clampPerPage(Number(sp.per_page) || DEFAULT_PER_PAGE);
+  const page = Math.max(1, Number(sp.page) || 1);
+  const offset = (page - 1) * perPage;
+
+  let result: Paginated<DeployPlan> = { data: [], total: 0, limit: perPage, offset };
   let error: string | null = null;
   try {
-    plans = await manual.listDeployPlans({
+    result = await manual.listDeployPlans({
       status: sp.status,
       event_external_id: sp.event_external_id,
-      limit: 200,
+      limit: perPage,
+      offset,
     });
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 
-  // Source partition is computed after fetch — backend doesn't distinguish.
+  // Source partition is computed after fetch — backend doesn't filter by source.
   const filtered =
-    source === "all" ? plans : plans.filter((p) => classifySource(p) === source);
+    source === "all" ? result.data : result.data.filter((p) => classifySource(p) === source);
 
   const active = filtered.filter((p) => ACTIVE_STATUSES.includes(p.status));
   const done = filtered.filter((p) => !ACTIVE_STATUSES.includes(p.status));
   const hasActive = active.length > 0;
+
+  // basePath carries existing filters; the Pagination component merges page/per_page.
+  const paginationBasePath = (() => {
+    const q = new URLSearchParams();
+    if (source !== "all") q.set("source", source);
+    if (sp.status) q.set("status", sp.status);
+    if (sp.event_external_id) q.set("event_external_id", sp.event_external_id);
+    const qs = q.toString();
+    return `/deploy-plans${qs ? `?${qs}` : ""}`;
+  })();
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto space-y-6">
@@ -115,6 +139,9 @@ export default async function DeployPlansPage({
         />
       ) : (
         <>
+          <Card>
+            <Pagination total={result.total} page={page} perPage={perPage} basePath={paginationBasePath} />
+          </Card>
           <PlanGroup
             title="Active"
             subtitle={`${active.length} running / paused / pending`}
@@ -127,6 +154,9 @@ export default async function DeployPlansPage({
             plans={done}
             emptyMessage="No completed plans yet."
           />
+          <Card>
+            <Pagination total={result.total} page={page} perPage={perPage} basePath={paginationBasePath} />
+          </Card>
         </>
       )}
 

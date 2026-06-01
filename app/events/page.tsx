@@ -149,7 +149,7 @@ function emptyManualPayload(): ManualPayload {
 async function loadManual(): Promise<ManualPayload> {
   let plans: DeployPlan[] = [];
   try {
-    plans = await manual.listDeployPlans({ limit: 80 });
+    plans = (await manual.listDeployPlans({ limit: 80 })).data;
   } catch (err) {
     return { rows: [], knownSeries: [], error: stringifyError(err) };
   }
@@ -235,11 +235,12 @@ function emptyCryptoPayload(): CryptoPayload {
 
 async function loadCrypto(): Promise<CryptoPayload> {
   try {
-    const [tasks, assets, intervals] = await Promise.all([
+    const [tasksPage, assets, intervals] = await Promise.all([
       crypto.listTasks(),
       crypto.listAssets(),
       crypto.listIntervals(),
     ]);
+    const tasks = tasksPage.data;
     const subset = tasks.slice(0, PREVIEW_TASKS);
     const events = await Promise.all(
       subset.map((t) =>
@@ -360,7 +361,7 @@ async function countAcrossSources(): Promise<{
     manual
       .listDeployPlans({ limit: 80 })
       .then(
-        (plans) =>
+        ({ data: plans }) =>
           new Set(
             plans
               .filter((p) => p.actor !== "crypto-auto" && p.actor !== "sports-auto")
@@ -370,7 +371,7 @@ async function countAcrossSources(): Promise<{
       .catch(() => 0),
     crypto
       .listTasks()
-      .then((tasks) => tasks.length)
+      .then(({ data: tasks }) => tasks.length)
       .catch(() => 0),
     sports
       .listTasks()
