@@ -69,7 +69,7 @@ export default async function ResolutionsPage({
         : String(marketsResult.reason)
       : marketsResult.value.error;
   const log: OperatorLogEntry[] =
-    logResult.status === "fulfilled" ? logResult.value : [];
+    logResult.status === "fulfilled" ? logResult.value.data : [];
 
   const counts = countBuckets(markets, log);
   const filtered = filterFor(markets, log, tab);

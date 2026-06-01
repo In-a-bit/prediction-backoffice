@@ -52,10 +52,10 @@ export default async function DeployPlanDetailPage({
     plan = await manual.getDeployPlan(id);
     if (plan.correlation_id) {
       try {
-        logs = await manual.listOperatorLog({
+        logs = (await manual.listOperatorLog({
           correlation_id: plan.correlation_id,
           limit: 200,
-        });
+        })).data;
       } catch {
         // Soft-fail on logs — the plan view is still useful without them.
       }
