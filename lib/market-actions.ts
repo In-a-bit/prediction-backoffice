@@ -117,6 +117,14 @@ function ctfIsTerminal(d?: DpmMarket): boolean {
   return !!(d?.closed || d?.archived);
 }
 
+function canReportCryptoPayouts(d?: DpmMarket): boolean {
+  const end = d?.end_date;
+  if (!end) return false;
+  const endMs = Date.parse(end);
+  if (Number.isNaN(endMs)) return false;
+  return Date.now() >= endMs + 2 * 60 * 1000;
+}
+
 // ---------------------------------------------------------------------------
 // Visibility
 // ---------------------------------------------------------------------------
@@ -158,7 +166,11 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   // dpm-api reports for resolution_type.
   if (isCtfOracle(ctx.dpmMarket) || ctx.source === "crypto") {
     if (!ctfIsTerminal(ctx.dpmMarket)) {
-      actions.push("ctf-oracle-report-payouts");
+      // Crypto payouts are only valid once the market end time has passed and
+      // the 1m post-close candle should be available.
+      if (ctx.source !== "crypto" || canReportCryptoPayouts(ctx.dpmMarket)) {
+        actions.push("ctf-oracle-report-payouts");
+      }
     }
   } else {
     // UMA market.
@@ -170,9 +182,8 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       if (u === "PROPOSED" || u === "DISPUTED") {
         actions.push("uma-resolve");
       }
-      // Reset + Resolve manually: UMA-only escape hatches. The backend
-      // doesn't validate uma_resolution_status for these — see uma_action.go.
-      actions.push("uma-reset", "uma-resolve-manually");
+      // Keep only reset as the operator escape hatch.
+      actions.push("uma-reset");
     }
   }
 
