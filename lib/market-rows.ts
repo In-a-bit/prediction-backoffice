@@ -42,6 +42,7 @@ export type MarketRow = {
   accepting: AcceptingFlag | null;
   accepting_orders_at: string | null;
   uma_resolution_status: string | null;
+  uma_resolution_statuses: string[] | null;
   closed_time: string | null;
   lifecycle: Lifecycle;
   result: Result;
@@ -169,6 +170,8 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
         dpm?.accepting_orders_timestamp ?? row.accepting_orders_at,
       uma_resolution_status:
         dpm?.uma_resolution_status ?? row.uma_resolution_status,
+      uma_resolution_statuses:
+        dpm?.uma_resolution_statuses ?? row.uma_resolution_statuses,
       closed_time:
         dpm?.closed && dpm?.end_date ? dpm.end_date : row.closed_time,
       event_title: event?.title?.trim() || event?.slug?.trim() || row.event_title,
@@ -219,6 +222,7 @@ function rowFromManual(m: DeployPlanMarket, plan: DeployPlan): MarketRow {
     accepting: null,
     accepting_orders_at: null,
     uma_resolution_status: null,
+    uma_resolution_statuses: null,
     closed_time: null,
     lifecycle,
     result,
@@ -275,6 +279,7 @@ function rowFromCrypto(m: CryptoMarket, ev: CryptoEvent): MarketRow {
     accepting: null,
     accepting_orders_at: null,
     uma_resolution_status: null,
+    uma_resolution_statuses: null,
     closed_time: null,
     lifecycle,
     result,
@@ -380,6 +385,7 @@ function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
     accepting: null,
     accepting_orders_at: null,
     uma_resolution_status: null,
+    uma_resolution_statuses: null,
     closed_time: null,
     lifecycle,
     result,

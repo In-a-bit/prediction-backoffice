@@ -8,6 +8,7 @@ import type {
   CreatedMarket,
   CryptoEvent,
   DeployPlan,
+  DpmMarket,
   EventPayload,
   EventResponse,
   Interval,
@@ -230,9 +231,14 @@ export const manual = {
       { method: "POST", authed: true },
     ),
 
+  // ----- Resolution feed -----
+  // Returns all markets currently in an active UMA resolution state
+  // (PROPOSING, PROPOSED, DISPUTED, RESOLVING). Guaranteed to be complete —
+  // unlike the batch-hydration approach it fetches directly from dpm-api.
+  listResolutionMarkets: () => request<DpmMarket[]>("/manual/resolutions"),
+
   // ----- Audit log -----
-  listOperatorLog: (filters: OperatorLogFilters & { offset?: number } = {}) => {
-    const q = new URLSearchParams();
+  listOperatorLog: (filters: OperatorLogFilters & { offset?: number } = {}) => {    const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
     }

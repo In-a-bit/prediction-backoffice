@@ -31,14 +31,22 @@ export function ManualEventsTab({ data }: { data: ManualPayload }) {
   );
 
   const filtered = useMemo(() => {
+    const q = globalFilter.trim().toLowerCase();
     return data.rows.filter((row) => {
+      if (q) {
+        const matches =
+          row.title?.toLowerCase().includes(q) ||
+          row.series?.toLowerCase().includes(q) ||
+          row.external_id?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
       if (series && String(row.series_id ?? "") !== series) return false;
       if (status === "active" && !row.active) return false;
       if (status === "closed" && !row.closed) return false;
       if (status === "archived" && !row.archived) return false;
       return true;
     });
-  }, [data.rows, series, status]);
+  }, [data.rows, globalFilter, series, status]);
 
   const columns = useMemo<ColumnDef<ManualEventRow>[]>(
     () => [
@@ -159,7 +167,6 @@ export function ManualEventsTab({ data }: { data: ManualPayload }) {
       <DataTable
         data={filtered}
         columns={columns}
-        globalFilter={globalFilter}
         initialSorting={[{ id: "created_at", desc: true }]}
         emptyState={{
           title: "No manual events match",

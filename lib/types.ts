@@ -350,6 +350,7 @@ export type DpmMarket = {
   uma_bond?: string | null;
   uma_reward?: string | null;
   uma_resolution_status?: string | null;
+  uma_resolution_statuses?: string[] | null;
 
   paused?: boolean | null;
   flagged?: boolean | null;

@@ -42,7 +42,15 @@ export function CryptoEventsTab({ data }: { data: CryptoPayload }) {
   );
 
   const filtered = useMemo(() => {
+    const q = globalFilter.trim().toLowerCase();
     return data.rows.filter((row) => {
+      if (q) {
+        const matches =
+          row.asset?.toLowerCase().includes(q) ||
+          row.interval?.toLowerCase().includes(q) ||
+          row.event_external_id?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
       if (asset && row.asset !== asset) return false;
       if (interval && row.interval !== interval) return false;
       if (state === "pending" && row.outcome !== null) return false;
@@ -51,7 +59,7 @@ export function CryptoEventsTab({ data }: { data: CryptoPayload }) {
       if (state === "skipped" && !row.is_skipped) return false;
       return true;
     });
-  }, [data.rows, asset, interval, state]);
+  }, [data.rows, globalFilter, asset, interval, state]);
 
   const columns = useMemo<ColumnDef<CryptoEventRow>[]>(
     () => [
@@ -170,7 +178,6 @@ export function CryptoEventsTab({ data }: { data: CryptoPayload }) {
       <DataTable
         data={filtered}
         columns={columns}
-        globalFilter={globalFilter}
         initialSorting={[{ id: "slot_end", desc: true }]}
         emptyState={{
           title: "No crypto events match",

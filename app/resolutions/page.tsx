@@ -9,30 +9,25 @@ import {
 } from "@/components/ui";
 import {
   bucketUma,
-  isFirstTimeDisputed,
-  UMA_BUCKET_LABEL,
   type UmaBucket,
 } from "@/lib/aggregations";
 import { manual } from "@/lib/api";
 import { loadMarketRows, type MarketRow } from "@/lib/market-rows";
-import type { OperatorLogEntry } from "@/lib/types";
+import type { DpmMarket, OperatorLogEntry } from "@/lib/types";
+import type { PlanSource } from "@/lib/source-from-plan";
 
 import { ResolutionsTable } from "./_table";
 
 export const dynamic = "force-dynamic";
 
-type TabKey = UmaBucket | "first_time_disputed";
+type TabKey = UmaBucket;
 
 const TAB_ORDER: { key: TabKey; label: string }[] = [
-  { key: "ready_to_propose", label: "Ready to propose" },
-  { key: "proposed", label: "Proposed" },
-  { key: "challenge_period", label: "Challenge period" },
-  { key: "disputed", label: "Disputed" },
+  { key: "initialized", label: "Initialized" },
   { key: "first_time_disputed", label: "First-time disputed" },
-  { key: "ready_to_request", label: "Ready to request" },
-  { key: "settled", label: "Settled" },
-  { key: "unstarted", label: "Not started" },
-  { key: "unknown", label: "Unknown" },
+  { key: "proposed", label: "Proposed" },
+  { key: "disputed", label: "Disputed" },
+  { key: "resolved", label: "Resolved" },
 ];
 
 function isTabKey(v: unknown): v is TabKey {
@@ -47,20 +42,19 @@ export default async function ResolutionsPage({
   const sp = await searchParams;
   const tab: TabKey = isTabKey(sp.tab) ? sp.tab : "disputed";
 
-  const [marketsResult, logResult] = await Promise.allSettled([
-    loadMarketRows({
-      // Resolutions cares about UMA-resolved markets, which can come from any
-      // source — load with a slightly larger hydration cap so we don't miss
-      // a fresh disputed market just because it was bumped down by recency.
-      hydrationCap: 100,
-      planLimit: 80,
-      taskLimit: 5,
-      marketsPerTask: 30,
-    }),
-    manual.listOperatorLog({ limit: 200 }),
-  ]);
+  const [marketsResult, resolutionMarketsResult, logResult] =
+    await Promise.allSettled([
+      loadMarketRows({
+        hydrationCap: 100,
+        planLimit: 80,
+        taskLimit: 5,
+        marketsPerTask: 30,
+      }),
+      manual.listResolutionMarkets(),
+      manual.listOperatorLog({ limit: 200 }),
+    ]);
 
-  const markets =
+  const baseRows =
     marketsResult.status === "fulfilled" ? marketsResult.value.rows : [];
   const error =
     marketsResult.status === "rejected"
@@ -68,11 +62,23 @@ export default async function ResolutionsPage({
         ? marketsResult.reason.message
         : String(marketsResult.reason)
       : marketsResult.value.error;
+
+  const resolutionMarkets =
+    resolutionMarketsResult.status === "fulfilled"
+      ? resolutionMarketsResult.value
+      : [];
+
   const log: OperatorLogEntry[] =
     logResult.status === "fulfilled" ? logResult.value.data : [];
 
-  const counts = countBuckets(markets, log);
-  const filtered = filterFor(markets, log, tab);
+  // Merge: the dedicated resolution feed (which includes INITIALIZING markets
+  // with dispute history, PROPOSED, DISPUTED, RESOLVED) takes precedence over
+  // the general hydration results. Markets beyond the hydration cap get added
+  // as stubs if they appear in the resolution feed.
+  const markets = mergeResolutionData(baseRows, resolutionMarkets);
+
+  const counts = countBuckets(markets);
+  const filtered = filterFor(markets, tab);
 
   const tabs: Tab<TabKey>[] = TAB_ORDER.map((t) => ({
     key: t.key,
@@ -88,17 +94,23 @@ export default async function ResolutionsPage({
         description="Single place to monitor and act on every UMA resolution across the platform. Tabs split markets by their current resolution state."
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card>
           <CardBody>
             <Stat
-              label="Unresolved"
-              value={
-                counts.unstarted +
-                counts.ready_to_request +
-                counts.ready_to_propose
-              }
-              hint="not yet proposed"
+              label="Initialized"
+              value={counts.initialized}
+              hint="awaiting proposal"
+            />
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
+            <Stat
+              label="First-time disputed"
+              value={counts.first_time_disputed}
+              tone={counts.first_time_disputed > 0 ? "danger" : "neutral"}
+              hint="needs re-proposal"
             />
           </CardBody>
         </Card>
@@ -118,26 +130,7 @@ export default async function ResolutionsPage({
         </Card>
         <Card>
           <CardBody>
-            <Stat
-              label="In challenge"
-              value={counts.challenge_period}
-              tone={counts.challenge_period > 0 ? "warning" : "neutral"}
-            />
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <Stat label="Settled" value={counts.settled} tone="success" />
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <Stat
-              label="First-time disputed"
-              value={counts.first_time_disputed}
-              tone={counts.first_time_disputed > 0 ? "danger" : "neutral"}
-              hint="needs operator review"
-            />
+            <Stat label="Resolved" value={counts.resolved} tone="success" />
           </CardBody>
         </Card>
       </div>
@@ -157,45 +150,89 @@ export default async function ResolutionsPage({
   );
 }
 
-function countBuckets(
-  markets: MarketRow[],
-  log: OperatorLogEntry[],
-): Record<TabKey, number> {
+// mergeResolutionData ensures that markets from the dedicated DPM resolution
+// feed are always present and have the correct uma_resolution_status and
+// uma_resolution_statuses, even if they were beyond the hydration cap or
+// not yet in the deploy-plan list.
+function mergeResolutionData(
+  base: MarketRow[],
+  resolutionMarkets: DpmMarket[],
+): MarketRow[] {
+  if (resolutionMarkets.length === 0) return base;
+
+  const byId = new Map<string, MarketRow>(
+    base.map((r) => [r.market_external_id, r]),
+  );
+
+  for (const m of resolutionMarkets) {
+    const existing = byId.get(m.external_id);
+    if (existing) {
+      byId.set(m.external_id, {
+        ...existing,
+        uma_resolution_status:
+          m.uma_resolution_status ?? existing.uma_resolution_status,
+        uma_resolution_statuses:
+          m.uma_resolution_statuses ?? existing.uma_resolution_statuses,
+        active: m.active ?? existing.active,
+        closed: m.closed ?? existing.closed,
+      });
+    } else {
+      byId.set(m.external_id, stubRowFromDpm(m));
+    }
+  }
+
+  return [...byId.values()];
+}
+
+function stubRowFromDpm(m: DpmMarket): MarketRow {
+  return {
+    market_external_id: m.external_id,
+    question: m.question,
+    source: sourceFromMetadataType(m.metadata_type),
+    event_external_id: null,
+    event_title: null,
+    series_slug: null,
+    created_at: m.created_at,
+    active: m.active,
+    closed: m.closed,
+    accepting: null,
+    accepting_orders_at: m.accepting_orders_timestamp ?? null,
+    uma_resolution_status: m.uma_resolution_status ?? null,
+    uma_resolution_statuses: m.uma_resolution_statuses ?? null,
+    closed_time: m.closed && m.end_date ? m.end_date : null,
+    lifecycle: { stages: [] },
+    result: { kind: "na", label: "" },
+    sortKey: new Date(m.updated_at).getTime(),
+  };
+}
+
+function sourceFromMetadataType(
+  t: string | null | undefined,
+): PlanSource {
+  if (!t) return "manual";
+  const lower = t.toLowerCase();
+  if (lower.startsWith("sports")) return "sport";
+  if (lower.startsWith("crypto")) return "crypto";
+  return "manual";
+}
+
+function countBuckets(markets: MarketRow[]): Record<TabKey, number> {
   const counts: Record<TabKey, number> = {
-    unstarted: 0,
-    ready_to_request: 0,
-    ready_to_propose: 0,
+    initialized: 0,
+    first_time_disputed: 0,
     proposed: 0,
     disputed: 0,
-    settled: 0,
-    challenge_period: 0,
-    unknown: 0,
-    first_time_disputed: 0,
+    resolved: 0,
   };
   for (const m of markets) {
-    const bucket = bucketUma(m.uma_resolution_status);
-    counts[bucket]++;
-    if (
-      bucket === "disputed" &&
-      isFirstTimeDisputed(m.market_external_id, log)
-    ) {
-      counts.first_time_disputed++;
-    }
+    const bucket = bucketUma(m.uma_resolution_status, m.uma_resolution_statuses);
+    if (bucket !== null) counts[bucket]++;
   }
   return counts;
 }
 
-function filterFor(
-  markets: MarketRow[],
-  log: OperatorLogEntry[],
-  tab: TabKey,
-): MarketRow[] {
-  if (tab === "first_time_disputed") {
-    return markets.filter(
-      (m) =>
-        bucketUma(m.uma_resolution_status) === "disputed" &&
-        isFirstTimeDisputed(m.market_external_id, log),
-    );
-  }
-  return markets.filter((m) => bucketUma(m.uma_resolution_status) === tab);
+function filterFor(markets: MarketRow[], tab: TabKey): MarketRow[] {
+  return markets.filter(
+    (m) => bucketUma(m.uma_resolution_status, m.uma_resolution_statuses) === tab,
+  );
 }

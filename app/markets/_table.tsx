@@ -29,7 +29,17 @@ export function MarketsTable({ data }: { data: MarketsPayload }) {
   const [closedFilter, setClosedFilter] = useState<FlagFilter>("any");
 
   const filtered = useMemo(() => {
+    const q = globalFilter.trim().toLowerCase();
     return data.rows.filter((row) => {
+      if (q) {
+        const matches =
+          row.question?.toLowerCase().includes(q) ||
+          row.event_title?.toLowerCase().includes(q) ||
+          row.market_external_id?.toLowerCase().includes(q) ||
+          row.event_external_id?.toLowerCase().includes(q) ||
+          row.series_slug?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
       if (umaStatus && row.uma_resolution_status !== umaStatus) return false;
       if (accepting !== "any" && row.accepting !== accepting) return false;
       if (activeFilter !== "any") {
@@ -42,7 +52,7 @@ export function MarketsTable({ data }: { data: MarketsPayload }) {
       }
       return true;
     });
-  }, [data.rows, umaStatus, accepting, activeFilter, closedFilter]);
+  }, [data.rows, globalFilter, umaStatus, accepting, activeFilter, closedFilter]);
 
   const umaOptions = useMemo(() => {
     const statuses = new Set<string>();
@@ -215,7 +225,6 @@ export function MarketsTable({ data }: { data: MarketsPayload }) {
       <DataTable
         data={filtered}
         columns={columns}
-        globalFilter={globalFilter}
         initialSorting={[{ id: "created_at", desc: true }]}
         emptyState={{
           title: "No markets match",

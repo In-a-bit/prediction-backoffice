@@ -10,7 +10,6 @@ import type {
   CryptoEvent,
   DeployPlan,
   DpmMarket,
-  OperatorLogEntry,
   SportEvent,
   SportMarket,
 } from "./types";
@@ -19,66 +18,47 @@ import type {
 // UMA resolution status — the canonical bucketing for /resolutions tabs.
 // dpm-api stores the raw string from UMA's contracts; we normalise here so
 // the rest of the UI can switch on a closed set of values.
+//
+// Buckets map to the five operator-visible states:
+//   initialized       — INITIALIZING, no prior dispute in history
+//   first_time_disputed — INITIALIZING, but history contains DISPUTED (needs re-proposal)
+//   proposed          — PROPOSED (in liveness window)
+//   disputed          — DISPUTED (DVM vote in progress)
+//   resolved          — RESOLVED (DVM settled or liveness expired)
+//
+// Returns null for any status not in these five states so callers can
+// cleanly exclude markets that don't belong on the resolution page.
 // ---------------------------------------------------------------------------
 
 export type UmaBucket =
-  | "unstarted"
-  | "ready_to_request"
-  | "ready_to_propose"
+  | "initialized"
+  | "first_time_disputed"
   | "proposed"
   | "disputed"
-  | "settled"
-  | "challenge_period"
-  | "unknown";
+  | "resolved";
 
-export function bucketUma(raw: string | null | undefined): UmaBucket {
-  const s = (raw ?? "").toLowerCase().replace(/[\s-]+/g, "_");
-  if (!s) return "unstarted";
-  if (s.startsWith("ready_to_request") || s === "ready_to_request_resolution")
-    return "ready_to_request";
-  if (s.startsWith("ready_to_propose") || s === "ready_to_propose_resolution")
-    return "ready_to_propose";
-  if (s.includes("propos")) return "proposed";
-  if (s.includes("disput")) return "disputed";
-  if (s === "settled" || s === "resolved") return "settled";
-  if (s.includes("challenge")) return "challenge_period";
-  return "unknown";
+export function bucketUma(
+  raw: string | null | undefined,
+  statuses?: string[] | null,
+): UmaBucket | null {
+  const s = (raw ?? "").toUpperCase();
+  if (s === "INITIALIZING") {
+    const hadDispute = (statuses ?? []).some((st) => st.toUpperCase() === "DISPUTED");
+    return hadDispute ? "first_time_disputed" : "initialized";
+  }
+  if (s === "PROPOSED") return "proposed";
+  if (s === "DISPUTED") return "disputed";
+  if (s === "RESOLVED") return "resolved";
+  return null;
 }
 
 export const UMA_BUCKET_LABEL: Record<UmaBucket, string> = {
-  unstarted: "Not started",
-  ready_to_request: "Ready to request",
-  ready_to_propose: "Ready to propose",
+  initialized: "Initialized",
+  first_time_disputed: "First-time disputed",
   proposed: "Proposed",
   disputed: "Disputed",
-  settled: "Settled",
-  challenge_period: "In challenge period",
-  unknown: "Unknown",
+  resolved: "Resolved",
 };
-
-// ---------------------------------------------------------------------------
-// First-time disputed — an alert-worthy signal: a market that just entered
-// the disputed bucket and has never been disputed before. We approximate
-// "first time" by checking the operator log for any prior dispute action
-// against the same resource_external_id.
-// ---------------------------------------------------------------------------
-
-export function isFirstTimeDisputed(
-  marketExternalId: string,
-  log: OperatorLogEntry[],
-): boolean {
-  // Approximate "first dispute": no prior log row whose payload mentions
-  // dispute exists for this market. The create_market row is excluded
-  // because the freshly-disputed state is itself a creation event in some
-  // flows, and including it would always answer false.
-  const priorDisputeMentions = log.filter((entry) => {
-    if (entry.resource_external_id !== marketExternalId) return false;
-    if (entry.action === "create_market") return false;
-    const payloadStr = JSON.stringify(entry.request_payload ?? {}).toLowerCase();
-    return payloadStr.includes("disput");
-  });
-  return priorDisputeMentions.length <= 1;
-}
 
 // ---------------------------------------------------------------------------
 // Volume / accepting-orders status for a DpmMarket. The UI surfaces "Accepting

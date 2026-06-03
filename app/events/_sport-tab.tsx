@@ -44,14 +44,24 @@ export function SportEventsTab({ data }: { data: SportPayload }) {
   );
 
   const filtered = useMemo(() => {
+    const q = globalFilter.trim().toLowerCase();
     return data.rows.filter((row) => {
+      if (q) {
+        const matches =
+          row.match?.toLowerCase().includes(q) ||
+          row.league?.toLowerCase().includes(q) ||
+          row.country?.toLowerCase().includes(q) ||
+          row.sport?.toLowerCase().includes(q) ||
+          row.event_external_id?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
       if (sport && row.sport !== sport) return false;
       if (country && row.country !== country) return false;
       if (league && row.league !== league) return false;
       if (statusShort && row.fixture_status_short !== statusShort) return false;
       return true;
     });
-  }, [data.rows, sport, country, league, statusShort]);
+  }, [data.rows, globalFilter, sport, country, league, statusShort]);
 
   const columns = useMemo<ColumnDef<SportEventRow>[]>(
     () => [
@@ -171,7 +181,6 @@ export function SportEventsTab({ data }: { data: SportPayload }) {
       <DataTable
         data={filtered}
         columns={columns}
-        globalFilter={globalFilter}
         initialSorting={[{ id: "kickoff_at", desc: true }]}
         emptyState={{
           title: "No sport events match",

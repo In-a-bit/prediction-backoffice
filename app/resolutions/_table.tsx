@@ -94,7 +94,12 @@ export function ResolutionsTable({
         id: "uma_status",
         accessorKey: "uma_resolution_status",
         header: "UMA status",
-        cell: ({ row }) => <UmaChip value={row.original.uma_resolution_status} />,
+        cell: ({ row }) => (
+          <UmaChip
+            value={row.original.uma_resolution_status}
+            statuses={row.original.uma_resolution_statuses}
+          />
+        ),
       },
       {
         id: "created_at",
@@ -154,9 +159,7 @@ export function ResolutionsTable({
         emptyState={{
           title: "Nothing to resolve",
           description:
-            tab === "first_time_disputed"
-              ? "No first-time disputes detected. Disputes that have happened before are tracked under the Disputed tab."
-              : "Markets in this state will appear here as they roll through the resolution flow.",
+            "Markets in this state will appear here as they roll through the resolution flow.",
         }}
       />
     </div>
@@ -164,12 +167,11 @@ export function ResolutionsTable({
 }
 
 function prettyTabLabel(tab: string): string {
-  if (tab === "first_time_disputed") return "first-time disputed";
   return UMA_BUCKET_LABEL[tab as keyof typeof UMA_BUCKET_LABEL] ?? tab;
 }
 
 function ActionButton({ row }: { row: MarketRow }) {
-  const bucket = bucketUma(row.uma_resolution_status);
+  const bucket = bucketUma(row.uma_resolution_status, row.uma_resolution_statuses);
   const href = `/markets/${encodeURIComponent(row.market_external_id)}?source=${row.source}&from=resolutions${
     row.plan_external_id ? `&plan_id=${row.plan_external_id}` : ""
   }${row.position !== undefined ? `&pos=${row.position}` : ""}${
@@ -178,13 +180,13 @@ function ActionButton({ row }: { row: MarketRow }) {
 
   let label = "Open →";
   let variant: keyof typeof buttonVariants = "secondary";
-  if (bucket === "ready_to_propose" || bucket === "ready_to_request") {
+  if (bucket === "initialized" || bucket === "first_time_disputed") {
     label = "Propose →";
     variant = "primary";
   } else if (bucket === "disputed") {
-    label = "Re-propose →";
+    label = "Watch →";
     variant = "primary";
-  } else if (bucket === "proposed" || bucket === "challenge_period") {
+  } else if (bucket === "proposed") {
     label = "Inspect →";
     variant = "secondary";
   }
@@ -222,20 +224,25 @@ function LogActivityChips({
   );
 }
 
-function UmaChip({ value }: { value: string | null }) {
+function UmaChip({
+  value,
+  statuses,
+}: {
+  value: string | null;
+  statuses?: string[] | null;
+}) {
   if (!value) return <span className="text-xs text-foreground-muted">—</span>;
-  const bucket = bucketUma(value);
+  const bucket = bucketUma(value, statuses);
   const tone =
-    bucket === "disputed"
+    bucket === "disputed" || bucket === "first_time_disputed"
       ? "danger"
-      : bucket === "settled"
+      : bucket === "resolved"
         ? "success"
         : bucket === "proposed"
           ? "info"
-          : bucket === "challenge_period"
-            ? "warning"
-            : "neutral";
-  return <Badge tone={tone}>{UMA_BUCKET_LABEL[bucket]}</Badge>;
+          : "neutral";
+  const label = bucket ? UMA_BUCKET_LABEL[bucket] : value;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function openHref(row: MarketRow): string {
