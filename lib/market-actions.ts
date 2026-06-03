@@ -140,10 +140,11 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     if (s === "waiting_for_balance") actions.push("signal-balance");
   }
 
-  // 2) Sport-specific cancel — only while the on-chain market is cancellable.
+  // 2) Sport-specific cancel — only before the market is created on-chain.
+  //    Once local_status is "created" users can already place orders; cancelling
+  //    at that point is not meaningful and the button should be hidden.
   if (ctx.source === "sport" && ctx.sportMarketId !== undefined) {
-    const ls = ctx.sportLocalStatus;
-    if (ls === "created" || ls === "proposing" || ls === "proposed") {
+    if (ctx.sportLocalStatus === "pending") {
       actions.push("sport-cancel");
     }
   }
@@ -170,9 +171,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       if (u === "PROPOSED" || u === "DISPUTED") {
         actions.push("uma-resolve");
       }
-      // Reset + Resolve manually: UMA-only escape hatches. The backend
-      // doesn't validate uma_resolution_status for these — see uma_action.go.
-      actions.push("uma-reset", "uma-resolve-manually");
+      actions.push("uma-reset");
     }
   }
 

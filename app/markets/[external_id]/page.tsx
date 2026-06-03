@@ -245,6 +245,10 @@ export default async function MarketDetailPage({
                   No source context. Open this page from a plan, the event
                   page, or /events to see source-specific actions.
                 </InfoMessage>
+              ) : source === "sport" && (!sportMarket || sportMarket.local_status === "pending") ? (
+                <InfoMessage>
+                  Market is pending — no actions available yet.
+                </InfoMessage>
               ) : (
                 <MarketActionsPanel
                   source={source}
@@ -328,16 +332,25 @@ function LifecycleHeader({
   cryptoMarket?: CryptoMarket;
   cryptoEvent?: CryptoEvent;
 }) {
-  const derived =
-    source === "sport" && sportMarket
-      ? derive({ source: "sport", sportMarket, sportEvent })
+  const isSportPending =
+    source === "sport" && (!sportMarket || sportMarket.local_status === "pending");
+
+  const derived = isSportPending
+    ? {
+        lifecycle: {
+          stages: [
+            { key: "created" as const, status: "pending" as const },
+            { key: "proposed" as const, status: "pending" as const },
+            { key: "resolved" as const, status: "pending" as const },
+          ],
+        },
+        result: { kind: "pending" as const, label: "Pending" },
+      }
+    : source === "sport" && sportMarket
+      ? derive({ source: "sport", sportMarket, sportEvent, verdict: verdict ?? undefined })
       : source === "crypto" && cryptoMarket
         ? derive({ source: "crypto", cryptoMarket, cryptoEvent, verdict: verdict ?? undefined })
-        : derive({
-            source: "manual",
-            planMarket,
-            verdict: verdict ?? undefined,
-          });
+        : derive({ source: "manual", planMarket, verdict: verdict ?? undefined });
 
   return (
     <div className="space-y-4">

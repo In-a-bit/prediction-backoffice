@@ -51,28 +51,40 @@ const PRICE_5050 = "500000000000000000";
 // Sport
 // ---------------------------------------------------------------------------
 
-const SPORT_STAGE_TABLE: Record<
-  SportMarketStatus,
-  [LifecycleStageStatus, LifecycleStageStatus, LifecycleStageStatus]
-> = {
-  pending:    ["active",  "pending", "pending"],
-  created:    ["done",    "pending", "pending"],
-  proposing:  ["done",    "active",  "pending"],
-  proposed:   ["done",    "done",    "pending"],
-  resolving:  ["done",    "done",    "active"],
-  resolved:   ["done",    "done",    "done"],
-  refunded:   ["done",    "done",    "skipped"],
-  cancelled:  ["done",    "skipped", "skipped"],
-  failed:     ["failed",  "pending", "pending"],
-};
+// local_status only indicates whether the market was created on-chain:
+//   "pending"  → not yet created (Created stage is still in progress)
+//   "created"  → created, stays "created" forever — the real state machine
+//                is uma_resolution_status in dpm-api.
+export function deriveSportLifecycle(
+  market: SportMarket,
+  umaResolutionStatus?: string | null,
+): Lifecycle {
+  const created: LifecycleStageStatus =
+    market.local_status === "pending" ? "active" : "done";
 
-export function deriveSportLifecycle(market: SportMarket): Lifecycle {
-  const row = SPORT_STAGE_TABLE[market.local_status] ?? SPORT_STAGE_TABLE.pending;
+  // Proposed + Resolved follow the same UMA state machine as manual markets.
+  const uma = (umaResolutionStatus ?? "").toLowerCase();
+  let proposed: LifecycleStageStatus = "pending";
+  let resolved: LifecycleStageStatus = "pending";
+  if (uma === "proposing") {
+    proposed = "active";
+  } else if (uma === "proposed") {
+    proposed = "done";
+  } else if (uma === "disputed") {
+    proposed = "failed";
+  } else if (uma === "resolving") {
+    proposed = "done";
+    resolved = "active";
+  } else if (uma === "resolved" || uma === "manually_resolved") {
+    proposed = "done";
+    resolved = "done";
+  }
+
   return {
     stages: [
-      { key: "created",  status: row[0] },
-      { key: "proposed", status: row[1] },
-      { key: "resolved", status: row[2] },
+      { key: "created",  status: created },
+      { key: "proposed", status: proposed },
+      { key: "resolved", status: resolved },
     ],
   };
 }
@@ -270,7 +282,7 @@ export function deriveManualResult(): Result {
 // ---------------------------------------------------------------------------
 
 export type DeriveInput =
-  | { source: "sport"; sportMarket: SportMarket; sportEvent?: SportEvent }
+  | { source: "sport"; sportMarket: SportMarket; sportEvent?: SportEvent; verdict?: MarketStatusVerdict | null }
   | { source: "crypto"; cryptoMarket: CryptoMarket; cryptoEvent?: CryptoEvent; verdict?: MarketStatusVerdict | null }
   | {
       source: "manual";
@@ -282,9 +294,10 @@ export function derive(
   input: DeriveInput,
 ): { lifecycle: Lifecycle; result: Result } {
   if (input.source === "sport") {
+    const umaStatus = input.verdict?.market?.uma_resolution_status;
     const decision = findSportDecisionFor(input.sportEvent, input.sportMarket);
     return {
-      lifecycle: deriveSportLifecycle(input.sportMarket),
+      lifecycle: deriveSportLifecycle(input.sportMarket, umaStatus),
       result: deriveSportResult(input.sportMarket, decision),
     };
   }

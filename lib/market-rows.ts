@@ -15,6 +15,7 @@ import type {
   SportEvent,
   SportMarket,
   Task,
+  TokenOutcome,
 } from "./types";
 
 // Shared market loader powering /markets, /resolutions, and /operations.
@@ -97,6 +98,7 @@ export async function loadMarketRows(
     rows = [...byKey.values()].sort((a, b) => b.sortKey - a.sortKey);
 
     rows = await hydrate(rows, cfg.hydrationCap);
+    rows = await hydrateSportOutcomes(rows);
 
     const seriesSet = new Set<string>();
     const umaSet = new Set<string>();
@@ -305,6 +307,55 @@ async function sportRows(
     }
   }
   return out;
+}
+
+// After hydrate() fills uma_resolution_status, fetch token outcomes for sport
+// markets that dpm-api considers resolved. local_status stays "created" forever
+// so we can't use it — uma_resolution_status is the authoritative signal.
+async function hydrateSportOutcomes(rows: MarketRow[]): Promise<MarketRow[]> {
+  const UMA_RESOLVED = new Set(["RESOLVED", "MANUALLY_RESOLVED"]);
+  const targets = rows.filter(
+    (r) =>
+      r.source === "sport" &&
+      UUID_RE.test(r.market_external_id) &&
+      r.uma_resolution_status !== null &&
+      UMA_RESOLVED.has((r.uma_resolution_status ?? "").toUpperCase()),
+  );
+  if (targets.length === 0) return rows;
+
+  const fetched = await Promise.all(
+    targets.map((r) => manual.getMarketOutcome(r.market_external_id).catch(() => null)),
+  );
+  const outcomeMap = new Map(
+    targets.flatMap((r, i) => (fetched[i] ? [[r.market_external_id, fetched[i]!]] : [])),
+  );
+
+  return rows.map((row) => {
+    const outcome = outcomeMap.get(row.market_external_id);
+    if (!outcome) return row;
+    return { ...row, result: resultFromTokens(outcome.tokens) };
+  });
+}
+
+function resultFromTokens(tokens: TokenOutcome[]): Result {
+  const anyResolved = tokens.some(
+    (t) => t.winner !== null && t.winner !== undefined,
+  );
+  if (!anyResolved) return { kind: "pending", label: "Pending" };
+
+  const winners = tokens.filter((t) => t.winner === true);
+
+  // DVM voted "unknown" → both tokens receive 50 % each.
+  if (winners.length > 1) return { kind: "refund", label: "50/50" };
+
+  // No winner but some tokens are resolved → explicit refund / void.
+  if (winners.length === 0) return { kind: "refund", label: "Refund" };
+
+  // tokens[0] is the YES side. Use the winning token's outcome label directly
+  // so operators see e.g. "YES" / "NO" rather than generic "Won" / "Lost".
+  const win = winners[0];
+  const kind = tokens.indexOf(win) === 0 ? "won" : "lost";
+  return { kind, label: win.outcome.toUpperCase() };
 }
 
 function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
