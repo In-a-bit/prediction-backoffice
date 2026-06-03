@@ -17,6 +17,12 @@ import type {
   Task,
 } from "./types";
 
+type ListEnvelope<T> = T[] | { data: T[] };
+
+function asList<T>(payload: ListEnvelope<T>): T[] {
+  return Array.isArray(payload) ? payload : payload.data;
+}
+
 // Shared market loader powering /markets, /resolutions, and /operations.
 // Returns the same flat row shape across all three sources, with optional
 // hydration of dpm-api fields for the visible window. Centralised here so
@@ -41,6 +47,7 @@ export type MarketRow = {
   accepting: AcceptingFlag | null;
   accepting_orders_at: string | null;
   uma_resolution_status: string | null;
+  liveness: string | null;
   closed_time: string | null;
   lifecycle: Lifecycle;
   result: Result;
@@ -125,7 +132,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
   // Only hydrate rows that have a real dpm UUID — fallback IDs like
   // "crypto-42" or "sport-7" are not valid and will be rejected by dpm-api.
-  const head = rows.slice(0, cap).filter((r) => UUID_RE.test(r.market_external_id));
+  // Select the hydration window round-robin across sources so a sparse source
+  // (e.g. a single old manual plan) isn't crowded out of the cap by a flood of
+  // recent sport/crypto rows — otherwise its UMA status never loads and it
+  // silently disappears from every resolution tab.
+  const head = selectHydrationHead(rows, cap);
   const verdicts = await Promise.all(
     head.map(async (r) => {
       try {
@@ -138,9 +149,26 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
   const verdictMap = new Map<string, MarketStatusVerdict>();
   for (const v of verdicts) if (v) verdictMap.set(v[0], v[1]);
 
+  // Build the event-fetch set with manual IDs always included first so they
+  // aren't crowded out by the larger set of sport/crypto event IDs before cap.
+  const manualEventIds = [
+    ...new Set(
+      rows
+        .filter((r) => r.source === "manual" && r.event_external_id)
+        .map((r) => r.event_external_id as string),
+    ),
+  ];
+  const otherEventIds = [
+    ...new Set(
+      rows
+        .filter((r) => r.source !== "manual" && r.event_external_id)
+        .map((r) => r.event_external_id as string),
+    ),
+  ];
   const eventIds = [
-    ...new Set(rows.map((r) => r.event_external_id).filter((x): x is string => !!x)),
-  ].slice(0, cap);
+    ...manualEventIds,
+    ...otherEventIds.slice(0, Math.max(0, cap - manualEventIds.length)),
+  ];
   const events = await Promise.all(
     eventIds.map(async (id) => {
       try {
@@ -167,6 +195,7 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
         dpm?.accepting_orders_timestamp ?? row.accepting_orders_at,
       uma_resolution_status:
         dpm?.uma_resolution_status ?? row.uma_resolution_status,
+      liveness: dpm?.liveness ?? row.liveness,
       closed_time:
         dpm?.closed && dpm?.end_date ? dpm.end_date : row.closed_time,
       event_title: event?.title?.trim() || event?.slug?.trim() || row.event_title,
@@ -174,6 +203,31 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
         (event?.metadata?.series_slug as string | undefined) ?? row.series_slug,
     };
   });
+}
+
+function selectHydrationHead(rows: MarketRow[], cap: number): MarketRow[] {
+  const uuidRows = rows.filter((r) => UUID_RE.test(r.market_external_id));
+  const bySource = new Map<PlanSource, MarketRow[]>();
+  for (const r of uuidRows) {
+    const arr = bySource.get(r.source) ?? [];
+    arr.push(r);
+    bySource.set(r.source, arr);
+  }
+  const sources = [...bySource.keys()];
+  const head: MarketRow[] = [];
+  for (let i = 0; head.length < cap; i++) {
+    let advanced = false;
+    for (const s of sources) {
+      const arr = bySource.get(s);
+      if (arr && i < arr.length) {
+        head.push(arr[i]);
+        advanced = true;
+        if (head.length >= cap) break;
+      }
+    }
+    if (!advanced) break;
+  }
+  return head;
 }
 
 function preferRow(a: MarketRow, b: MarketRow): boolean {
@@ -186,14 +240,25 @@ function preferRow(a: MarketRow, b: MarketRow): boolean {
 // ----- per-source loaders -----
 
 async function manualRows(planLimit: number): Promise<MarketRow[]> {
-  let plans: DeployPlan[];
-  try {
-    plans = (await manual.listDeployPlans({ limit: planLimit })).data;
-  } catch {
-    return [];
+  const plans: DeployPlan[] = [];
+  const pageSize = Math.max(planLimit, 80);
+  const maxPages = 6;
+  for (let page = 0; page < maxPages; page++) {
+    try {
+      const payload = await manual.listDeployPlans({
+        limit: pageSize,
+        offset: page * pageSize,
+      });
+      const pagePlans = asList(payload);
+      if (pagePlans.length === 0) break;
+      plans.push(...pagePlans);
+      if (pagePlans.length < pageSize) break;
+    } catch {
+      break;
+    }
   }
   const out: MarketRow[] = [];
-  for (const plan of plans) {
+  for (const plan of asList(plans)) {
     if (inferSourceFromPlan(plan) !== "manual") continue;
     for (const m of plan.markets) out.push(rowFromManual(m, plan));
   }
@@ -217,6 +282,7 @@ function rowFromManual(m: DeployPlanMarket, plan: DeployPlan): MarketRow {
     accepting: null,
     accepting_orders_at: null,
     uma_resolution_status: null,
+    liveness: null,
     closed_time: null,
     lifecycle,
     result,
@@ -228,13 +294,13 @@ async function cryptoRows(
   taskLimit: number,
   marketsPerTask: number,
 ): Promise<MarketRow[]> {
-  let tasks: Task[];
+  let tasks: ListEnvelope<Task>;
   try {
-    tasks = (await crypto.listTasks()).data;
+    tasks = await crypto.listTasks();
   } catch {
     return [];
   }
-  const subset = tasks.slice(0, taskLimit);
+  const subset = asList(tasks).slice(0, taskLimit);
   const events = await Promise.all(
     subset.map((t) =>
       crypto.listCryptoEvents(t.id).catch(() => [] as CryptoEvent[]),
@@ -273,6 +339,7 @@ function rowFromCrypto(m: CryptoMarket, ev: CryptoEvent): MarketRow {
     accepting: null,
     accepting_orders_at: null,
     uma_resolution_status: null,
+    liveness: null,
     closed_time: null,
     lifecycle,
     result,
@@ -284,13 +351,13 @@ async function sportRows(
   taskLimit: number,
   marketsPerTask: number,
 ): Promise<MarketRow[]> {
-  let tasks: Awaited<ReturnType<typeof sports.listTasks>>;
+  let tasks: Awaited<ReturnType<typeof sports.listTasks>> | { data: Awaited<ReturnType<typeof sports.listTasks>> };
   try {
     tasks = await sports.listTasks();
   } catch {
     return [];
   }
-  const subset = tasks.slice(0, taskLimit);
+  const subset = asList(tasks).slice(0, taskLimit);
   const events = await Promise.all(
     subset.map((t) =>
       sports.listEvents(t.id).catch(() => [] as SportEvent[]),
@@ -329,6 +396,7 @@ function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
     accepting: null,
     accepting_orders_at: null,
     uma_resolution_status: null,
+    liveness: null,
     closed_time: null,
     lifecycle,
     result,

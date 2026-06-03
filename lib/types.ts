@@ -350,6 +350,10 @@ export type DpmMarket = {
   uma_bond?: string | null;
   uma_reward?: string | null;
   uma_resolution_status?: string | null;
+  // UMA dispute/challenge window. Set at market creation (MarketPayload.liveness)
+  // but not yet echoed back by dpm-api's read responses — populated once the
+  // backend includes it (see docs/prediction-go-handoff.md).
+  liveness?: string | null;
 
   paused?: boolean | null;
   flagged?: boolean | null;
@@ -415,6 +419,11 @@ export type MarketOutcome = {
   uma_resolution_status?: string | null;
   proposed?: ProposedAnswer | null;
   tokens: TokenOutcome[];
+  // Number of times a UMA price has been proposed for this market. 1 on the
+  // first proposal, 2+ after a dispute + re-propose cycle. Populated by
+  // dpm-api's /outcome endpoint (count of PROPOSE uma_requests); may be absent
+  // on older backends.
+  propose_count?: number | null;
 };
 
 export type OperatorLogEntry = {
@@ -709,4 +718,52 @@ export type CryptoEvent = {
   updated_at: string;
   markets?: CryptoMarket[];
   decision?: CryptoDecision;
+};
+
+// ---------------------------------------------------------------------------
+// Polymarket Gamma API — resolution data fetched by the backoffice for markets
+// that were created from a Polymarket slug.
+// ---------------------------------------------------------------------------
+
+export type PolymarketUmaStatus =
+  | "proposed"
+  | "disputed"
+  | "resolved"
+  | "expired"
+  | string; // Gamma may add new values over time.
+
+export type PolymarketMarketResolution = {
+  /** Polymarket market slug */
+  slug: string;
+  /** Human-readable question text (used to match to our internal market) */
+  question: string;
+  /** Latest UMA resolution status from Gamma */
+  umaResolutionStatus: PolymarketUmaStatus | null;
+  /** Full propose/dispute history, newest first */
+  umaResolutionStatuses: PolymarketUmaStatus[];
+  /** Polymarket-side outcome price array (parallel to outcomes) */
+  outcomePrices: string[];
+  /** Polymarket-side outcome label array */
+  outcomes: string[];
+  /** Hex string identifying the UMA question on-chain */
+  questionId: string | null;
+  /** Hex string for the CTF condition */
+  conditionId: string | null;
+  /** ISO timestamp at which UMA resolution window opens/opened */
+  umaEndDate: string | null;
+  /** Custom liveness window in seconds (Polymarket override) */
+  customLiveness: string | null;
+  /** UMA bond size (stringified USDC units) */
+  umaBond: string | null;
+  /** Whether the market was automatically resolved */
+  automaticallyResolved: boolean;
+};
+
+export type PolymarketEventResolution = {
+  /** The Polymarket event slug used to create this event */
+  slug: string;
+  /** Canonical Gamma URL */
+  gammaUrl: string;
+  /** All markets in the Polymarket event */
+  markets: PolymarketMarketResolution[];
 };

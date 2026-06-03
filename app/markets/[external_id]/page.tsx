@@ -15,6 +15,11 @@ import { MarketOutcomeCard } from "@/components/market-outcome";
 import { manual, sports, crypto as cryptoApi } from "@/lib/api";
 import { formatDateTimeFull } from "@/lib/format";
 import { derive } from "@/lib/market-lifecycle";
+import {
+  extractPolymarketSlug,
+  fetchSlugResolution,
+  matchPolymarketMarket,
+} from "@/lib/polymarket";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   CryptoEvent,
@@ -23,6 +28,7 @@ import type {
   DeployPlanMarket,
   MarketOutcome,
   MarketStatusVerdict,
+  PolymarketMarketResolution,
   SportEvent,
   SportMarket,
 } from "@/lib/types";
@@ -74,6 +80,7 @@ export default async function MarketDetailPage({
   let cryptoMarketRecord: CryptoMarket | undefined;
   let marketOutcome: MarketOutcome | null = null;
   let fetchError: string | null = null;
+  let slugResolution: PolymarketMarketResolution | null = null;
 
   // Fan out every independent fetch we know we need. Each catch-block keeps
   // the others alive; per-source rendering degrades gracefully.
@@ -135,6 +142,20 @@ export default async function MarketDetailPage({
   const eventExternalId = plan?.event_external_id;
   const m = verdict?.market;
 
+  // If this market came from a Polymarket slug, fetch its Gamma resolution data.
+  if (plan) {
+    const pmSlug = extractPolymarketSlug(plan.note);
+    if (pmSlug) {
+      try {
+        const ev = await fetchSlugResolution(pmSlug);
+        const question = planMarket?.question ?? m?.question ?? null;
+        slugResolution = matchPolymarketMarket(question, ev.markets);
+      } catch {
+        // Soft-fail — accordion simply won't render.
+      }
+    }
+  }
+
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
       <Breadcrumbs source={source} planId={planId} eventExternalId={eventExternalId} />
@@ -171,11 +192,19 @@ export default async function MarketDetailPage({
                 m={m}
                 planMarket={planMarket}
                 planExternalId={plan?.external_id}
+                proposeCount={marketOutcome?.propose_count ?? undefined}
               />
             </CardBody>
           </Card>
 
           <MarketOutcomeCard outcome={marketOutcome} />
+
+          {slugResolution ? (
+            <SlugResolutionAccordion
+              resolution={slugResolution}
+              planNote={plan?.note ?? null}
+            />
+          ) : null}
 
           {verdict?.workflow_id || verdict?.workflow ? (
             <Card>
@@ -373,11 +402,13 @@ function KeyFactsGrid({
   m,
   planMarket,
   planExternalId,
+  proposeCount,
 }: {
   external_id: string;
   m?: import("@/lib/types").DpmMarket;
   planMarket?: DeployPlanMarket;
   planExternalId?: string;
+  proposeCount?: number;
 }) {
   // Three field groups, ordered the way an operator scans a market: identity
   // → trading config → UMA → timestamps. Empty/null fields are filtered out
@@ -410,9 +441,14 @@ function KeyFactsGrid({
 
   const uma = [
     row("uma_resolution_status", m?.uma_resolution_status),
+    row(
+      "propose_attempts",
+      proposeCount != null ? String(proposeCount) : undefined,
+    ),
     row("uma_bond", m?.uma_bond, true),
     row("uma_reward", m?.uma_reward, true),
   ];
+  const reproposed = proposeCount != null && proposeCount >= 2;
 
   const timing = [
     row("deployment_status", m?.deployment_status),
@@ -469,7 +505,17 @@ function KeyFactsGrid({
     <div className="space-y-5">
       <FieldGroup title="Identity" rows={identity} />
       <FieldGroup title="Trading config" rows={trading} />
-      <FieldGroup title="UMA" rows={uma} />
+      <FieldGroup
+        title="UMA"
+        rows={uma}
+        titleSlot={
+          reproposed ? (
+            <Badge tone="warning">
+              Re-proposed · {ordinal(proposeCount as number)} time
+            </Badge>
+          ) : null
+        }
+      />
       <FieldGroup title="Timing" rows={timing} />
 
       {flags.length > 0 ? (
@@ -544,14 +590,40 @@ function hasNonEmptyMetadata(v: unknown): v is Record<string, unknown> {
   return Object.keys(v as Record<string, unknown>).length > 0;
 }
 
-function FieldGroup({ title, rows }: { title: string; rows: GridRow[] }) {
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+function FieldGroup({
+  title,
+  rows,
+  titleSlot,
+}: {
+  title: string;
+  rows: GridRow[];
+  titleSlot?: React.ReactNode;
+}) {
   const visible = rows.filter((r) => r.value !== undefined && r.value !== "");
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && !titleSlot) return null;
   return (
     <div className="space-y-1.5">
-      <h3 className="text-[10px] uppercase tracking-wider text-foreground-muted">
-        {title}
-      </h3>
+      <div className="flex items-center gap-2">
+        <h3 className="text-[10px] uppercase tracking-wider text-foreground-muted">
+          {title}
+        </h3>
+        {titleSlot}
+      </div>
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
         {visible.map((r) => (
           <div key={r.label} className="flex flex-col gap-0.5 min-w-0">
@@ -586,4 +658,198 @@ function extractParentEventId(raw: Record<string, unknown> | null): number | und
     ?.sport_event_id;
   if (typeof nested === "number" && Number.isFinite(nested)) return nested;
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Slug resolution accordion
+// ---------------------------------------------------------------------------
+
+function SlugResolutionAccordion({
+  resolution,
+  planNote,
+}: {
+  resolution: PolymarketMarketResolution;
+  planNote: string | null;
+}) {
+  const pmSlug = planNote ? extractPmSlugFromNote(planNote) : null;
+  const pmUrl = pmSlug
+    ? `https://polymarket.com/event/${pmSlug}`
+    : `https://polymarket.com/market/${resolution.slug}`;
+
+  const statusTone =
+    resolution.umaResolutionStatus === "proposed"
+      ? "info"
+      : resolution.umaResolutionStatus === "disputed"
+        ? "danger"
+        : resolution.umaResolutionStatus === "resolved"
+          ? "success"
+          : "neutral";
+
+  return (
+    <details className="rounded-xl border border-border bg-surface" open>
+      <summary className="cursor-pointer list-none px-5 py-3 flex items-center justify-between gap-3 select-none">
+        <span className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+          Slug resolution
+        </span>
+        <div className="flex items-center gap-2">
+          {resolution.umaResolutionStatus ? (
+            <Badge tone={statusTone}>{resolution.umaResolutionStatus}</Badge>
+          ) : null}
+          <Badge tone="neutral">Polymarket</Badge>
+        </div>
+      </summary>
+
+      <div className="border-t border-border px-5 py-4 space-y-5">
+        {/* Status history */}
+        <div className="space-y-1.5">
+          <h3 className="text-[10px] uppercase tracking-wider text-foreground-muted">
+            Propose / dispute history
+          </h3>
+          {resolution.umaResolutionStatuses.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {resolution.umaResolutionStatuses.map((s, i) => (
+                <Badge
+                  key={i}
+                  tone={
+                    s === "disputed"
+                      ? "danger"
+                      : s === "proposed"
+                        ? "info"
+                        : s === "resolved"
+                          ? "success"
+                          : "neutral"
+                  }
+                >
+                  {i + 1}. {s}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <span className="text-xs text-foreground-muted">No history yet</span>
+          )}
+        </div>
+
+        {/* Prices */}
+        {resolution.outcomes.length > 0 ? (
+          <div className="space-y-1.5">
+            <h3 className="text-[10px] uppercase tracking-wider text-foreground-muted">
+              Current prices
+            </h3>
+            <div className="flex gap-2 flex-wrap">
+              {resolution.outcomes.map((label, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 rounded-md border border-border bg-surface-raised px-3 py-1.5 text-xs"
+                >
+                  <span className="text-foreground-muted">{label}</span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {resolution.outcomePrices[i] !== undefined
+                      ? `${(Number(resolution.outcomePrices[i]) * 100).toFixed(1)}%`
+                      : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* UMA metadata */}
+        <div className="space-y-1.5">
+          <h3 className="text-[10px] uppercase tracking-wider text-foreground-muted">
+            UMA details
+          </h3>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            {resolution.umaEndDate ? (
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[10px] uppercase tracking-wider text-foreground-muted">
+                  UMA end date
+                </dt>
+                <dd className="text-foreground">
+                  {new Date(resolution.umaEndDate).toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </dd>
+              </div>
+            ) : null}
+            {resolution.customLiveness ? (
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[10px] uppercase tracking-wider text-foreground-muted">
+                  Liveness
+                </dt>
+                <dd className="text-foreground font-mono">
+                  {formatLivenessSeconds(resolution.customLiveness)}
+                </dd>
+              </div>
+            ) : null}
+            {resolution.umaBond ? (
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[10px] uppercase tracking-wider text-foreground-muted">
+                  Bond
+                </dt>
+                <dd className="text-foreground font-mono">{resolution.umaBond}</dd>
+              </div>
+            ) : null}
+            {resolution.questionId ? (
+              <div className="flex flex-col gap-0.5 sm:col-span-2">
+                <dt className="text-[10px] uppercase tracking-wider text-foreground-muted">
+                  Question ID
+                </dt>
+                <dd className="text-foreground font-mono break-all text-[11px]">
+                  {resolution.questionId}
+                </dd>
+              </div>
+            ) : null}
+            {resolution.conditionId ? (
+              <div className="flex flex-col gap-0.5 sm:col-span-2">
+                <dt className="text-[10px] uppercase tracking-wider text-foreground-muted">
+                  Condition ID
+                </dt>
+                <dd className="text-foreground font-mono break-all text-[11px]">
+                  {resolution.conditionId}
+                </dd>
+              </div>
+            ) : null}
+            {resolution.automaticallyResolved ? (
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[10px] uppercase tracking-wider text-foreground-muted">
+                  Auto-resolved
+                </dt>
+                <dd className="text-foreground">Yes</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+
+        {/* Link to Polymarket */}
+        <div>
+          <a
+            href={pmUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+          >
+            View on Polymarket ↗
+          </a>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function extractPmSlugFromNote(note: string): string | null {
+  return /From Polymarket slug:\s*(\S+)/i.exec(note)?.[1] ?? null;
+}
+
+function formatLivenessSeconds(value: string): string {
+  const secs = Number(value);
+  if (!Number.isFinite(secs) || secs <= 0) return value;
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  return parts.length > 0 ? parts.join(" ") : `${secs}s`;
 }

@@ -1,4 +1,7 @@
 import {
+  AutoRefresh,
+} from "@/components/auto-refresh";
+import {
   Card,
   CardBody,
   ErrorMessage,
@@ -13,15 +16,21 @@ import {
   UMA_BUCKET_LABEL,
   type UmaBucket,
 } from "@/lib/aggregations";
-import { manual } from "@/lib/api";
+import { manual, type Paginated } from "@/lib/api";
 import { loadMarketRows, type MarketRow } from "@/lib/market-rows";
-import type { OperatorLogEntry } from "@/lib/types";
+import {
+  extractPolymarketSlug,
+  fetchSlugResolution,
+  matchPolymarketMarket,
+} from "@/lib/polymarket";
+import type { DeployPlan, DeployPlanMarket, OperatorLogEntry } from "@/lib/types";
 
 import { ResolutionsTable } from "./_table";
+import { SlugProposedTable, type SlugProposedRow } from "./_slug-table";
 
 export const dynamic = "force-dynamic";
 
-type TabKey = UmaBucket | "first_time_disputed";
+type TabKey = UmaBucket | "first_time_disputed" | "slug_proposed";
 
 const TAB_ORDER: { key: TabKey; label: string }[] = [
   { key: "ready_to_propose", label: "Ready to propose" },
@@ -29,6 +38,7 @@ const TAB_ORDER: { key: TabKey; label: string }[] = [
   { key: "challenge_period", label: "Challenge period" },
   { key: "disputed", label: "Disputed" },
   { key: "first_time_disputed", label: "First-time disputed" },
+  { key: "slug_proposed", label: "Proposed by slug" },
   { key: "ready_to_request", label: "Ready to request" },
   { key: "settled", label: "Settled" },
   { key: "unstarted", label: "Not started" },
@@ -47,7 +57,7 @@ export default async function ResolutionsPage({
   const sp = await searchParams;
   const tab: TabKey = isTabKey(sp.tab) ? sp.tab : "disputed";
 
-  const [marketsResult, logResult] = await Promise.allSettled([
+  const [marketsResult, logResult, slugPlansResult] = await Promise.allSettled([
     loadMarketRows({
       // Resolutions cares about UMA-resolved markets, which can come from any
       // source — load with a slightly larger hydration cap so we don't miss
@@ -58,6 +68,8 @@ export default async function ResolutionsPage({
       marketsPerTask: 30,
     }),
     manual.listOperatorLog({ limit: 200 }),
+    // Load all manual deploy plans so we can find slug-sourced events.
+    manual.listDeployPlans({ limit: 200 }),
   ]);
 
   const markets =
@@ -70,8 +82,18 @@ export default async function ResolutionsPage({
       : marketsResult.value.error;
   const log: OperatorLogEntry[] =
     logResult.status === "fulfilled" ? logResult.value.data : [];
+  const allPlans: DeployPlan[] =
+    slugPlansResult.status === "fulfilled" && slugPlansResult.value
+      ? Array.isArray(slugPlansResult.value)
+        ? (slugPlansResult.value as DeployPlan[])
+        : (slugPlansResult.value as Paginated<DeployPlan>).data ?? []
+      : [];
 
-  const counts = countBuckets(markets, log);
+  // Identify plans created from a Polymarket slug and fetch Gamma data for
+  // each unique slug (in parallel, with graceful fallback per slug).
+  const slugRows = await loadSlugProposedRows(allPlans);
+
+  const counts = countBuckets(markets, log, slugRows);
   const filtered = filterFor(markets, log, tab);
 
   const tabs: Tab<TabKey>[] = TAB_ORDER.map((t) => ({
@@ -83,10 +105,15 @@ export default async function ResolutionsPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Resolution Manager"
-        description="Single place to monitor and act on every UMA resolution across the platform. Tabs split markets by their current resolution state."
-      />
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <PageHeader
+          title="Resolution Manager"
+          description="Single place to monitor and act on every UMA resolution across the platform. Tabs split markets by their current resolution state."
+        />
+        <div className="pt-1">
+          <AutoRefresh intervalMs={5 * 60 * 1000} label="5 min refresh" />
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <Card>
@@ -133,10 +160,10 @@ export default async function ResolutionsPage({
         <Card>
           <CardBody>
             <Stat
-              label="First-time disputed"
-              value={counts.first_time_disputed}
-              tone={counts.first_time_disputed > 0 ? "danger" : "neutral"}
-              hint="needs operator review"
+              label="Proposed by slug"
+              value={counts.slug_proposed}
+              tone={counts.slug_proposed > 0 ? "info" : "neutral"}
+              hint="Polymarket-side proposals"
             />
           </CardBody>
         </Card>
@@ -150,16 +177,89 @@ export default async function ResolutionsPage({
 
       <Card>
         <CardBody>
-          <ResolutionsTable rows={filtered} log={log} tab={tab} />
+          {tab === "slug_proposed" ? (
+            <SlugProposedTable rows={slugRows} />
+          ) : (
+            <ResolutionsTable rows={filtered} log={log} tab={tab} />
+          )}
         </CardBody>
       </Card>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Slug-proposed loading
+// ---------------------------------------------------------------------------
+
+/**
+ * For every deploy plan that was created from a Polymarket slug:
+ *  1. Fetch the Gamma event for that slug (deduplicated by slug).
+ *  2. Filter to markets where umaResolutionStatus is "proposed" or "disputed".
+ *  3. Cross-reference with our internal markets by question text.
+ */
+async function loadSlugProposedRows(plans: DeployPlan[]): Promise<SlugProposedRow[]> {
+  // Build slug → plan mapping (one plan per slug is the norm).
+  const slugPlanMap = new Map<string, DeployPlan>();
+  for (const plan of plans) {
+    const slug = extractPolymarketSlug(plan.note);
+    if (slug) slugPlanMap.set(slug, plan);
+  }
+
+  if (slugPlanMap.size === 0) return [];
+
+  // Fetch Gamma in parallel for each unique slug.
+  const gammaResults = await Promise.allSettled(
+    [...slugPlanMap.keys()].map((slug) =>
+      fetchSlugResolution(slug).then((ev) => ({ slug, ev })),
+    ),
+  );
+
+  const rows: SlugProposedRow[] = [];
+
+  for (const result of gammaResults) {
+    if (result.status !== "fulfilled") continue;
+    const { slug, ev } = result.value;
+    const plan = slugPlanMap.get(slug)!;
+
+    for (const pm of ev.markets) {
+      const status = pm.umaResolutionStatus;
+      // Only surface markets that are actively in a propose/dispute state.
+      if (status !== "proposed" && status !== "disputed") continue;
+
+      // Try to match to one of our internal plan markets by question.
+      const matched = matchPlanMarket(pm.question, plan.markets ?? []);
+
+      rows.push({
+        market_external_id: matched?.external_id ?? null,
+        plan_external_id: plan.external_id,
+        position: matched?.position ?? null,
+        polymarket_slug: slug,
+        question: pm.question,
+        polymarket: pm,
+      });
+    }
+  }
+
+  return rows;
+}
+
+function matchPlanMarket(
+  question: string,
+  planMarkets: DeployPlanMarket[],
+): DeployPlanMarket | null {
+  const norm = normaliseQ(question);
+  return planMarkets.find((m) => normaliseQ(m.question ?? "") === norm) ?? null;
+}
+
+function normaliseQ(q: string): string {
+  return q.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function countBuckets(
   markets: MarketRow[],
   log: OperatorLogEntry[],
+  slugRows: SlugProposedRow[],
 ): Record<TabKey, number> {
   const counts: Record<TabKey, number> = {
     unstarted: 0,
@@ -171,6 +271,7 @@ function countBuckets(
     challenge_period: 0,
     unknown: 0,
     first_time_disputed: 0,
+    slug_proposed: slugRows.length,
   };
   for (const m of markets) {
     const bucket = bucketUma(m.uma_resolution_status);
@@ -197,5 +298,6 @@ function filterFor(
         isFirstTimeDisputed(m.market_external_id, log),
     );
   }
+  if (tab === "slug_proposed") return []; // rendered separately via SlugProposedTable
   return markets.filter((m) => bucketUma(m.uma_resolution_status) === tab);
 }

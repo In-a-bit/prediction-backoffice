@@ -92,6 +92,10 @@ async function request<T>(path: string, opts: FetchOpts = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+function asList<T>(payload: T[] | Paginated<T>): T[] {
+  return Array.isArray(payload) ? payload : payload.data;
+}
+
 // ---------------------------------------------------------------------------
 // Manual creator — series/event/market creation, status polling, audit log.
 // All write calls accept an optional ManualAudit (correlation_id, actor,
@@ -373,9 +377,10 @@ import type {
 
 export const sports = {
   // Tasks (one row per sport+league+season automation config)
-  listTasks: (sportKey?: string) => {
+  listTasks: async (sportKey?: string) => {
     const qs = sportKey ? `?sport_key=${encodeURIComponent(sportKey)}` : "";
-    return request<SportTask[]>(`/sports/tasks${qs}`);
+    const payload = await request<SportTask[] | Paginated<SportTask>>(`/sports/tasks${qs}`);
+    return asList(payload);
   },
   getTask: (id: number) =>
     request<SportTask>(`/sports/tasks/${id}`),

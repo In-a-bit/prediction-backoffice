@@ -34,6 +34,9 @@ export type UmaBucket =
 export function bucketUma(raw: string | null | undefined): UmaBucket {
   const s = (raw ?? "").toLowerCase().replace(/[\s-]+/g, "_");
   if (!s) return "unstarted";
+  // UMA "INITIALIZING" means the question exists but resolution hasn't begun —
+  // it belongs in "Not started", not the catch-all "Unknown" bucket.
+  if (s === "initializing" || s === "initialized") return "unstarted";
   if (s.startsWith("ready_to_request") || s === "ready_to_request_resolution")
     return "ready_to_request";
   if (s.startsWith("ready_to_propose") || s === "ready_to_propose_resolution")

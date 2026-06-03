@@ -97,6 +97,16 @@ export function ResolutionsTable({
         cell: ({ row }) => <UmaChip value={row.original.uma_resolution_status} />,
       },
       {
+        id: "liveness",
+        accessorKey: "liveness",
+        header: "Liveness",
+        cell: ({ row }) => (
+          <span className="text-xs whitespace-nowrap text-foreground-muted">
+            {formatLiveness(row.original.liveness)}
+          </span>
+        ),
+      },
+      {
         id: "created_at",
         accessorKey: "created_at",
         header: "Since",
@@ -117,12 +127,6 @@ export function ResolutionsTable({
             log={log}
           />
         ),
-      },
-      {
-        id: "action",
-        header: "Action",
-        enableSorting: false,
-        cell: ({ row }) => <ActionButton row={row.original} />,
       },
     ],
     [log],
@@ -168,32 +172,6 @@ function prettyTabLabel(tab: string): string {
   return UMA_BUCKET_LABEL[tab as keyof typeof UMA_BUCKET_LABEL] ?? tab;
 }
 
-function ActionButton({ row }: { row: MarketRow }) {
-  const bucket = bucketUma(row.uma_resolution_status);
-  const href = `/markets/${encodeURIComponent(row.market_external_id)}?source=${row.source}&from=resolutions${
-    row.plan_external_id ? `&plan_id=${row.plan_external_id}` : ""
-  }${row.position !== undefined ? `&pos=${row.position}` : ""}${
-    row.sport_market_id !== undefined ? `&sport_market_id=${row.sport_market_id}` : ""
-  }${row.crypto_event_id !== undefined ? `&crypto_event_id=${row.crypto_event_id}` : ""}`;
-
-  let label = "Open →";
-  let variant: keyof typeof buttonVariants = "secondary";
-  if (bucket === "ready_to_propose" || bucket === "ready_to_request") {
-    label = "Propose →";
-    variant = "primary";
-  } else if (bucket === "disputed") {
-    label = "Re-propose →";
-    variant = "primary";
-  } else if (bucket === "proposed" || bucket === "challenge_period") {
-    label = "Inspect →";
-    variant = "secondary";
-  }
-  return (
-    <Link href={href} className={buttonVariants[variant]}>
-      {label}
-    </Link>
-  );
-}
 
 function LogActivityChips({
   externalId,
@@ -295,6 +273,25 @@ function SearchIcon() {
       <path d="M20 20l-3.5-3.5" />
     </svg>
   );
+}
+
+// Liveness is the UMA dispute window, stored as a seconds string. Render it as
+// a compact human duration (e.g. 7200 -> "2h"). Falls back to a dash when the
+// backend hasn't supplied it yet.
+function formatLiveness(value: string | null): string {
+  if (value == null || value === "") return "—";
+  const secs = Number(value);
+  if (!Number.isFinite(secs) || secs <= 0) return value;
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (s && !d && !h) parts.push(`${s}s`);
+  return parts.length > 0 ? parts.join(" ") : `${secs}s`;
 }
 
 function formatDate(iso: string): string {
