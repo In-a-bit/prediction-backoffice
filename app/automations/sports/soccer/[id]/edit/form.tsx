@@ -36,6 +36,9 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
   const [tags, setTags] = useState<SportsTagSpec[]>(initialTags);
 
   const [timeAheadHours, setTimeAheadHours] = useState<number>(config.time_ahead_hours);
+  const [liveness, setLiveness] = useState<string>(
+    config.liveness !== undefined ? String(config.liveness) : "",
+  );
   const [category, setCategory] = useState<string>(config.category ?? "");
   const [subCategory, setSubCategory] = useState<string>(config.sub_category ?? "");
   const [isCreateActive, setIsCreateActive] = useState<boolean>(config.is_create_active);
@@ -64,6 +67,11 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
             is_resolve_active: isResolveActive,
             is_metadata_update_active: isMetadataUpdateActive,
             auto_start_plans: autoStartPlans,
+            ...(liveness !== ""
+              ? { liveness: parseInt(liveness, 10) }
+              : config.liveness !== undefined
+                ? { clear_liveness: true }
+                : {}),
           }),
         });
         if (!res.ok) {
@@ -95,6 +103,20 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
               className="border rounded px-3 py-2 w-32"
               value={timeAheadHours}
               onChange={(e) => setTimeAheadHours(parseInt(e.target.value || "0", 10))}
+            />
+          </Field>
+
+          <Field
+            label="UMA liveness"
+            hint="How long (in seconds) UMA's Optimistic Oracle waits before a proposal can be resolved. Clear the field to revert to the global default (7200 s = 2 h)."
+          >
+            <input
+              type="number"
+              className="border rounded px-3 py-2 w-40"
+              placeholder="7200 (global default)"
+              value={liveness}
+              min={1}
+              onChange={(e) => setLiveness(e.target.value)}
             />
           </Field>
 

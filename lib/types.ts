@@ -535,6 +535,8 @@ export type SportTask = {
   is_resolve_active: boolean;
   is_metadata_update_active: boolean;
   auto_start_plans: boolean;
+  /** Per-task UMA liveness override in seconds. Absent means the global default (7200s) applies. */
+  liveness?: number;
   market_types: SportMarketTypeSummary[];
   event_count: number;
 };
@@ -637,6 +639,8 @@ export type CreateSportTaskInput = {
   sub_category?: string;
   market_type_keys: string[];
   auto_start_plans?: boolean;
+  /** UMA OO liveness in seconds. Omit to use the global default (7200s). */
+  liveness?: number;
 };
 
 export type UpdateSportTaskInput = {
@@ -650,6 +654,10 @@ export type UpdateSportTaskInput = {
   is_resolve_active?: boolean;
   is_metadata_update_active?: boolean;
   auto_start_plans?: boolean;
+  /** UMA OO liveness in seconds. Omit to leave unchanged. Set clear_liveness to revert to global default. */
+  liveness?: number;
+  /** When true, removes the per-task liveness override and reverts to the global default. */
+  clear_liveness?: boolean;
 };
 
 // ---------------------------------------------------------------------------

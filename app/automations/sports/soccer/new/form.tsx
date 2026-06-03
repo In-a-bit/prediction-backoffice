@@ -82,6 +82,7 @@ export function NewSportTaskForm() {
   const [leagueSlug, setLeagueSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [timeAheadHours, setTimeAheadHours] = useState<number>(72);
+  const [liveness, setLiveness] = useState<string>("");
   const [tags, setTags] = useState<SportsTagSpec[]>([]);
   const [tagsEdited, setTagsEdited] = useState(false);
   const [category, setCategory] = useState("");
@@ -279,6 +280,7 @@ export function NewSportTaskForm() {
             sub_category: subCategory || undefined,
             market_type_keys: marketTypes,
             auto_start_plans: autoStart,
+            liveness: liveness !== "" ? parseInt(liveness, 10) : undefined,
           }),
         });
         if (!res.ok) {
@@ -480,6 +482,20 @@ export function NewSportTaskForm() {
               className="border rounded px-3 py-2 w-32"
               value={timeAheadHours}
               onChange={(e) => setTimeAheadHours(parseInt(e.target.value || "0", 10))}
+            />
+          </Field>
+
+          <Field
+            label="UMA liveness"
+            hint="How long (in seconds) UMA's Optimistic Oracle waits before a proposal can be resolved. Leave blank to use the global default (7200 s = 2 h)."
+          >
+            <input
+              type="number"
+              className="border rounded px-3 py-2 w-40"
+              placeholder="7200 (default)"
+              value={liveness}
+              min={1}
+              onChange={(e) => setLiveness(e.target.value)}
             />
           </Field>
 
