@@ -161,8 +161,28 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     if (!ctfIsTerminal(ctx.dpmMarket)) {
       actions.push("ctf-oracle-report-payouts");
     }
+  } else if (ctx.source === "sport" && ctx.sportLocalStatus) {
+    // Sport markets: gate UMA actions on local_status which is the authoritative
+    // source of truth (mirrors uma_resolution_status but also tracks disputed states).
+    const ls = ctx.sportLocalStatus;
+    const isTerminal =
+      ls === "resolved" ||
+      ls === "refunded" ||
+      ls === "cancelled" ||
+      ls === "failed";
+    if (!isTerminal) {
+      if (ls === "created" || ls === "first_time_disputed") {
+        actions.push("uma-propose");
+      }
+      // uma-resolve is intentionally omitted for sport markets: the Temporal
+      // workflow resolves automatically after the liveness window. Operators
+      // should not manually trigger settlement.
+      if (ls !== "proposing" && ls !== "resolving") {
+        actions.push("uma-reset");
+      }
+    }
   } else {
-    // UMA market.
+    // UMA market (manual).
     const u = umaStatus(ctx.dpmMarket);
     if (!umaIsTerminal(u)) {
       if (u === "INITIALIZING" || u === undefined) {

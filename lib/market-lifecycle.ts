@@ -51,40 +51,35 @@ const PRICE_5050 = "500000000000000000";
 // Sport
 // ---------------------------------------------------------------------------
 
-// local_status only indicates whether the market was created on-chain:
-//   "pending"  → not yet created (Created stage is still in progress)
-//   "created"  → created, stays "created" forever — the real state machine
-//                is uma_resolution_status in dpm-api.
-export function deriveSportLifecycle(
-  market: SportMarket,
-  umaResolutionStatus?: string | null,
-): Lifecycle {
-  const created: LifecycleStageStatus =
-    market.local_status === "pending" ? "active" : "done";
+// local_status drives every lifecycle stage for sport markets — it mirrors
+// the UMA on-chain state machine once the market is created, so there is no
+// need to also read uma_resolution_status here.
+const SPORT_STAGE_TABLE: Record<
+  string,
+  [LifecycleStageStatus, LifecycleStageStatus, LifecycleStageStatus]
+> = {
+  //               created   proposed   resolved
+  pending:            ["active",   "pending", "pending"],
+  created:            ["done",     "pending", "pending"],
+  proposing:          ["done",     "active",  "pending"],
+  proposed:           ["done",     "done",    "pending"],
+  first_time_disputed:["done",     "failed",  "pending"],
+  disputed:           ["done",     "failed",  "pending"],
+  resolving:          ["done",     "done",    "active"],
+  resolved:           ["done",     "done",    "done"],
+  refunded:           ["done",     "done",    "done"],
+  cancelled:          ["done",     "skipped", "skipped"],
+  failed:             ["failed",   "pending", "pending"],
+};
 
-  // Proposed + Resolved follow the same UMA state machine as manual markets.
-  const uma = (umaResolutionStatus ?? "").toLowerCase();
-  let proposed: LifecycleStageStatus = "pending";
-  let resolved: LifecycleStageStatus = "pending";
-  if (uma === "proposing") {
-    proposed = "active";
-  } else if (uma === "proposed") {
-    proposed = "done";
-  } else if (uma === "disputed") {
-    proposed = "failed";
-  } else if (uma === "resolving") {
-    proposed = "done";
-    resolved = "active";
-  } else if (uma === "resolved" || uma === "manually_resolved") {
-    proposed = "done";
-    resolved = "done";
-  }
-
+export function deriveSportLifecycle(market: SportMarket): Lifecycle {
+  const row =
+    SPORT_STAGE_TABLE[market.local_status] ?? SPORT_STAGE_TABLE.pending;
   return {
     stages: [
-      { key: "created",  status: created },
-      { key: "proposed", status: proposed },
-      { key: "resolved", status: resolved },
+      { key: "created",  status: row[0] },
+      { key: "proposed", status: row[1] },
+      { key: "resolved", status: row[2] },
     ],
   };
 }
@@ -294,10 +289,9 @@ export function derive(
   input: DeriveInput,
 ): { lifecycle: Lifecycle; result: Result } {
   if (input.source === "sport") {
-    const umaStatus = input.verdict?.market?.uma_resolution_status;
     const decision = findSportDecisionFor(input.sportEvent, input.sportMarket);
     return {
-      lifecycle: deriveSportLifecycle(input.sportMarket, umaStatus),
+      lifecycle: deriveSportLifecycle(input.sportMarket),
       result: deriveSportResult(input.sportMarket, decision),
     };
   }

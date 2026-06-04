@@ -77,14 +77,18 @@ export default async function MarketDetailPage({
 
   // Fan out every independent fetch we know we need. Each catch-block keeps
   // the others alive; per-source rendering degrades gracefully.
-  const wantPlan = Boolean(planId && pos !== undefined && Number.isFinite(pos));
-  const wantSport = sourceHint === "sport" && sportMarketId !== undefined;
-  const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
-
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const isDpmId = UUID_RE.test(external_id);
 
-  const [verdictRes, planRes, sportStatusRes, cryptoEventRes, outcomeRes] =
+  const wantPlan = Boolean(planId && pos !== undefined && Number.isFinite(pos));
+  const wantSport = sourceHint === "sport" && sportMarketId !== undefined;
+  // When sport_market_id is absent (e.g. navigating from the Markets list), look
+  // up the backoffice sport market by its DPM external_id so lifecycle and actions
+  // are still derived from local_status rather than showing everything as "pending".
+  const wantSportLookup = sourceHint === "sport" && sportMarketId === undefined && isDpmId;
+  const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
+
+  const [verdictRes, planRes, sportStatusRes, sportLookupRes, cryptoEventRes, outcomeRes] =
     await Promise.all([
       isDpmId
         ? manual.getMarketStatus(external_id).catch((err) => {
@@ -97,6 +101,9 @@ export default async function MarketDetailPage({
         : Promise.resolve(null),
       wantSport
         ? sports.getMarketStatus(sportMarketId as number).catch(() => null)
+        : Promise.resolve(null),
+      wantSportLookup
+        ? sports.findMarketByExternalId(external_id).catch(() => null)
         : Promise.resolve(null),
       wantCrypto
         ? cryptoApi.getCryptoEvent(cryptoEventId as number).catch(() => null)
@@ -118,12 +125,19 @@ export default async function MarketDetailPage({
       (m) => m.market_external_id === external_id,
     );
   }
-  if (sportStatusRes) {
-    const eventId = extractParentEventId(sportStatusRes);
+
+  // Resolve the sport market: prefer the direct-id path, fall back to the
+  // external_id lookup result when sport_market_id was not in the URL.
+  const resolvedSportMarketId = sportMarketId ?? sportLookupRes?.id;
+  const sportFindRes: Record<string, unknown> | null =
+    sportStatusRes ?? (sportLookupRes as Record<string, unknown> | null);
+
+  if (sportFindRes) {
+    const eventId = extractParentEventId(sportFindRes);
     if (eventId !== undefined) {
       try {
         sportEvent = await sports.getEvent(eventId);
-        sportMarket = sportEvent.markets?.find((m) => m.id === sportMarketId);
+        sportMarket = sportEvent.markets?.find((m) => m.id === resolvedSportMarketId);
       } catch {
         // Soft-fail.
       }
@@ -145,6 +159,10 @@ export default async function MarketDetailPage({
       />
 
       {fetchError ? <ErrorMessage>{fetchError}</ErrorMessage> : null}
+
+      {sportMarket?.error ? (
+        <ErrorMessage>Propose failed: {sportMarket.error}</ErrorMessage>
+      ) : null}
 
       <LifecycleHeader
         source={source}
@@ -256,7 +274,7 @@ export default async function MarketDetailPage({
                   verdictStatus={verdict?.status}
                   planMarket={planMarket}
                   planExternalId={plan?.external_id}
-                  sportMarketId={sportMarketId}
+                  sportMarketId={resolvedSportMarketId}
                   sportLocalStatus={sportMarket?.local_status}
                   marketExternalId={external_id}
                 />
@@ -352,7 +370,13 @@ function LifecycleHeader({
         ? derive({ source: "crypto", cryptoMarket, cryptoEvent, verdict: verdict ?? undefined })
         : derive({ source: "manual", planMarket, verdict: verdict ?? undefined });
 
-  const umaStatus = verdict?.market?.uma_resolution_status?.toUpperCase();
+  // For sport markets, use local_status as the authoritative source; for manual
+  // markets fall back to uma_resolution_status.
+  const sportLocalStatus = sportMarket?.local_status;
+  const isDisputed =
+    sportLocalStatus === "disputed" ||
+    (source !== "sport" && verdict?.market?.uma_resolution_status?.toUpperCase() === "DISPUTED");
+  const isFirstTimeDisputed = sportLocalStatus === "first_time_disputed";
 
   return (
     <div className="space-y-4">
@@ -365,11 +389,52 @@ function LifecycleHeader({
             <Badge tone={source === "sport" ? "info" : source === "crypto" ? "warning" : "neutral"}>
               {source}
             </Badge>
+            {sportLocalStatus && source === "sport" && (
+              <Badge tone={
+                sportLocalStatus === "disputed" || sportLocalStatus === "first_time_disputed"
+                  ? "danger"
+                  : sportLocalStatus === "resolved" || sportLocalStatus === "refunded"
+                    ? "success"
+                    : sportLocalStatus === "proposed" || sportLocalStatus === "proposing"
+                      ? "info"
+                      : "neutral"
+              }>
+                {sportLocalStatus.replace(/_/g, "\u00a0")}
+              </Badge>
+            )}
           </div>
           <ResultChip result={derived.result} showReason />
         </div>
 
-        {umaStatus === "DISPUTED" && (
+        {isFirstTimeDisputed && (
+          <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              width="15"
+              height="15"
+              className="mt-px shrink-0 text-warning"
+              aria-hidden
+            >
+              <path
+                fillRule="evenodd"
+                d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <div>
+              <p className="text-xs font-semibold text-warning leading-tight">
+                Previously disputed — needs re-proposal
+              </p>
+              <p className="mt-0.5 text-[11px] text-warning/75 leading-snug">
+                The DVM resolved a dispute and reset UMA to INITIALIZING. A new
+                price proposal is required before the market can be resolved.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isDisputed && (
           <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3.5 py-2.5">
             <svg
               viewBox="0 0 20 20"

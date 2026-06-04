@@ -574,6 +574,8 @@ export type SportMarketStatus =
   | "created"
   | "proposing"
   | "proposed"
+  | "first_time_disputed"
+  | "disputed"
   | "resolving"
   | "resolved"
   | "refunded"
@@ -595,6 +597,23 @@ export type SportMarket = {
   error?: string;
   created_at: string;
   updated_at: string;
+};
+
+export type SportResolutionMarket = {
+  id: number;
+  sport_event_id: number;
+  market_external_id: string | null;
+  market_slug: string;
+  outcome_key: string;
+  local_status: SportMarketStatus;
+  updated_at: string;
+};
+
+export type SportResolutionList = {
+  items: SportResolutionMarket[];
+  total: number;
+  offset: number;
+  limit: number;
 };
 
 export type SportDecision = {

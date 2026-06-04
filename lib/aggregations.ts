@@ -15,49 +15,82 @@ import type {
 } from "./types";
 
 // ---------------------------------------------------------------------------
-// UMA resolution status — the canonical bucketing for /resolutions tabs.
-// dpm-api stores the raw string from UMA's contracts; we normalise here so
-// the rest of the UI can switch on a closed set of values.
+// Local-status bucketing — the canonical bucketing for /resolutions tabs.
 //
-// Buckets map to the five operator-visible states:
-//   initialized       — INITIALIZING, no prior dispute in history
-//   first_time_disputed — INITIALIZING, but history contains DISPUTED (needs re-proposal)
-//   proposed          — PROPOSED (in liveness window)
-//   disputed          — DISPUTED (DVM vote in progress)
-//   resolved          — RESOLVED (DVM settled or liveness expired)
+// All sport and crypto market states come from local_status in the backoffice
+// DB. Manual markets fall back to uma_resolution_status since they have no
+// local_status row.
 //
-// Returns null for any status not in these five states so callers can
-// cleanly exclude markets that don't belong on the resolution page.
+// Returns null for states not in the known set (safety valve for unknown values
+// from future DB migrations).
 // ---------------------------------------------------------------------------
 
-export type UmaBucket =
-  | "initialized"
-  | "first_time_disputed"
+export type LocalBucket =
+  // Sport market states
+  | "pending"
+  | "created"
+  | "proposing"
   | "proposed"
+  | "first_time_disputed"
   | "disputed"
-  | "resolved";
+  | "resolving"
+  | "resolved"
+  | "refunded"
+  | "cancelled"
+  | "failed"
+  // Manual market fallback buckets (from uma_resolution_status)
+  | "uma_initializing"
+  | "uma_proposed"
+  | "uma_disputed"
+  | "uma_resolved";
 
-export function bucketUma(
-  raw: string | null | undefined,
-  statuses?: string[] | null,
-): UmaBucket | null {
-  const s = (raw ?? "").toUpperCase();
-  if (s === "INITIALIZING") {
-    const hadDispute = (statuses ?? []).some((st) => st.toUpperCase() === "DISPUTED");
-    return hadDispute ? "first_time_disputed" : "initialized";
+const SPORT_CRYPTO_BUCKETS = new Set<LocalBucket>([
+  "pending", "created", "proposing", "proposed", "first_time_disputed",
+  "disputed", "resolving", "resolved", "refunded", "cancelled", "failed",
+]);
+
+// Active (non-terminal) sport local_status values — used by the server-side
+// pagination logic on the resolutions page to decide which tabs hit the
+// dedicated sport-resolutions endpoint versus falling back to loadMarketRows.
+export const SPORT_LOCAL_STATUSES = new Set<string>([
+  "pending", "created", "proposing", "proposed",
+  "first_time_disputed", "disputed", "resolving",
+]);
+
+export function bucketLocal(
+  source: string | undefined,
+  localStatus: string | null | undefined,
+  umaStatus?: string | null,
+): LocalBucket | null {
+  if (source === "sport" || source === "crypto") {
+    const s = (localStatus ?? "") as LocalBucket;
+    return SPORT_CRYPTO_BUCKETS.has(s) ? s : null;
   }
-  if (s === "PROPOSED") return "proposed";
-  if (s === "DISPUTED") return "disputed";
-  if (s === "RESOLVED") return "resolved";
+  // Manual markets: use uma_resolution_status as a fallback bucketing
+  const u = (umaStatus ?? "").toUpperCase();
+  if (u === "INITIALIZING") return "uma_initializing";
+  if (u === "PROPOSED") return "uma_proposed";
+  if (u === "DISPUTED") return "uma_disputed";
+  if (u === "RESOLVED" || u === "MANUALLY_RESOLVED") return "uma_resolved";
   return null;
 }
 
-export const UMA_BUCKET_LABEL: Record<UmaBucket, string> = {
-  initialized: "Initialized",
+export const LOCAL_BUCKET_LABEL: Record<LocalBucket, string> = {
+  pending:             "Pending",
+  created:             "Created",
+  proposing:           "Proposing",
+  proposed:            "Proposed",
   first_time_disputed: "First-time disputed",
-  proposed: "Proposed",
-  disputed: "Disputed",
-  resolved: "Resolved",
+  disputed:            "Disputed",
+  resolving:           "Resolving",
+  resolved:            "Resolved",
+  refunded:            "Refunded",
+  cancelled:           "Cancelled",
+  failed:              "Failed",
+  uma_initializing:    "Initialized (manual)",
+  uma_proposed:        "Proposed (manual)",
+  uma_disputed:        "Disputed (manual)",
+  uma_resolved:        "Resolved (manual)",
 };
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ export type MarketRow = {
   closed: boolean | null;
   accepting: AcceptingFlag | null;
   accepting_orders_at: string | null;
+  local_status: string | null;
   uma_resolution_status: string | null;
   uma_resolution_statuses: string[] | null;
   closed_time: string | null;
@@ -221,6 +222,7 @@ function rowFromManual(m: DeployPlanMarket, plan: DeployPlan): MarketRow {
     closed: null,
     accepting: null,
     accepting_orders_at: null,
+    local_status: null,
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
@@ -278,6 +280,7 @@ function rowFromCrypto(m: CryptoMarket, ev: CryptoEvent): MarketRow {
     closed: null,
     accepting: null,
     accepting_orders_at: null,
+    local_status: m.local_status,
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
@@ -384,6 +387,7 @@ function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
     closed: null,
     accepting: null,
     accepting_orders_at: null,
+    local_status: m.local_status,
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,

@@ -372,6 +372,7 @@ export const alerts = {
 import type {
   SportTask,
   SportEvent,
+  SportResolutionList,
   CreateSportTaskInput,
   UpdateSportTaskInput,
   ApiFootballLeagueSearchResult,
@@ -455,6 +456,31 @@ export const sports = {
     ),
   getMarketStatus: (id: number) =>
     request<Record<string, unknown>>(`/sports/markets/${id}/status`),
+  findMarketByExternalId: (externalId: string) =>
+    request<{ id: number; local_status: string; sport_event_id: number }>(
+      `/sports/markets/find?external_id=${encodeURIComponent(externalId)}`,
+    ),
+  triggerResolution: (sportMarketId: number, proposedPrice: string) =>
+    request<{ workflow_id: string; run_id: string }>(
+      `/sports/markets/${sportMarketId}/trigger-resolution`,
+      { method: "POST", body: { proposed_price: proposedPrice }, authed: true },
+    ),
+  listResolutionMarkets: (params?: {
+    localStatus?: string;
+    from?: number;
+    to?: number;
+    limit?: number;
+  }) => {
+    const p = new URLSearchParams();
+    if (params?.localStatus) p.set("local_status", params.localStatus);
+    if (params?.from != null) p.set("from", String(params.from));
+    if (params?.to != null) p.set("to", String(params.to));
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    const qs = p.toString();
+    return request<SportResolutionList>(`/sports/resolutions${qs ? `?${qs}` : ""}`);
+  },
+  listResolutionMarketCounts: () =>
+    request<Record<string, number>>("/sports/resolutions/counts"),
 
   // League search (proxies api-football /leagues?search=)
   searchLeagues: (q: string, season?: number) => {

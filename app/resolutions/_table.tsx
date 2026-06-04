@@ -8,16 +8,11 @@ import { ComboSearch } from "@/components/combo-search";
 import { DataTable } from "@/components/data-table";
 import { Badge, buttonVariants } from "@/components/ui";
 import {
-  bucketUma,
-  UMA_BUCKET_LABEL,
+  LOCAL_BUCKET_LABEL,
+  type LocalBucket,
 } from "@/lib/aggregations";
 import type { MarketRow } from "@/lib/market-rows";
 import type { OperatorLogEntry } from "@/lib/types";
-
-// ResolutionsTable renders the per-tab market list. Columns: Question,
-// Source, Event, Disputed-at (or Created when not disputed), Operator-log
-// activity for the market, and a Propose action that deep-links the
-// existing market detail page.
 
 export function ResolutionsTable({
   rows,
@@ -91,13 +86,14 @@ export function ResolutionsTable({
           ),
       },
       {
-        id: "uma_status",
-        accessorKey: "uma_resolution_status",
-        header: "UMA status",
+        id: "local_status",
+        accessorKey: "local_status",
+        header: "Status",
         cell: ({ row }) => (
-          <UmaChip
-            value={row.original.uma_resolution_status}
-            statuses={row.original.uma_resolution_statuses}
+          <LocalStatusChip
+            localStatus={row.original.local_status}
+            source={row.original.source}
+            umaStatus={row.original.uma_resolution_status}
           />
         ),
       },
@@ -148,7 +144,8 @@ export function ResolutionsTable({
           />
         </div>
         <span className="text-xs text-foreground-muted">
-          {filtered.length} markets — {prettyTabLabel(tab)}
+          {filtered.length} markets —{" "}
+          {LOCAL_BUCKET_LABEL[tab as LocalBucket] ?? tab}
         </span>
       </div>
       <DataTable
@@ -157,44 +154,76 @@ export function ResolutionsTable({
         globalFilter={globalFilter}
         initialSorting={[{ id: "created_at", desc: true }]}
         emptyState={{
-          title: "Nothing to resolve",
+          title: "No markets in this state",
           description:
-            "Markets in this state will appear here as they roll through the resolution flow.",
+            "Markets will appear here as they transition into this state.",
         }}
       />
     </div>
   );
 }
 
-function prettyTabLabel(tab: string): string {
-  return UMA_BUCKET_LABEL[tab as keyof typeof UMA_BUCKET_LABEL] ?? tab;
-}
-
 function ActionButton({ row }: { row: MarketRow }) {
-  const bucket = bucketUma(row.uma_resolution_status, row.uma_resolution_statuses);
-  const href = `/markets/${encodeURIComponent(row.market_external_id)}?source=${row.source}&from=resolutions${
-    row.plan_external_id ? `&plan_id=${row.plan_external_id}` : ""
-  }${row.position !== undefined ? `&pos=${row.position}` : ""}${
-    row.sport_market_id !== undefined ? `&sport_market_id=${row.sport_market_id}` : ""
-  }${row.crypto_event_id !== undefined ? `&crypto_event_id=${row.crypto_event_id}` : ""}`;
+  const ls = row.local_status;
+  const href = openHref(row);
 
   let label = "Open →";
   let variant: keyof typeof buttonVariants = "secondary";
-  if (bucket === "initialized" || bucket === "first_time_disputed") {
+
+  if (ls === "created" || ls === "first_time_disputed") {
     label = "Propose →";
     variant = "primary";
-  } else if (bucket === "disputed") {
+  } else if (ls === "disputed") {
     label = "Watch →";
     variant = "primary";
-  } else if (bucket === "proposed") {
+  } else if (ls === "proposed") {
     label = "Inspect →";
     variant = "secondary";
+  } else if (ls === "failed") {
+    label = "Debug →";
+    variant = "danger";
   }
+
   return (
     <Link href={href} className={buttonVariants[variant]}>
       {label}
     </Link>
   );
+}
+
+function LocalStatusChip({
+  localStatus,
+  source,
+  umaStatus,
+}: {
+  localStatus: string | null;
+  source: string;
+  umaStatus?: string | null;
+}) {
+  const display =
+    localStatus ??
+    (source === "manual" && umaStatus ? umaStatus.toLowerCase() : null);
+
+  if (!display) {
+    return <span className="text-xs text-foreground-muted">—</span>;
+  }
+
+  const tone =
+    display === "disputed" || display === "first_time_disputed"
+      ? "danger"
+      : display === "resolved" || display === "refunded"
+        ? "success"
+        : display === "proposed" || display === "proposing"
+          ? "info"
+          : display === "failed" || display === "cancelled"
+            ? "warning"
+            : "neutral";
+
+  const label =
+    LOCAL_BUCKET_LABEL[display as LocalBucket] ??
+    display.replace(/_/g, " ");
+
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function LogActivityChips({
@@ -222,27 +251,6 @@ function LogActivityChips({
       ))}
     </div>
   );
-}
-
-function UmaChip({
-  value,
-  statuses,
-}: {
-  value: string | null;
-  statuses?: string[] | null;
-}) {
-  if (!value) return <span className="text-xs text-foreground-muted">—</span>;
-  const bucket = bucketUma(value, statuses);
-  const tone =
-    bucket === "disputed" || bucket === "first_time_disputed"
-      ? "danger"
-      : bucket === "resolved"
-        ? "success"
-        : bucket === "proposed"
-          ? "info"
-          : "neutral";
-  const label = bucket ? UMA_BUCKET_LABEL[bucket] : value;
-  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function openHref(row: MarketRow): string {

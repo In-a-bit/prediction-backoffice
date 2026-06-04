@@ -22,11 +22,7 @@ import type {
 const UMA_PRICE_OPTIONS: { label: string; value: string }[] = [
   { label: "NO (0)", value: "0" },
   { label: "YES (1e18)", value: "1000000000000000000" },
-  {
-    label: "UNKNOWN (P50)",
-    value:
-      "57896044618658097711785492504343953926634992332820282019728792003956564819968",
-  },
+  { label: "UNKNOWN (P50)", value: "500000000000000000" },
 ];
 
 type Ctx = {
@@ -219,6 +215,7 @@ function FormCard({ title, tone, children }: { title: string; tone: "neutral" | 
 
 function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const router = useRouter();
+  const isSport = ctx.sportMarketId !== undefined;
   const [proposer, setProposer] = useState("");
   const [price, setPrice] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -226,20 +223,29 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
 
   function submit() {
     setError(null);
-    if (!proposer || !price) {
+    if (!price) {
+      setError("price is required");
+      return;
+    }
+    if (!isSport && !proposer) {
       setError("proposer and price are both required");
       return;
     }
     startTransition(async () => {
       try {
-        const res = await fetch(
-          `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/propose`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ proposer_address: proposer, proposed_price: price }),
-          },
-        );
+        // Sport markets: start the SportsMarketResolutionWorkflow which owns
+        // local_status transitions. Crypto/manual markets: call DPM directly.
+        const url = isSport
+          ? `/api/sports/markets/${ctx.sportMarketId}/trigger-resolution`
+          : `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/propose`;
+        const body = isSport
+          ? JSON.stringify({ proposed_price: price })
+          : JSON.stringify({ proposer_address: proposer, proposed_price: price });
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
@@ -254,15 +260,22 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
 
   return (
     <FormCard title="UMA · Propose" tone="neutral">
-      <label className="flex flex-col gap-1 text-[11px]">
-        Proposer address <span className="text-danger">*</span>
-        <input
-          value={proposer}
-          onChange={(e) => setProposer(e.target.value.trim())}
-          placeholder="0x…"
-          className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs font-mono"
-        />
-      </label>
+      {!isSport && (
+        <label className="flex flex-col gap-1 text-[11px]">
+          Proposer address <span className="text-danger">*</span>
+          <input
+            value={proposer}
+            onChange={(e) => setProposer(e.target.value.trim())}
+            placeholder="0x…"
+            className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs font-mono"
+          />
+        </label>
+      )}
+      {isSport && (
+        <p className="text-[11px] text-foreground-muted">
+          Starts the full propose → liveness → resolve workflow. The proposer address is managed by the system.
+        </p>
+      )}
       <label className="flex flex-col gap-1 text-[11px]">
         Proposed price <span className="text-danger">*</span>
         <select
@@ -286,7 +299,7 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         <button
           type="button"
           onClick={submit}
-          disabled={isPending || !proposer || !price}
+          disabled={isPending || (!isSport && !proposer) || !price}
           className={buttonVariants.primary}
         >
           {isPending ? "Submitting…" : "Submit"}

@@ -8,27 +8,41 @@ import {
   type Tab,
 } from "@/components/ui";
 import {
-  bucketUma,
-  type UmaBucket,
+  bucketLocal,
+  SPORT_LOCAL_STATUSES,
+  type LocalBucket,
 } from "@/lib/aggregations";
-import { manual } from "@/lib/api";
+import { manual, sports } from "@/lib/api";
 import { loadMarketRows, type MarketRow } from "@/lib/market-rows";
-import type { DpmMarket, OperatorLogEntry } from "@/lib/types";
+import type { OperatorLogEntry, SportResolutionMarket } from "@/lib/types";
+import { deriveSportLifecycle } from "@/lib/market-lifecycle";
 import type { PlanSource } from "@/lib/source-from-plan";
-
+import { Pagination } from "./_pagination";
 import { ResolutionsTable } from "./_table";
 
 export const dynamic = "force-dynamic";
 
-type TabKey = UmaBucket;
+type TabKey = LocalBucket;
 
 const TAB_ORDER: { key: TabKey; label: string }[] = [
-  { key: "initialized", label: "Initialized" },
+  { key: "pending",             label: "Pending" },
+  { key: "created",             label: "Created" },
+  { key: "proposing",           label: "Proposing" },
+  { key: "proposed",            label: "Proposed" },
   { key: "first_time_disputed", label: "First-time disputed" },
-  { key: "proposed", label: "Proposed" },
-  { key: "disputed", label: "Disputed" },
-  { key: "resolved", label: "Resolved" },
+  { key: "disputed",            label: "Disputed" },
+  { key: "resolving",           label: "Resolving" },
+  { key: "resolved",            label: "Resolved" },
+  { key: "refunded",            label: "Refunded" },
+  { key: "cancelled",           label: "Cancelled" },
+  { key: "failed",              label: "Failed" },
+  { key: "uma_initializing",    label: "Initialized (manual)" },
+  { key: "uma_proposed",        label: "Proposed (manual)" },
+  { key: "uma_disputed",        label: "Disputed (manual)" },
+  { key: "uma_resolved",        label: "Resolved (manual)" },
 ];
+
+const PER_PAGE = 50;
 
 function isTabKey(v: unknown): v is TabKey {
   return TAB_ORDER.some((t) => t.key === v);
@@ -37,50 +51,79 @@ function isTabKey(v: unknown): v is TabKey {
 export default async function ResolutionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; page?: string }>;
 }) {
   const sp = await searchParams;
-  const tab: TabKey = isTabKey(sp.tab) ? sp.tab : "disputed";
+  const tab: TabKey = isTabKey(sp.tab) ? sp.tab : "created";
+  const page = Math.max(1, parseInt(sp.page ?? "1", 10));
+  const offset = (page - 1) * PER_PAGE;
 
-  const [marketsResult, resolutionMarketsResult, logResult] =
+  // Sport tabs drive paginated queries against the dedicated endpoint.
+  // Non-sport tabs (manual UMA fallbacks, terminal) use base rows only.
+  const isSportTab = SPORT_LOCAL_STATUSES.has(tab);
+
+  const [sportCountsResult, sportPageResult, baseRowsResult, logResult] =
     await Promise.allSettled([
+      sports.listResolutionMarketCounts(),
+      isSportTab
+        ? sports.listResolutionMarkets({
+            localStatus: tab,
+            from: offset,
+            limit: PER_PAGE,
+          })
+        : Promise.resolve({ items: [], total: 0, offset: 0, limit: PER_PAGE }),
       loadMarketRows({
-        hydrationCap: 100,
+        source: "all",
+        hydrationCap: 60,
         planLimit: 80,
         taskLimit: 5,
         marketsPerTask: 30,
       }),
-      manual.listResolutionMarkets(),
       manual.listOperatorLog({ limit: 200 }),
     ]);
 
+  const sportCounts =
+    sportCountsResult.status === "fulfilled" ? sportCountsResult.value : {};
+  const sportPage =
+    sportPageResult.status === "fulfilled"
+      ? sportPageResult.value
+      : { items: [], total: 0, offset: 0, limit: PER_PAGE };
   const baseRows =
-    marketsResult.status === "fulfilled" ? marketsResult.value.rows : [];
+    baseRowsResult.status === "fulfilled" ? baseRowsResult.value.rows : [];
   const error =
-    marketsResult.status === "rejected"
-      ? marketsResult.reason instanceof Error
-        ? marketsResult.reason.message
-        : String(marketsResult.reason)
-      : marketsResult.value.error;
-
-  const resolutionMarkets =
-    resolutionMarketsResult.status === "fulfilled"
-      ? resolutionMarketsResult.value
-      : [];
-
+    baseRowsResult.status === "rejected"
+      ? baseRowsResult.reason instanceof Error
+        ? baseRowsResult.reason.message
+        : String(baseRowsResult.reason)
+      : baseRowsResult.value.error;
   const log: OperatorLogEntry[] =
     logResult.status === "fulfilled" ? logResult.value.data : [];
 
-  // Merge: the dedicated resolution feed (which includes INITIALIZING markets
-  // with dispute history, PROPOSED, DISPUTED, RESOLVED) takes precedence over
-  // the general hydration results. Markets beyond the hydration cap get added
-  // as stubs if they appear in the resolution feed.
-  const markets = mergeResolutionData(baseRows, resolutionMarkets);
+  // Non-sport rows (crypto + manual) are still provided by loadMarketRows.
+  const nonSportRows = baseRows.filter((r) => r.source !== "sport");
+  const nonSportCounts = countBuckets(nonSportRows);
 
-  const counts = countBuckets(markets);
-  const filtered = filterFor(markets, tab);
+  // Merge counts: sport from dedicated endpoint, everything else from base rows.
+  const counts: Record<TabKey, number> = {} as Record<TabKey, number>;
+  for (const t of TAB_ORDER) {
+    counts[t.key] =
+      (sportCounts[t.key] ?? 0) + (nonSportCounts[t.key] ?? 0);
+  }
 
-  const tabs: Tab<TabKey>[] = TAB_ORDER.map((t) => ({
+  // For the current tab: sport rows (paginated) + matching non-sport rows.
+  // Deduplicate by external_id so sport rows from loadMarketRows don't double-count.
+  const sportRows = sportPage.items.map(rowFromSportResolution);
+  const sportExtIds = new Set(sportRows.map((r) => r.market_external_id));
+  const tabNonSportRows = filterFor(nonSportRows, tab).filter(
+    (r) => !sportExtIds.has(r.market_external_id),
+  );
+  const displayed = [...sportRows, ...tabNonSportRows];
+
+  const totalPages = Math.max(1, Math.ceil(sportPage.total / PER_PAGE));
+
+  const tabs: Tab<TabKey>[] = TAB_ORDER.filter(
+    (t) => counts[t.key] > 0 || t.key === tab,
+  ).map((t) => ({
     key: t.key,
     label: t.label,
     href: `/resolutions?tab=${t.key}`,
@@ -91,15 +134,15 @@ export default async function ResolutionsPage({
     <div className="space-y-6">
       <PageHeader
         title="Resolution Manager"
-        description="Single place to monitor and act on every UMA resolution across the platform. Tabs split markets by their current resolution state."
+        description="All sport and crypto markets by their current local_status, plus manual markets by UMA resolution state."
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card>
           <CardBody>
             <Stat
-              label="Initialized"
-              value={counts.initialized}
+              label="Created"
+              value={counts.created ?? 0}
               hint="awaiting proposal"
             />
           </CardBody>
@@ -108,131 +151,114 @@ export default async function ResolutionsPage({
           <CardBody>
             <Stat
               label="First-time disputed"
-              value={counts.first_time_disputed}
-              tone={counts.first_time_disputed > 0 ? "danger" : "neutral"}
+              value={counts.first_time_disputed ?? 0}
+              tone={(counts.first_time_disputed ?? 0) > 0 ? "danger" : "neutral"}
               hint="needs re-proposal"
             />
           </CardBody>
         </Card>
         <Card>
           <CardBody>
-            <Stat label="Proposed" value={counts.proposed} tone="info" />
+            <Stat
+              label="Proposed"
+              value={counts.proposed ?? 0}
+              tone="info"
+              hint="in liveness window"
+            />
           </CardBody>
         </Card>
         <Card>
           <CardBody>
             <Stat
               label="Disputed"
-              value={counts.disputed}
-              tone={counts.disputed > 0 ? "danger" : "neutral"}
+              value={counts.disputed ?? 0}
+              tone={(counts.disputed ?? 0) > 0 ? "danger" : "neutral"}
+              hint="DVM vote in progress"
             />
           </CardBody>
         </Card>
         <Card>
           <CardBody>
-            <Stat label="Resolved" value={counts.resolved} tone="success" />
+            <Stat
+              label="Resolved"
+              value={(counts.resolved ?? 0) + (counts.uma_resolved ?? 0)}
+              tone="success"
+            />
           </CardBody>
         </Card>
       </div>
 
-      <Tabs current={tab} tabs={tabs} label="Resolution status" />
+      <Tabs current={tab} tabs={tabs} label="Market status" />
 
       {error ? (
         <ErrorMessage>Source unreachable: {error}</ErrorMessage>
       ) : null}
 
       <Card>
-        <CardBody>
-          <ResolutionsTable rows={filtered} log={log} tab={tab} />
+        <CardBody className="space-y-4">
+          <ResolutionsTable rows={displayed} log={log} tab={tab} />
+          {isSportTab && totalPages > 1 && (
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={sportPage.total}
+              perPage={PER_PAGE}
+              tab={tab}
+            />
+          )}
         </CardBody>
       </Card>
     </div>
   );
 }
 
-// mergeResolutionData ensures that markets from the dedicated DPM resolution
-// feed are always present and have the correct uma_resolution_status and
-// uma_resolution_statuses, even if they were beyond the hydration cap or
-// not yet in the deploy-plan list.
-function mergeResolutionData(
-  base: MarketRow[],
-  resolutionMarkets: DpmMarket[],
-): MarketRow[] {
-  if (resolutionMarkets.length === 0) return base;
+function rowFromSportResolution(m: SportResolutionMarket): MarketRow {
+  const sportMarket = {
+    id: m.id,
+    local_status: m.local_status,
+    sport_market_type_id: 0,
+    market_type_key: "",
+    outcome_key: m.outcome_key,
+    market_slug: m.market_slug,
+    created_at: m.updated_at,
+    updated_at: m.updated_at,
+  } as import("@/lib/types").SportMarket;
 
-  const byId = new Map<string, MarketRow>(
-    base.map((r) => [r.market_external_id, r]),
-  );
-
-  for (const m of resolutionMarkets) {
-    const existing = byId.get(m.external_id);
-    if (existing) {
-      byId.set(m.external_id, {
-        ...existing,
-        uma_resolution_status:
-          m.uma_resolution_status ?? existing.uma_resolution_status,
-        uma_resolution_statuses:
-          m.uma_resolution_statuses ?? existing.uma_resolution_statuses,
-        active: m.active ?? existing.active,
-        closed: m.closed ?? existing.closed,
-      });
-    } else {
-      byId.set(m.external_id, stubRowFromDpm(m));
-    }
-  }
-
-  return [...byId.values()];
-}
-
-function stubRowFromDpm(m: DpmMarket): MarketRow {
   return {
-    market_external_id: m.external_id,
-    question: m.question,
-    source: sourceFromMetadataType(m.metadata_type),
+    market_external_id: m.market_external_id ?? `sport-${m.id}`,
+    question: m.market_slug,
+    source: "sport" as PlanSource,
     event_external_id: null,
     event_title: null,
     series_slug: null,
-    created_at: m.created_at,
-    active: m.active,
-    closed: m.closed,
+    created_at: m.updated_at,
+    sport_market_id: m.id,
+    active: null,
+    closed: null,
     accepting: null,
-    accepting_orders_at: m.accepting_orders_timestamp ?? null,
-    uma_resolution_status: m.uma_resolution_status ?? null,
-    uma_resolution_statuses: m.uma_resolution_statuses ?? null,
-    closed_time: m.closed && m.end_date ? m.end_date : null,
-    lifecycle: { stages: [] },
-    result: { kind: "na", label: "" },
+    accepting_orders_at: null,
+    local_status: m.local_status,
+    uma_resolution_status: null,
+    uma_resolution_statuses: null,
+    closed_time: null,
+    lifecycle: deriveSportLifecycle(sportMarket),
+    result: { kind: "pending", label: "Pending" },
     sortKey: new Date(m.updated_at).getTime(),
   };
 }
 
-function sourceFromMetadataType(
-  t: string | null | undefined,
-): PlanSource {
-  if (!t) return "manual";
-  const lower = t.toLowerCase();
-  if (lower.startsWith("sports")) return "sport";
-  if (lower.startsWith("crypto")) return "crypto";
-  return "manual";
-}
-
-function countBuckets(markets: MarketRow[]): Record<TabKey, number> {
-  const counts: Record<TabKey, number> = {
-    initialized: 0,
-    first_time_disputed: 0,
-    proposed: 0,
-    disputed: 0,
-    resolved: 0,
-  };
+function countBuckets(markets: MarketRow[]): Partial<Record<TabKey, number>> {
+  const counts: Partial<Record<TabKey, number>> = {};
   for (const m of markets) {
-    const bucket = bucketUma(m.uma_resolution_status, m.uma_resolution_statuses);
-    if (bucket !== null) counts[bucket]++;
+    const bucket = bucketLocal(m.source, m.local_status, m.uma_resolution_status);
+    if (bucket !== null) counts[bucket] = (counts[bucket] ?? 0) + 1;
   }
   return counts;
 }
 
 function filterFor(markets: MarketRow[], tab: TabKey): MarketRow[] {
   return markets.filter(
-    (m) => bucketUma(m.uma_resolution_status, m.uma_resolution_statuses) === tab,
+    (m) =>
+      bucketLocal(m.source, m.local_status, m.uma_resolution_status) === tab,
   );
 }
