@@ -61,6 +61,9 @@ export type LoadOptions = {
   marketsPerTask?: number;
   // Cap on hydration roundtrips. Markets past this index keep null fields.
   hydrationCap?: number;
+  // Free-text search query. When non-empty, scan limits are expanded and rows
+  // are filtered before hydration so the full dataset is searched.
+  q?: string;
 };
 
 const DEFAULTS: Required<LoadOptions> = {
@@ -69,6 +72,7 @@ const DEFAULTS: Required<LoadOptions> = {
   taskLimit: 5,
   marketsPerTask: 20,
   hydrationCap: 80,
+  q: "",
 };
 
 export async function loadMarketRows(
@@ -80,6 +84,15 @@ export async function loadMarketRows(
   error: string | null;
 }> {
   const cfg = { ...DEFAULTS, ...opts };
+
+  // Expand scan limits when a search query is present so we cover the full
+  // dataset rather than just the first page window.
+  if (cfg.q) {
+    cfg.planLimit = opts.planLimit ?? 2000;
+    cfg.taskLimit = opts.taskLimit ?? 50;
+    cfg.marketsPerTask = opts.marketsPerTask ?? 500;
+  }
+
   try {
     const loaders: Promise<MarketRow[]>[] = [];
     if (cfg.source === "all" || cfg.source === "manual")
@@ -98,6 +111,20 @@ export async function loadMarketRows(
       if (!existing || preferRow(r, existing)) byKey.set(key, r);
     }
     rows = [...byKey.values()].sort((a, b) => b.sortKey - a.sortKey);
+
+    // Filter before hydration so we don't make expensive DPM API calls for
+    // rows that won't appear in the results.
+    if (cfg.q) {
+      const query = cfg.q.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.question?.toLowerCase().includes(query) ||
+          r.market_external_id?.toLowerCase().includes(query) ||
+          r.event_external_id?.toLowerCase().includes(query) ||
+          r.event_title?.toLowerCase().includes(query) ||
+          r.series_slug?.toLowerCase().includes(query),
+      );
+    }
 
     rows = await hydrate(rows, cfg.hydrationCap);
     rows = await hydrateSportOutcomes(rows);

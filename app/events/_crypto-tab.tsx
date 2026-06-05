@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { ComboSearch } from "@/components/combo-search";
@@ -10,17 +11,35 @@ import { Badge } from "@/components/ui";
 
 import type { CryptoEventRow, CryptoPayload } from "./_types";
 
-// Crypto events tab — one row per CryptoEvent (slot). Filters: asset
-// dropdown (combo-search since asset lists can grow long), interval, and
-// outcome state (pending / up / down / skipped).
+// Crypto events tab — one row per CryptoEvent (slot). Free-text search
+// updates the URL so the server re-fetches all tasks on next navigation.
 
 type StateFilter = "all" | "pending" | "up" | "down" | "skipped";
 
-export function CryptoEventsTab({ data }: { data: CryptoPayload }) {
-  const [globalFilter, setGlobalFilter] = useState("");
+export function CryptoEventsTab({
+  data,
+  initialQ = "",
+}: {
+  data: CryptoPayload;
+  initialQ?: string;
+}) {
+  const router = useRouter();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [globalFilter, setGlobalFilter] = useState(initialQ);
   const [asset, setAsset] = useState<string | undefined>();
   const [interval, setInterval] = useState<string | undefined>();
   const [state, setState] = useState<StateFilter>("all");
+
+  function handleSearch(v: string) {
+    setGlobalFilter(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const sp = new URLSearchParams(window.location.search);
+      if (v.trim()) sp.set("q", v.trim());
+      else sp.delete("q");
+      router.replace(`${window.location.pathname}?${sp.toString()}`);
+    }, 400);
+  }
 
   const assetOptions = useMemo(
     () =>
@@ -144,7 +163,7 @@ export function CryptoEventsTab({ data }: { data: CryptoPayload }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <SearchBox value={globalFilter} onChange={setGlobalFilter} />
+        <SearchBox value={globalFilter} onChange={handleSearch} />
         <ComboSearch
           options={[{ value: "", label: "All assets" }, ...assetOptions]}
           value={asset ?? ""}

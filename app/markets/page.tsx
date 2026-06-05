@@ -26,8 +26,9 @@ export default async function MarketsPage({
 }) {
   const sp = await searchParams;
   const source: Source = isSource(sp.source) ? sp.source : "all";
+  const q = typeof sp.q === "string" ? sp.q : undefined;
 
-  const payload = await loadMarketRows({ source });
+  const payload = await loadMarketRows({ source, q });
 
   const tabs: Tab<Source>[] = [
     { key: "all", label: "All", href: "/markets" },
@@ -51,7 +52,7 @@ export default async function MarketsPage({
 
       <Card>
         <CardBody>
-          <MarketsTable data={payload} />
+          <MarketsTable data={payload} initialQ={q ?? ""} />
         </CardBody>
       </Card>
     </div>

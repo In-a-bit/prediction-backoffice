@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { ComboSearch } from "@/components/combo-search";
@@ -21,9 +22,22 @@ import type { MarketRow, MarketsPayload } from "./_types";
 type AcceptFilter = "any" | "open" | "pending" | "closed";
 type FlagFilter = "any" | "yes" | "no";
 
-export function MarketsTable({ data }: { data: MarketsPayload }) {
-  const [globalFilter, setGlobalFilter] = useState("");
+export function MarketsTable({ data, initialQ = "" }: { data: MarketsPayload; initialQ?: string }) {
+  const router = useRouter();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [globalFilter, setGlobalFilter] = useState(initialQ);
   const [umaStatus, setUmaStatus] = useState<string | undefined>();
+
+  function handleSearch(v: string) {
+    setGlobalFilter(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const sp = new URLSearchParams(window.location.search);
+      if (v.trim()) sp.set("q", v.trim());
+      else sp.delete("q");
+      router.replace(`${window.location.pathname}?${sp.toString()}`);
+    }, 400);
+  }
   const [accepting, setAccepting] = useState<AcceptFilter>("any");
   const [activeFilter, setActiveFilter] = useState<FlagFilter>("any");
   const [closedFilter, setClosedFilter] = useState<FlagFilter>("any");
@@ -178,7 +192,7 @@ export function MarketsTable({ data }: { data: MarketsPayload }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <SearchBox value={globalFilter} onChange={setGlobalFilter} />
+        <SearchBox value={globalFilter} onChange={handleSearch} />
         <ComboSearch
           options={umaOptions}
           value={umaStatus ?? ""}

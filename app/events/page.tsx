@@ -52,6 +52,7 @@ export default async function EventsPage({
 }) {
   const sp = await searchParams;
   const source: Source = isSource(sp.source) ? sp.source : "manual";
+  const q = typeof sp.q === "string" ? sp.q : undefined;
 
   // Fan out per-source loaders. Each loader returns a small data envelope so
   // the tab component can stay free of fetch wiring.
@@ -61,9 +62,9 @@ export default async function EventsPage({
     sportPayload,
     sourceCounts,
   ] = await Promise.all([
-    source === "manual" ? loadManual() : Promise.resolve(emptyManualPayload()),
-    source === "crypto" ? loadCrypto() : Promise.resolve(emptyCryptoPayload()),
-    source === "sport" ? loadSport() : Promise.resolve(emptySportPayload()),
+    source === "manual" ? loadManual(q) : Promise.resolve(emptyManualPayload()),
+    source === "crypto" ? loadCrypto(q) : Promise.resolve(emptyCryptoPayload()),
+    source === "sport" ? loadSport(q) : Promise.resolve(emptySportPayload()),
     countAcrossSources(),
   ]);
 
@@ -126,11 +127,11 @@ export default async function EventsPage({
       <Card>
         <CardBody>
           {source === "manual" ? (
-            <ManualEventsTab data={manualPayload} />
+            <ManualEventsTab data={manualPayload} initialQ={q ?? ""} />
           ) : source === "crypto" ? (
-            <CryptoEventsTab data={cryptoPayload} />
+            <CryptoEventsTab data={cryptoPayload} initialQ={q ?? ""} />
           ) : (
-            <SportEventsTab data={sportPayload} />
+            <SportEventsTab data={sportPayload} initialQ={q ?? ""} />
           )}
         </CardBody>
       </Card>
@@ -140,16 +141,21 @@ export default async function EventsPage({
 
 // ---------------------------------------------------------------------------
 // Data loaders — one per source. Each returns its own envelope shape.
+// When q is set the loader scans the full dataset and pre-filters by q so the
+// client-side search covers everything, not just the first page window.
 // ---------------------------------------------------------------------------
 
 function emptyManualPayload(): ManualPayload {
   return { rows: [], knownSeries: [], error: null };
 }
 
-async function loadManual(): Promise<ManualPayload> {
+async function loadManual(q?: string): Promise<ManualPayload> {
+  const planLimit = q ? 2000 : 80;
+  const titleCap = q ? Infinity : 50;
+
   let plans: DeployPlan[] = [];
   try {
-    plans = (await manual.listDeployPlans({ limit: 80 })).data;
+    plans = (await manual.listDeployPlans({ limit: planLimit })).data;
   } catch (err) {
     return { rows: [], knownSeries: [], error: stringifyError(err) };
   }
@@ -168,7 +174,7 @@ async function loadManual(): Promise<ManualPayload> {
   }
 
   // Resolve titles in parallel — capped to keep TTFB low.
-  const ids = [...byEvent.keys()].slice(0, 50);
+  const ids = [...byEvent.keys()].slice(0, titleCap);
   const events = await Promise.all(
     ids.map(async (id) => {
       try {
@@ -188,7 +194,7 @@ async function loadManual(): Promise<ManualPayload> {
   // whatever rows surface a series_id so the filter dropdown stays scoped.
   const knownSeries = new Map<number, { id: number; slug: string }>();
 
-  const rows: ManualEventRow[] = [];
+  let rows: ManualEventRow[] = [];
   for (const [externalId, ps] of byEvent.entries()) {
     const ev = byId.get(externalId);
     const newest = ps.reduce((a, b) =>
@@ -222,6 +228,17 @@ async function loadManual(): Promise<ManualPayload> {
       deployment_status: ev?.deployment_status ?? newest.status,
     });
   }
+
+  if (q) {
+    const query = q.toLowerCase();
+    rows = rows.filter(
+      (r) =>
+        r.title?.toLowerCase().includes(query) ||
+        r.series?.toLowerCase().includes(query) ||
+        r.external_id?.toLowerCase().includes(query),
+    );
+  }
+
   rows.sort(
     (a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -233,7 +250,7 @@ function emptyCryptoPayload(): CryptoPayload {
   return { rows: [], assets: [], intervals: [], tasks: [], error: null };
 }
 
-async function loadCrypto(): Promise<CryptoPayload> {
+async function loadCrypto(q?: string): Promise<CryptoPayload> {
   try {
     const [tasksPage, assets, intervals] = await Promise.all([
       crypto.listTasks(),
@@ -241,7 +258,7 @@ async function loadCrypto(): Promise<CryptoPayload> {
       crypto.listIntervals(),
     ]);
     const tasks = tasksPage.data;
-    const subset = tasks.slice(0, PREVIEW_TASKS);
+    const subset = q ? tasks : tasks.slice(0, PREVIEW_TASKS);
     const events = await Promise.all(
       subset.map((t) =>
         crypto.listCryptoEvents(t.id).catch(() => [] as CryptoEvent[]),
@@ -262,7 +279,7 @@ async function loadCrypto(): Promise<CryptoPayload> {
       ]),
     );
 
-    const rows: CryptoEventRow[] = [];
+    let rows: CryptoEventRow[] = [];
     subset.forEach((t, idx) => {
       const meta = taskMeta.get(t.id);
       for (const ev of events[idx]) {
@@ -281,6 +298,17 @@ async function loadCrypto(): Promise<CryptoPayload> {
         });
       }
     });
+
+    if (q) {
+      const query = q.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.asset?.toLowerCase().includes(query) ||
+          r.interval?.toLowerCase().includes(query) ||
+          r.event_external_id?.toLowerCase().includes(query),
+      );
+    }
+
     rows.sort(
       (a, b) => new Date(b.slot_end).getTime() - new Date(a.slot_end).getTime(),
     );
@@ -300,17 +328,17 @@ function emptySportPayload(): SportPayload {
   return { rows: [], tasks: [], error: null };
 }
 
-async function loadSport(): Promise<SportPayload> {
+async function loadSport(q?: string): Promise<SportPayload> {
   try {
     const tasks = await sports.listTasks();
-    const subset = tasks.slice(0, PREVIEW_TASKS);
+    const subset = q ? tasks : tasks.slice(0, PREVIEW_TASKS);
     const events = await Promise.all(
       subset.map((t) =>
         sports.listEvents(t.id).catch(() => [] as SportEvent[]),
       ),
     );
     const taskById = new Map(tasks.map((t) => [t.id, t]));
-    const rows: SportEventRow[] = [];
+    let rows: SportEventRow[] = [];
     subset.forEach((t, idx) => {
       const task = taskById.get(t.id);
       for (const ev of events[idx]) {
@@ -340,6 +368,19 @@ async function loadSport(): Promise<SportPayload> {
         });
       }
     });
+
+    if (q) {
+      const query = q.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.match?.toLowerCase().includes(query) ||
+          r.league?.toLowerCase().includes(query) ||
+          r.country?.toLowerCase().includes(query) ||
+          r.sport?.toLowerCase().includes(query) ||
+          r.event_external_id?.toLowerCase().includes(query),
+      );
+    }
+
     rows.sort(
       (a, b) =>
         new Date(b.kickoff_at).getTime() - new Date(a.kickoff_at).getTime(),

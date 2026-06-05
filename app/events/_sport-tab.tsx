@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { ComboSearch } from "@/components/combo-search";
@@ -11,14 +12,34 @@ import { Badge } from "@/components/ui";
 import type { SportEventRow, SportPayload } from "./_types";
 
 // Sport events tab — one row per upstream fixture across the configured
-// sport tasks. Filters: sport (combo), league, country, fixture status.
+// sport tasks. Free-text search updates the URL so the server re-fetches
+// all tasks on the next navigation.
 
-export function SportEventsTab({ data }: { data: SportPayload }) {
-  const [globalFilter, setGlobalFilter] = useState("");
+export function SportEventsTab({
+  data,
+  initialQ = "",
+}: {
+  data: SportPayload;
+  initialQ?: string;
+}) {
+  const router = useRouter();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [globalFilter, setGlobalFilter] = useState(initialQ);
   const [sport, setSport] = useState<string | undefined>();
   const [country, setCountry] = useState<string | undefined>();
   const [league, setLeague] = useState<string | undefined>();
   const [statusShort, setStatusShort] = useState<string | undefined>();
+
+  function handleSearch(v: string) {
+    setGlobalFilter(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const sp = new URLSearchParams(window.location.search);
+      if (v.trim()) sp.set("q", v.trim());
+      else sp.delete("q");
+      router.replace(`${window.location.pathname}?${sp.toString()}`);
+    }, 400);
+  }
 
   const sportOptions = useMemo(
     () => uniqueOptions(data.rows.map((r) => r.sport)),
@@ -141,7 +162,7 @@ export function SportEventsTab({ data }: { data: SportPayload }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <SearchBox value={globalFilter} onChange={setGlobalFilter} />
+        <SearchBox value={globalFilter} onChange={handleSearch} />
         <ComboSearch
           options={[{ value: "", label: "All sports" }, ...sportOptions]}
           value={sport ?? ""}
