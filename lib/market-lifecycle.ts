@@ -63,7 +63,7 @@ const SPORT_STAGE_TABLE: Record<
   created:            ["done",     "pending", "pending"],
   proposing:          ["done",     "active",  "pending"],
   proposed:           ["done",     "done",    "pending"],
-  first_time_disputed:["done",     "failed",  "pending"],
+  reset:              ["done",     "failed",  "pending"],
   disputed:           ["done",     "failed",  "pending"],
   resolving:          ["done",     "done",    "active"],
   resolved:           ["done",     "done",    "done"],

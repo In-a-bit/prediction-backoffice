@@ -31,7 +31,7 @@ export type LocalBucket =
   | "created"
   | "proposing"
   | "proposed"
-  | "first_time_disputed"
+  | "reset"
   | "disputed"
   | "resolving"
   | "resolved"
@@ -45,7 +45,7 @@ export type LocalBucket =
   | "uma_resolved";
 
 const SPORT_CRYPTO_BUCKETS = new Set<LocalBucket>([
-  "pending", "created", "proposing", "proposed", "first_time_disputed",
+  "pending", "created", "proposing", "proposed", "reset",
   "disputed", "resolving", "resolved", "refunded", "cancelled", "failed",
 ]);
 
@@ -54,7 +54,7 @@ const SPORT_CRYPTO_BUCKETS = new Set<LocalBucket>([
 // dedicated sport-resolutions endpoint versus falling back to loadMarketRows.
 export const SPORT_LOCAL_STATUSES = new Set<string>([
   "pending", "created", "proposing", "proposed",
-  "first_time_disputed", "disputed", "resolving",
+  "reset", "disputed", "resolving",
 ]);
 
 export function bucketLocal(
@@ -80,7 +80,7 @@ export const LOCAL_BUCKET_LABEL: Record<LocalBucket, string> = {
   created:             "Created",
   proposing:           "Proposing",
   proposed:            "Proposed",
-  first_time_disputed: "First-time disputed",
+  reset:               "Reset",
   disputed:            "Disputed",
   resolving:           "Resolving",
   resolved:            "Resolved",

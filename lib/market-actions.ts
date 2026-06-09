@@ -171,7 +171,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       ls === "cancelled" ||
       ls === "failed";
     if (!isTerminal) {
-      if (ls === "created" || ls === "first_time_disputed") {
+      if (ls === "created" || ls === "reset") {
         actions.push("uma-propose");
       }
       // uma-resolve is intentionally omitted for sport markets: the Temporal

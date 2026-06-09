@@ -376,7 +376,7 @@ function LifecycleHeader({
   const isDisputed =
     sportLocalStatus === "disputed" ||
     (source !== "sport" && verdict?.market?.uma_resolution_status?.toUpperCase() === "DISPUTED");
-  const isFirstTimeDisputed = sportLocalStatus === "first_time_disputed";
+  const isReset = sportLocalStatus === "reset";
 
   return (
     <div className="space-y-4">
@@ -391,7 +391,7 @@ function LifecycleHeader({
             </Badge>
             {sportLocalStatus && source === "sport" && (
               <Badge tone={
-                sportLocalStatus === "disputed" || sportLocalStatus === "first_time_disputed"
+                sportLocalStatus === "disputed" || sportLocalStatus === "reset"
                   ? "danger"
                   : sportLocalStatus === "resolved" || sportLocalStatus === "refunded"
                     ? "success"
@@ -406,7 +406,7 @@ function LifecycleHeader({
           <ResultChip result={derived.result} showReason />
         </div>
 
-        {isFirstTimeDisputed && (
+        {isReset && (
           <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
             <svg
               viewBox="0 0 20 20"

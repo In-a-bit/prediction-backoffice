@@ -170,7 +170,7 @@ function ActionButton({ row }: { row: MarketRow }) {
   let label = "Open →";
   let variant: keyof typeof buttonVariants = "secondary";
 
-  if (ls === "created" || ls === "first_time_disputed") {
+  if (ls === "created" || ls === "reset") {
     label = "Propose →";
     variant = "primary";
   } else if (ls === "disputed") {
@@ -209,7 +209,7 @@ function LocalStatusChip({
   }
 
   const tone =
-    display === "disputed" || display === "first_time_disputed"
+    display === "disputed" || display === "reset"
       ? "danger"
       : display === "resolved" || display === "refunded"
         ? "success"

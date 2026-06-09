@@ -29,7 +29,7 @@ const TAB_ORDER: { key: TabKey; label: string }[] = [
   { key: "created",             label: "Created" },
   { key: "proposing",           label: "Proposing" },
   { key: "proposed",            label: "Proposed" },
-  { key: "first_time_disputed", label: "First-time disputed" },
+  { key: "reset",               label: "Reset" },
   { key: "disputed",            label: "Disputed" },
   { key: "resolving",           label: "Resolving" },
   { key: "resolved",            label: "Resolved" },
@@ -150,9 +150,9 @@ export default async function ResolutionsPage({
         <Card>
           <CardBody>
             <Stat
-              label="First-time disputed"
-              value={counts.first_time_disputed ?? 0}
-              tone={(counts.first_time_disputed ?? 0) > 0 ? "danger" : "neutral"}
+              label="Reset"
+              value={counts.reset ?? 0}
+              tone={(counts.reset ?? 0) > 0 ? "danger" : "neutral"}
               hint="needs re-proposal"
             />
           </CardBody>

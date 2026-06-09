@@ -574,7 +574,7 @@ export type SportMarketStatus =
   | "created"
   | "proposing"
   | "proposed"
-  | "first_time_disputed"
+  | "reset"
   | "disputed"
   | "resolving"
   | "resolved"
