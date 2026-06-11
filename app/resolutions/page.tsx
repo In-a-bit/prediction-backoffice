@@ -14,7 +14,11 @@ import {
 } from "@/lib/aggregations";
 import { manual, sports } from "@/lib/api";
 import { loadMarketRows, type MarketRow } from "@/lib/market-rows";
-import type { OperatorLogEntry, SportResolutionMarket } from "@/lib/types";
+import type {
+  ManualResolutionMarket,
+  OperatorLogEntry,
+  SportResolutionMarket,
+} from "@/lib/types";
 import { deriveSportLifecycle } from "@/lib/market-lifecycle";
 import type { PlanSource } from "@/lib/source-from-plan";
 import { Pagination } from "./_pagination";
@@ -51,18 +55,20 @@ function isTabKey(v: unknown): v is TabKey {
 export default async function ResolutionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; page?: string }>;
+  searchParams: Promise<{ tab?: string; page?: string; q?: string; source?: string }>;
 }) {
   const sp = await searchParams;
   const tab: TabKey = isTabKey(sp.tab) ? sp.tab : "created";
   const page = Math.max(1, parseInt(sp.page ?? "1", 10));
   const offset = (page - 1) * PER_PAGE;
+  const q = sp.q?.trim() ?? "";
+  const sourceFilter = sp.source ?? "";
 
   // Sport tabs drive paginated queries against the dedicated endpoint.
   // Non-sport tabs (manual UMA fallbacks, terminal) use base rows only.
   const isSportTab = SPORT_LOCAL_STATUSES.has(tab);
 
-  const [sportCountsResult, sportPageResult, baseRowsResult, logResult] =
+  const [sportCountsResult, sportPageResult, manualCountsResult, manualPageResult, baseRowsResult, logResult] =
     await Promise.allSettled([
       sports.listResolutionMarketCounts(),
       isSportTab
@@ -72,12 +78,15 @@ export default async function ResolutionsPage({
             limit: PER_PAGE,
           })
         : Promise.resolve({ items: [], total: 0, offset: 0, limit: PER_PAGE }),
+      manual.listResolutionMarketCounts(),
+      manual.listResolutionMarkets({ localStatus: tab, limit: 200 }),
       loadMarketRows({
         source: "all",
         hydrationCap: 60,
         planLimit: 80,
         taskLimit: 5,
         marketsPerTask: 30,
+        q: q || undefined,
       }),
       manual.listOperatorLog({ limit: 200 }),
     ]);
@@ -88,6 +97,12 @@ export default async function ResolutionsPage({
     sportPageResult.status === "fulfilled"
       ? sportPageResult.value
       : { items: [], total: 0, offset: 0, limit: PER_PAGE };
+  const manualCounts =
+    manualCountsResult.status === "fulfilled" ? manualCountsResult.value : {};
+  const manualPage =
+    manualPageResult.status === "fulfilled"
+      ? manualPageResult.value
+      : { items: [], total: 0, offset: 0, limit: 200 };
   const baseRows =
     baseRowsResult.status === "fulfilled" ? baseRowsResult.value.rows : [];
   const error =
@@ -103,23 +118,50 @@ export default async function ResolutionsPage({
   const nonSportRows = baseRows.filter((r) => r.source !== "sport");
   const nonSportCounts = countBuckets(nonSportRows);
 
-  // Merge counts: sport from dedicated endpoint, everything else from base rows.
+  // Merge counts: sport + manual from dedicated DB endpoints, everything else from base rows.
   const counts: Record<TabKey, number> = {} as Record<TabKey, number>;
   for (const t of TAB_ORDER) {
     counts[t.key] =
-      (sportCounts[t.key] ?? 0) + (nonSportCounts[t.key] ?? 0);
+      (sportCounts[t.key] ?? 0) +
+      (manualCounts[t.key] ?? 0) +
+      (nonSportCounts[t.key] ?? 0);
   }
 
-  // For the current tab: sport rows (paginated) + matching non-sport rows.
-  // Deduplicate by external_id so sport rows from loadMarketRows don't double-count.
-  const sportRows = sportPage.items.map(rowFromSportResolution);
-  const sportExtIds = new Set(sportRows.map((r) => r.market_external_id));
-  const tabNonSportRows = filterFor(nonSportRows, tab).filter(
-    (r) => !sportExtIds.has(r.market_external_id),
-  );
-  const displayed = [...sportRows, ...tabNonSportRows];
+  // For the current tab: sport rows (paginated) + manual rows (DB) + matching
+  // non-DB rows from loadMarketRows. Deduplicate by external_id throughout.
+  const allSportRows = sportPage.items.map(rowFromSportResolution);
+  const allManualRows = manualPage.items.map(rowFromManualResolution);
 
-  const totalPages = Math.max(1, Math.ceil(sportPage.total / PER_PAGE));
+  const sportExtIds = new Set(allSportRows.map((r) => r.market_external_id));
+  const manualExtIds = new Set(allManualRows.map((r) => r.market_external_id));
+
+  const allTabNonDbRows = filterFor(nonSportRows, tab).filter(
+    (r) =>
+      !sportExtIds.has(r.market_external_id) &&
+      !manualExtIds.has(r.market_external_id),
+  );
+
+  // Apply source filter server-side so the table receives only the relevant rows.
+  const sportRows = !sourceFilter || sourceFilter === "sport" ? allSportRows : [];
+  const manualRows = !sourceFilter || sourceFilter === "manual" ? allManualRows : [];
+  const tabNonDbRows =
+    sourceFilter && sourceFilter !== "sport" && sourceFilter !== "manual"
+      ? allTabNonDbRows.filter((r) => r.source === sourceFilter)
+      : sourceFilter === "sport" || sourceFilter === "manual"
+        ? []
+        : allTabNonDbRows;
+
+  const displayed = [...sportRows, ...manualRows, ...tabNonDbRows];
+
+  // totalPages must reflect the filtered row count. If the source filter
+  // narrows to manual/crypto, sport pagination is irrelevant (all rows are
+  // already in-memory) — show 1 page. Otherwise use the sport total which is
+  // authoritative for the server-paginated sport endpoint.
+  const filteredTotal =
+    sourceFilter && sourceFilter !== "sport"
+      ? displayed.length
+      : sportPage.total;
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / PER_PAGE));
 
   const tabs: Tab<TabKey>[] = TAB_ORDER.filter(
     (t) => counts[t.key] > 0 || t.key === tab,
@@ -196,14 +238,22 @@ export default async function ResolutionsPage({
 
       <Card>
         <CardBody className="space-y-4">
-          <ResolutionsTable rows={displayed} log={log} tab={tab} />
-          {isSportTab && totalPages > 1 && (
+          <ResolutionsTable
+            rows={displayed}
+            log={log}
+            tab={tab}
+            initialQ={q}
+            initialSource={sourceFilter}
+          />
+          {isSportTab && totalPages > 1 && (!sourceFilter || sourceFilter === "sport") && (
             <Pagination
               page={page}
               totalPages={totalPages}
-              total={sportPage.total}
+              total={filteredTotal}
               perPage={PER_PAGE}
               tab={tab}
+              q={q || undefined}
+              source={sourceFilter || undefined}
             />
           )}
         </CardBody>
@@ -243,6 +293,34 @@ function rowFromSportResolution(m: SportResolutionMarket): MarketRow {
     closed_time: null,
     lifecycle: deriveSportLifecycle(sportMarket),
     result: { kind: "pending", label: "Pending" },
+    sortKey: new Date(m.updated_at).getTime(),
+  };
+}
+
+function rowFromManualResolution(m: ManualResolutionMarket): MarketRow {
+  return {
+    market_external_id: m.market_external_id ?? `manual-${m.id}`,
+    question: m.market_slug,
+    source: "manual" as PlanSource,
+    event_external_id: null,
+    event_title: null,
+    series_slug: null,
+    created_at: m.updated_at,
+    manual_market_id: m.id,
+    active: null,
+    closed: null,
+    accepting: null,
+    accepting_orders_at: null,
+    local_status: m.local_status,
+    uma_resolution_status: null,
+    uma_resolution_statuses: null,
+    closed_time: null,
+    lifecycle: { stages: [
+      { key: "created" as const, status: m.local_status === "created" || m.local_status === "proposed" || m.local_status === "resolved" ? "done" as const : "pending" as const },
+      { key: "proposed" as const, status: m.local_status === "proposed" || m.local_status === "resolved" ? "done" as const : "pending" as const },
+      { key: "resolved" as const, status: m.local_status === "resolved" ? "done" as const : "pending" as const },
+    ] },
+    result: { kind: "pending" as const, label: "Pending" },
     sortKey: new Date(m.updated_at).getTime(),
   };
 }

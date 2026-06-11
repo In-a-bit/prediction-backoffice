@@ -6,6 +6,8 @@ interface PaginationProps {
   total: number;
   perPage: number;
   tab: string;
+  q?: string;
+  source?: string;
 }
 
 export function Pagination({
@@ -14,14 +16,21 @@ export function Pagination({
   total,
   perPage,
   tab,
+  q,
+  source,
 }: PaginationProps) {
   const start = (page - 1) * perPage + 1;
   const end = Math.min(page * perPage, total);
 
-  const prevHref =
-    page > 1 ? `/resolutions?tab=${tab}&page=${page - 1}` : null;
-  const nextHref =
-    page < totalPages ? `/resolutions?tab=${tab}&page=${page + 1}` : null;
+  function pageHref(p: number) {
+    const sp = new URLSearchParams({ tab, page: String(p) });
+    if (q) sp.set("q", q);
+    if (source) sp.set("source", source);
+    return `/resolutions?${sp.toString()}`;
+  }
+
+  const prevHref = page > 1 ? pageHref(page - 1) : null;
+  const nextHref = page < totalPages ? pageHref(page + 1) : null;
 
   const buttonClass =
     "px-2 py-1 rounded-md border border-border text-xs text-foreground-muted hover:bg-foreground/5 transition-colors";

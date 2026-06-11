@@ -21,6 +21,8 @@ import type {
   CryptoMarket,
   DeployPlan,
   DeployPlanMarket,
+  ManualMarket,
+  ManualMarketLocalStatus,
   MarketOutcome,
   MarketStatusVerdict,
   SportEvent,
@@ -36,6 +38,7 @@ type SearchParams = {
   plan_id?: string;
   pos?: string;
   sport_market_id?: string;
+  manual_market_id?: string;
   crypto_event_id?: string;
 };
 
@@ -60,6 +63,10 @@ export default async function MarketDetailPage({
     sp.sport_market_id !== undefined
       ? Number.parseInt(sp.sport_market_id, 10)
       : undefined;
+  const manualMarketId =
+    sp.manual_market_id !== undefined
+      ? Number.parseInt(sp.manual_market_id, 10)
+      : undefined;
   const cryptoEventId =
     sp.crypto_event_id !== undefined
       ? Number.parseInt(sp.crypto_event_id, 10)
@@ -70,6 +77,7 @@ export default async function MarketDetailPage({
   let planMarket: DeployPlanMarket | undefined;
   let sportEvent: SportEvent | undefined;
   let sportMarket: SportMarket | undefined;
+  let manualMarket: ManualMarket | undefined;
   let cryptoEvent: CryptoEvent | undefined;
   let cryptoMarketRecord: CryptoMarket | undefined;
   let marketOutcome: MarketOutcome | null = null;
@@ -86,9 +94,13 @@ export default async function MarketDetailPage({
   // up the backoffice sport market by its DPM external_id so lifecycle and actions
   // are still derived from local_status rather than showing everything as "pending".
   const wantSportLookup = sourceHint === "sport" && sportMarketId === undefined && isDpmId;
+  // Fetch the backoffice manual_market row when manual_market_id is known, or
+  // fall back to a lookup by external_id when navigating without the id in the URL.
+  const wantManualDirect = sourceHint === "manual" && manualMarketId !== undefined;
+  const wantManualLookup = sourceHint === "manual" && manualMarketId === undefined && isDpmId;
   const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
 
-  const [verdictRes, planRes, sportStatusRes, sportLookupRes, cryptoEventRes, outcomeRes] =
+  const [verdictRes, planRes, sportStatusRes, sportLookupRes, manualStatusRes, manualLookupRes, cryptoEventRes, outcomeRes] =
     await Promise.all([
       isDpmId
         ? manual.getMarketStatus(external_id).catch((err) => {
@@ -104,6 +116,12 @@ export default async function MarketDetailPage({
         : Promise.resolve(null),
       wantSportLookup
         ? sports.findMarketByExternalId(external_id).catch(() => null)
+        : Promise.resolve(null),
+      wantManualDirect
+        ? manual.getManualMarketStatus(manualMarketId as number).catch(() => null)
+        : Promise.resolve(null),
+      wantManualLookup
+        ? manual.findManualMarketByExternalId(external_id).catch(() => null)
         : Promise.resolve(null),
       wantCrypto
         ? cryptoApi.getCryptoEvent(cryptoEventId as number).catch(() => null)
@@ -131,6 +149,23 @@ export default async function MarketDetailPage({
   const resolvedSportMarketId = sportMarketId ?? sportLookupRes?.id;
   const sportFindRes: Record<string, unknown> | null =
     sportStatusRes ?? (sportLookupRes as Record<string, unknown> | null);
+
+  // Resolve the manual market: prefer direct status response, fall back to lookup.
+  const resolvedManualMarketId = manualMarketId ?? manualLookupRes?.id;
+  const manualStatusRaw = (manualStatusRes ?? manualLookupRes) as Record<string, unknown> | null;
+  if (manualStatusRaw) {
+    manualMarket = {
+      id: (manualStatusRaw.id as number) ?? resolvedManualMarketId ?? 0,
+      manual_event_id: manualStatusRaw.manual_event_id as number,
+      market_external_id: external_id,
+      local_status: (manualStatusRaw.local_status as ManualMarketLocalStatus) ?? "pending",
+      error: (manualStatusRaw.error as string | null) ?? null,
+      market_slug: "",
+      outcome_key: "",
+      created_at: "",
+      updated_at: "",
+    };
+  }
 
   if (sportFindRes) {
     const eventId = extractParentEventId(sportFindRes);
@@ -170,6 +205,7 @@ export default async function MarketDetailPage({
         planMarket={planMarket}
         sportMarket={sportMarket}
         sportEvent={sportEvent}
+        manualMarket={manualMarket}
         cryptoMarket={cryptoMarketRecord}
         cryptoEvent={cryptoEvent}
       />
@@ -276,6 +312,8 @@ export default async function MarketDetailPage({
                   planExternalId={plan?.external_id}
                   sportMarketId={resolvedSportMarketId}
                   sportLocalStatus={sportMarket?.local_status}
+                  manualMarketId={resolvedManualMarketId}
+                  manualLocalStatus={manualMarket?.local_status}
                   marketExternalId={external_id}
                 />
               )}
@@ -339,6 +377,7 @@ function LifecycleHeader({
   planMarket,
   sportMarket,
   sportEvent,
+  manualMarket,
   cryptoMarket,
   cryptoEvent,
 }: {
@@ -347,6 +386,7 @@ function LifecycleHeader({
   planMarket?: DeployPlanMarket;
   sportMarket?: SportMarket;
   sportEvent?: SportEvent;
+  manualMarket?: ManualMarket;
   cryptoMarket?: CryptoMarket;
   cryptoEvent?: CryptoEvent;
 }) {
@@ -370,13 +410,16 @@ function LifecycleHeader({
         ? derive({ source: "crypto", cryptoMarket, cryptoEvent, verdict: verdict ?? undefined })
         : derive({ source: "manual", planMarket, verdict: verdict ?? undefined });
 
-  // For sport markets, use local_status as the authoritative source; for manual
-  // markets fall back to uma_resolution_status.
+  // For sport and manual markets, use local_status as the authoritative source;
+  // for plain manual markets fall back to uma_resolution_status.
   const sportLocalStatus = sportMarket?.local_status;
+  const manualLocalStatus = manualMarket?.local_status;
+  // Show the backoffice local_status badge for both sport and manual markets.
+  const displayLocalStatus = sportLocalStatus ?? (source === "manual" ? manualLocalStatus : undefined);
   const isDisputed =
-    sportLocalStatus === "disputed" ||
-    (source !== "sport" && verdict?.market?.uma_resolution_status?.toUpperCase() === "DISPUTED");
-  const isReset = sportLocalStatus === "reset";
+    displayLocalStatus === "disputed" ||
+    (displayLocalStatus === undefined && verdict?.market?.uma_resolution_status?.toUpperCase() === "DISPUTED");
+  const isReset = displayLocalStatus === "reset";
 
   return (
     <div className="space-y-4">
@@ -389,17 +432,17 @@ function LifecycleHeader({
             <Badge tone={source === "sport" ? "info" : source === "crypto" ? "warning" : "neutral"}>
               {source}
             </Badge>
-            {sportLocalStatus && source === "sport" && (
+            {displayLocalStatus && (
               <Badge tone={
-                sportLocalStatus === "disputed" || sportLocalStatus === "reset"
+                displayLocalStatus === "disputed" || displayLocalStatus === "reset"
                   ? "danger"
-                  : sportLocalStatus === "resolved" || sportLocalStatus === "refunded"
+                  : displayLocalStatus === "resolved" || displayLocalStatus === "refunded"
                     ? "success"
-                    : sportLocalStatus === "proposed" || sportLocalStatus === "proposing"
+                    : displayLocalStatus === "proposed" || displayLocalStatus === "proposing"
                       ? "info"
                       : "neutral"
               }>
-                {sportLocalStatus.replace(/_/g, "\u00a0")}
+                {displayLocalStatus.replace(/_/g, "\u00a0")}
               </Badge>
             )}
           </div>
@@ -468,7 +511,7 @@ function LifecycleHeader({
         </div>
       </div>
 
-      {source === "sport" && sportEvent ? (
+      {(source === "sport") && sportEvent ? (
         <SportOutcomeBlock event={sportEvent} />
       ) : null}
       {source === "crypto" && cryptoEvent ? (

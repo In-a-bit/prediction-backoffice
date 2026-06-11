@@ -75,7 +75,6 @@ export const MarketSchema = z.object({
   order_min_size: z.number().int().optional(),
   uma_bond: z.string().optional().describe("integer string in wei"),
   uma_reward: z.string().optional().describe("integer string in wei"),
-  liveness: z.string().optional(),
   metadata_type: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
 });

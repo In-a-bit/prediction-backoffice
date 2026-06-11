@@ -13,6 +13,7 @@ import type { PlanSource } from "@/lib/source-from-plan";
 import type {
   DeployPlanMarket,
   DpmMarket,
+  ManualMarketLocalStatus,
   MarketStatus,
   SportMarketStatus,
 } from "@/lib/types";
@@ -33,6 +34,8 @@ type Ctx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
+  manualMarketId?: number;
+  manualLocalStatus?: ManualMarketLocalStatus;
   marketExternalId: string;
 };
 
@@ -216,6 +219,8 @@ function FormCard({ title, tone, children }: { title: string; tone: "neutral" | 
 function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const router = useRouter();
   const isSport = ctx.sportMarketId !== undefined;
+  const isManualWithBackofficeId = ctx.manualMarketId !== undefined;
+  const usesWorkflow = isSport || isManualWithBackofficeId;
   const [proposer, setProposer] = useState("");
   const [price, setPrice] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -227,18 +232,20 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
       setError("price is required");
       return;
     }
-    if (!isSport && !proposer) {
+    if (!usesWorkflow && !proposer) {
       setError("proposer and price are both required");
       return;
     }
     startTransition(async () => {
       try {
-        // Sport markets: start the SportsMarketResolutionWorkflow which owns
-        // local_status transitions. Crypto/manual markets: call DPM directly.
+        // Sport / manual-with-backoffice-id: start the SportsMarketResolutionWorkflow
+        // which owns local_status transitions. Plain manual markets: call DPM directly.
         const url = isSport
           ? `/api/sports/markets/${ctx.sportMarketId}/trigger-resolution`
-          : `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/propose`;
-        const body = isSport
+          : isManualWithBackofficeId
+            ? `/api/manual/backoffice-markets/${ctx.manualMarketId}/trigger-resolution`
+            : `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/propose`;
+        const body = usesWorkflow
           ? JSON.stringify({ proposed_price: price })
           : JSON.stringify({ proposer_address: proposer, proposed_price: price });
         const res = await fetch(url, {
@@ -260,7 +267,7 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
 
   return (
     <FormCard title="UMA · Propose" tone="neutral">
-      {!isSport && (
+      {!usesWorkflow && (
         <label className="flex flex-col gap-1 text-[11px]">
           Proposer address <span className="text-danger">*</span>
           <input
@@ -271,7 +278,7 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
           />
         </label>
       )}
-      {isSport && (
+      {usesWorkflow && (
         <p className="text-[11px] text-foreground-muted">
           Starts the full propose → liveness → resolve workflow. The proposer address is managed by the system.
         </p>
@@ -299,7 +306,7 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         <button
           type="button"
           onClick={submit}
-          disabled={isPending || (!isSport && !proposer) || !price}
+          disabled={isPending || (!usesWorkflow && !proposer) || !price}
           className={buttonVariants.primary}
         >
           {isPending ? "Submitting…" : "Submit"}
@@ -438,6 +445,12 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
     case "sport-cancel":
       if (ctx.sportMarketId === undefined) return null;
       return `/api/sports/markets/${ctx.sportMarketId}/cancel`;
+    case "manual-cancel":
+      if (ctx.manualMarketId === undefined) return null;
+      return `/api/manual/backoffice-markets/${ctx.manualMarketId}/cancel`;
+    case "manual-watch-dispute":
+      if (ctx.manualMarketId === undefined) return null;
+      return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/watch-dispute`;
     case "uma-resolve":
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/resolve`;
     case "uma-reset":

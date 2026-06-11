@@ -1,6 +1,7 @@
 import type {
   DeployPlanMarket,
   DpmMarket,
+  ManualMarketLocalStatus,
   MarketStatus,
   SportMarketStatus,
 } from "./types";
@@ -33,7 +34,11 @@ export type MarketActionKey =
   | "market-unpause"
   | "market-activate"
   // Sport-specific cancel — wired through the backoffice's /sports endpoint.
-  | "sport-cancel";
+  | "sport-cancel"
+  // Manual-market-specific actions — wired through the backoffice's
+  // /manual/backoffice-markets endpoint (requires a manual_market DB row).
+  | "manual-cancel"
+  | "manual-watch-dispute";
 
 export type MarketActionCtx = {
   source: PlanSource;
@@ -43,6 +48,8 @@ export type MarketActionCtx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
+  manualMarketId?: number;
+  manualLocalStatus?: ManualMarketLocalStatus;
 };
 
 // ---------------------------------------------------------------------------
@@ -149,6 +156,14 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     }
   }
 
+  // 2b) Manual-market watch-dispute — available when the market is in the
+  //     disputed phase and a backoffice manual_market row exists.
+  if (ctx.source === "manual" && ctx.manualMarketId !== undefined) {
+    if (ctx.manualLocalStatus === "disputed") {
+      actions.push("manual-watch-dispute");
+    }
+  }
+
   // 3) On-chain lifecycle actions — gated on resolution_type and the dpm-api
   //    validators so we never offer something the backend would reject.
   if (!isOnChain(ctx)) return actions;
@@ -181,8 +196,28 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
         actions.push("uma-reset");
       }
     }
+  } else if (ctx.source === "manual" && ctx.manualLocalStatus) {
+    // Manual markets with a backoffice DB row: gate on local_status, mirroring
+    // the sport market flow.
+    const ls = ctx.manualLocalStatus;
+    const isTerminal =
+      ls === "resolved" ||
+      ls === "refunded" ||
+      ls === "cancelled" ||
+      ls === "failed";
+    if (!isTerminal) {
+      if (ls === "created" || ls === "reset") {
+        actions.push("uma-propose");
+      }
+      if (ls === "proposed" || ls === "disputed") {
+        actions.push("uma-resolve");
+      }
+      if (ls !== "proposing" && ls !== "resolving") {
+        actions.push("uma-reset");
+      }
+    }
   } else {
-    // UMA market (manual).
+    // UMA market (manual without a backoffice row): fall back to dpm-api status.
     const u = umaStatus(ctx.dpmMarket);
     if (!umaIsTerminal(u)) {
       if (u === "INITIALIZING" || u === undefined) {
@@ -292,5 +327,15 @@ export const ACTION_META: Record<
     tone: "primary",
     title:
       "Set active=true and open accepting_orders. Requires deployment_status=REGISTERED.",
+  },
+  "manual-cancel": {
+    label: "Cancel market",
+    tone: "danger",
+    title: "Cancel this manual market. Irreversible.",
+  },
+  "manual-watch-dispute": {
+    label: "Watch dispute",
+    tone: "secondary",
+    title: "Start the DvmPollWorkflow to monitor the active dispute for this manual market.",
   },
 };

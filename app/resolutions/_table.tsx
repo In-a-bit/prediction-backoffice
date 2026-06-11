@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { ComboSearch } from "@/components/combo-search";
@@ -14,33 +15,58 @@ import {
 import type { MarketRow } from "@/lib/market-rows";
 import type { OperatorLogEntry } from "@/lib/types";
 
+// All possible market sources — always show these regardless of what's in the
+// current tab, so operators can filter to a source before any rows load.
+const SOURCE_OPTIONS = [
+  { value: "", label: "All sources" },
+  { value: "sport", label: "Sport" },
+  { value: "crypto", label: "Crypto" },
+  { value: "manual", label: "Manual" },
+];
+
 export function ResolutionsTable({
   rows,
   log,
   tab,
+  initialQ = "",
+  initialSource = "",
 }: {
   rows: MarketRow[];
   log: OperatorLogEntry[];
   tab: string;
+  initialQ?: string;
+  initialSource?: string;
 }) {
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [source, setSource] = useState<string | undefined>();
+  const router = useRouter();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const sourceOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) set.add(r.source);
-    return [
-      { value: "", label: "All sources" },
-      ...[...set].map((s) => ({ value: s, label: capitalize(s) })),
-    ];
-  }, [rows]);
+  // Local input state gives instant feedback while the server debounce is
+  // in flight. Sync with server-derived initialQ whenever the page re-renders
+  // after navigation.
+  const [inputValue, setInputValue] = useState(initialQ);
+  useEffect(() => {
+    setInputValue(initialQ);
+  }, [initialQ]);
 
-  const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (source && r.source !== source) return false;
-      return true;
-    });
-  }, [rows, source]);
+  function handleSearch(v: string) {
+    setInputValue(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const sp = new URLSearchParams(window.location.search);
+      if (v.trim()) sp.set("q", v.trim());
+      else sp.delete("q");
+      sp.delete("page");
+      router.replace(`${window.location.pathname}?${sp.toString()}`);
+    }, 400);
+  }
+
+  function handleSource(v: string | undefined) {
+    const sp = new URLSearchParams(window.location.search);
+    if (v) sp.set("source", v);
+    else sp.delete("source");
+    sp.delete("page");
+    router.push(`${window.location.pathname}?${sp.toString()}`);
+  }
 
   const columns = useMemo<ColumnDef<MarketRow>[]>(
     () => [
@@ -133,26 +159,27 @@ export function ResolutionsTable({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <SearchBox value={globalFilter} onChange={setGlobalFilter} />
+          <SearchBox value={inputValue} onChange={handleSearch} />
           <ComboSearch
-            options={sourceOptions}
-            value={source ?? ""}
-            onChange={(v) => setSource(v && v !== "" ? v : undefined)}
+            options={SOURCE_OPTIONS}
+            value={initialSource}
+            onChange={handleSource}
             ariaLabel="Source filter"
-            triggerLabel={source ? `Source: ${capitalize(source)}` : "Source: all"}
+            triggerLabel={initialSource ? `Source: ${capitalize(initialSource)}` : "Source: all"}
             clearable
           />
         </div>
         <span className="text-xs text-foreground-muted">
-          {filtered.length} markets —{" "}
+          {rows.length} markets —{" "}
           {LOCAL_BUCKET_LABEL[tab as LocalBucket] ?? tab}
         </span>
       </div>
       <DataTable
-        data={filtered}
+        data={rows}
         columns={columns}
-        globalFilter={globalFilter}
+        globalFilter={inputValue}
         initialSorting={[{ id: "created_at", desc: true }]}
+        pageSize={1000}
         emptyState={{
           title: "No markets in this state",
           description:
@@ -260,6 +287,8 @@ function openHref(row: MarketRow): string {
   if (row.position !== undefined) params.set("pos", String(row.position));
   if (row.sport_market_id !== undefined)
     params.set("sport_market_id", String(row.sport_market_id));
+  if (row.manual_market_id !== undefined)
+    params.set("manual_market_id", String(row.manual_market_id));
   if (row.crypto_event_id !== undefined)
     params.set("crypto_event_id", String(row.crypto_event_id));
   params.set("from", "resolutions");

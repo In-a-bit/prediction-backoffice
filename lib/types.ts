@@ -681,6 +681,70 @@ export type UpdateSportTaskInput = {
 };
 
 // ---------------------------------------------------------------------------
+// Manual markets + events — mirrors the new manual_markets / manual_events
+// backoffice DB tables and their API handlers.
+// ---------------------------------------------------------------------------
+
+export type ManualMarketLocalStatus =
+  | "pending"
+  | "created"
+  | "proposing"
+  | "proposed"
+  | "reset"
+  | "disputed"
+  | "resolving"
+  | "resolved"
+  | "refunded"
+  | "cancelled"
+  | "failed";
+
+export type ManualMarket = {
+  id: number;
+  manual_event_id: number;
+  market_external_id?: string | null;
+  deploy_plan_external_id?: string | null;
+  deploy_plan_position?: number | null;
+  market_slug: string;
+  outcome_key: string;
+  local_status: ManualMarketLocalStatus;
+  propose_workflow_id?: string | null;
+  resolve_workflow_id?: string | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ManualResolutionMarket = {
+  id: number;
+  manual_event_id: number;
+  market_external_id: string | null;
+  market_slug: string;
+  outcome_key: string;
+  local_status: ManualMarketLocalStatus;
+  updated_at: string;
+};
+
+export type ManualResolutionList = {
+  items: ManualResolutionMarket[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+export type ManualEvent = {
+  id: number;
+  event_external_id?: string | null;
+  event_slug: string;
+  is_skipped_by_operator: boolean;
+  creation_plan_external_id?: string | null;
+  backfill_plan_external_ids?: string[];
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  manual_markets?: ManualMarket[];
+};
+
+// ---------------------------------------------------------------------------
 // Crypto-interval refactor — mirrors apps/backoffice/handlers/crypto_*.go.
 // Legacy `Task`/`Asset`/`Interval` types stay in this file for backward-compat
 // with any existing dashboard imports; the new types below are the post-

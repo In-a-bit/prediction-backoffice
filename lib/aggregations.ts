@@ -66,7 +66,14 @@ export function bucketLocal(
     const s = (localStatus ?? "") as LocalBucket;
     return SPORT_CRYPTO_BUCKETS.has(s) ? s : null;
   }
-  // Manual markets: use uma_resolution_status as a fallback bucketing
+  // Manual markets with a backoffice DB row now carry local_status directly
+  // (same values as sport/crypto). If present, use it.
+  if (localStatus) {
+    const s = localStatus as LocalBucket;
+    return SPORT_CRYPTO_BUCKETS.has(s) ? s : null;
+  }
+  // Legacy/fallback: manual markets without a local_status row use
+  // uma_resolution_status so they still appear in the uma_* tabs.
   const u = (umaStatus ?? "").toUpperCase();
   if (u === "INITIALIZING") return "uma_initializing";
   if (u === "PROPOSED") return "uma_proposed";

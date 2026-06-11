@@ -231,12 +231,6 @@ export const manual = {
       { method: "POST", authed: true },
     ),
 
-  // ----- Resolution feed -----
-  // Returns all markets currently in an active UMA resolution state
-  // (PROPOSING, PROPOSED, DISPUTED, RESOLVING). Guaranteed to be complete —
-  // unlike the batch-hydration approach it fetches directly from dpm-api.
-  listResolutionMarkets: () => request<DpmMarket[]>("/manual/resolutions"),
-
   // ----- Audit log -----
   listOperatorLog: (filters: OperatorLogFilters & { offset?: number } = {}) => {    const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
@@ -303,6 +297,51 @@ export const manual = {
     request<DeployPlan>(
       `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/signal-balance`,
       { method: "POST", authed: true },
+    ),
+
+  // ----- Manual market resolution (backoffice DB table) -----
+  listResolutionMarkets: (params?: {
+    localStatus?: string;
+    from?: number;
+    limit?: number;
+  }) => {
+    const p = new URLSearchParams();
+    if (params?.localStatus) p.set("local_status", params.localStatus);
+    if (params?.from != null) p.set("from", String(params.from));
+    if (params?.limit != null) p.set("limit", String(params.limit));
+    const qs = p.toString();
+    return request<import("./types").ManualResolutionList>(
+      `/manual/resolutions${qs ? `?${qs}` : ""}`,
+    );
+  },
+  listResolutionMarketCounts: () =>
+    request<Record<string, number>>("/manual/resolutions/counts"),
+  findManualMarketByExternalId: (externalId: string) =>
+    request<{ id: number; local_status: string; manual_event_id: number }>(
+      `/manual/backoffice-markets/find?external_id=${encodeURIComponent(externalId)}`,
+    ),
+  getManualMarketStatus: (id: number) =>
+    request<Record<string, unknown>>(`/manual/backoffice-markets/${id}/status`),
+  cancelManualMarket: (id: number, audit: { actor?: string } = {}) =>
+    request<{ status: string }>(`/manual/backoffice-markets/${id}/cancel`, {
+      method: "POST",
+      body: audit,
+      authed: true,
+    }),
+  manualUmaResolveManually: (id: number, payouts: string[], audit: { actor?: string } = {}) =>
+    request<{ workflow_id: string; status: string }>(
+      `/manual/backoffice-markets/${id}/uma/resolve-manually`,
+      { method: "POST", body: { ...audit, payouts }, authed: true },
+    ),
+  manualUmaWatchDispute: (id: number, audit: { actor?: string } = {}) =>
+    request<{ workflow_id: string; status: string }>(
+      `/manual/backoffice-markets/${id}/uma/watch-dispute`,
+      { method: "POST", body: audit, authed: true },
+    ),
+  triggerManualResolution: (manualMarketId: number, proposedPrice: string) =>
+    request<{ workflow_id: string; run_id: string }>(
+      `/manual/backoffice-markets/${manualMarketId}/trigger-resolution`,
+      { method: "POST", body: { proposed_price: proposedPrice }, authed: true },
     ),
 };
 

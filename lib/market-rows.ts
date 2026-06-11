@@ -36,6 +36,7 @@ export type MarketRow = {
   plan_external_id?: string;
   position?: number;
   sport_market_id?: number;
+  manual_market_id?: number;
   crypto_event_id?: number;
   active: boolean | null;
   closed: boolean | null;

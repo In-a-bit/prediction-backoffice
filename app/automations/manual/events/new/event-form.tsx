@@ -7,7 +7,9 @@ import {
   Card,
   CardBody,
   ErrorMessage,
+  Field,
   buttonVariants,
+  inputClass,
 } from "@/components/ui";
 import {
   EventEditor,
@@ -30,6 +32,7 @@ export function EventForm({
     }
     return base;
   });
+  const [liveness, setLiveness] = useState("");
   const [created, setCreated] = useState<EventResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -50,7 +53,10 @@ export function EventForm({
         const res = await fetch("/api/manual/events/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payload }),
+          body: JSON.stringify({
+            payload,
+            liveness: liveness !== "" ? parseInt(liveness, 10) : undefined,
+          }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -104,6 +110,24 @@ export function EventForm({
       <Card>
         <CardBody>
           <EventEditor value={state} onChange={setState} />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardBody>
+          <Field
+            label="UMA liveness"
+            hint="How long (in seconds) UMA's Optimistic Oracle waits before a proposal can be resolved. Leave blank to use the global default (7200 s = 2 h). Applied to every market created under this event."
+          >
+            <input
+              type="number"
+              className={`${inputClass} w-40`}
+              placeholder="7200 (default)"
+              value={liveness}
+              min={1}
+              onChange={(e) => setLiveness(e.target.value)}
+            />
+          </Field>
         </CardBody>
       </Card>
 
