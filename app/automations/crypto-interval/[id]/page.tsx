@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AutoRefresh } from "@/components/auto-refresh";
 import { MarketsPanel } from "@/components/crypto-interval/markets-panel";
+import { PlanLimitEditor } from "@/components/plan-limit-editor";
 import { Pagination } from "@/components/pagination";
 import { TaskToggle } from "@/components/task-toggle";
 import {
@@ -194,6 +195,14 @@ export default async function CryptoIntervalTaskDetailPage({
                 value={task.is_resolve_active}
                 label="Resolve active"
               />
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-sm text-foreground-muted">Parallel plans</span>
+                <PlanLimitEditor taskId={task.id} field="parallel_plans" value={task.parallel_plans} />
+              </div>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-sm text-foreground-muted">Max paused plans</span>
+                <PlanLimitEditor taskId={task.id} field="max_paused_plans" value={task.max_paused_plans} />
+              </div>
             </div>
           </CardBody>
         </Card>

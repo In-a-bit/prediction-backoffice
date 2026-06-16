@@ -56,6 +56,8 @@ export function NewTaskForm({
   const [customFirstMarket, setCustomFirstMarket] = useState<string>("");
   const [isCreateActive, setIsCreateActive] = useState(true);
   const [isResolveActive, setIsResolveActive] = useState(true);
+  const [parallelPlans, setParallelPlans] = useState<number>(1);
+  const [maxPausedPlans, setMaxPausedPlans] = useState<number>(10);
 
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -119,6 +121,8 @@ export function NewTaskForm({
         first_market_at: firstMarketAt,
         is_create_active: isCreateActive,
         is_resolve_active: isResolveActive,
+        parallel_plans: parallelPlans,
+        max_paused_plans: maxPausedPlans,
       });
       if (!res.ok) setError(res.error);
     });
@@ -237,6 +241,34 @@ export function NewTaskForm({
             hint="Resolve loop will report payouts for ended markets."
           />
         </div>
+      </Field>
+
+      <Field
+        label="Parallel plans"
+        hint="Max number of deploy plans allowed in 'running' status simultaneously for this task. Default 1 keeps serial behaviour."
+      >
+        <input
+          type="number"
+          value={parallelPlans}
+          min={1}
+          onChange={(e) => setParallelPlans(parseInt(e.target.value || "1", 10))}
+          className={selectClass}
+          style={{ width: "6rem" }}
+        />
+      </Field>
+
+      <Field
+        label="Max paused plans"
+        hint="When this many deploy plans are in 'paused' status, new plan creation is blocked until the count drops. Default 10."
+      >
+        <input
+          type="number"
+          value={maxPausedPlans}
+          min={1}
+          onChange={(e) => setMaxPausedPlans(parseInt(e.target.value || "1", 10))}
+          className={selectClass}
+          style={{ width: "6rem" }}
+        />
       </Field>
 
       <div className="flex items-center gap-3 pt-2">

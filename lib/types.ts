@@ -55,6 +55,8 @@ export type Task = {
   is_create_active: boolean;
   is_resolve_active: boolean;
   tag_ids: number[];
+  parallel_plans: number;
+  max_paused_plans: number;
   asset?: Asset;
   interval?: Interval;
   stats?: TaskStats;
@@ -101,12 +103,16 @@ export type CreateTaskRequest = {
   first_market_at?: string;
   is_create_active?: boolean;
   is_resolve_active?: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 export type UpdateTaskRequest = {
   time_ahead_minutes?: number;
   is_create_active?: boolean;
   is_resolve_active?: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -538,6 +544,8 @@ export type SportTask = {
   auto_start_plans: boolean;
   /** Per-task UMA liveness override in seconds. Absent means the global default (7200s) applies. */
   liveness?: number;
+  parallel_plans: number;
+  max_paused_plans: number;
   market_types: SportMarketTypeSummary[];
   event_count: number;
 };
@@ -661,6 +669,8 @@ export type CreateSportTaskInput = {
   auto_start_plans?: boolean;
   /** UMA OO liveness in seconds. Omit to use the global default (7200s). */
   liveness?: number;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 export type UpdateSportTaskInput = {
@@ -678,6 +688,8 @@ export type UpdateSportTaskInput = {
   liveness?: number;
   /** When true, removes the per-task liveness override and reverts to the global default. */
   clear_liveness?: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 // ---------------------------------------------------------------------------

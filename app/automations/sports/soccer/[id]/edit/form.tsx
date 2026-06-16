@@ -39,6 +39,8 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
   const [liveness, setLiveness] = useState<string>(
     config.liveness !== undefined ? String(config.liveness) : "",
   );
+  const [parallelPlans, setParallelPlans] = useState<number>(config.parallel_plans ?? 1);
+  const [maxPausedPlans, setMaxPausedPlans] = useState<number>(config.max_paused_plans ?? 10);
   const [category, setCategory] = useState<string>(config.category ?? "");
   const [subCategory, setSubCategory] = useState<string>(config.sub_category ?? "");
   const [isCreateActive, setIsCreateActive] = useState<boolean>(config.is_create_active);
@@ -72,6 +74,8 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
               : config.liveness !== undefined
                 ? { clear_liveness: true }
                 : {}),
+            parallel_plans: parallelPlans,
+            max_paused_plans: maxPausedPlans,
           }),
         });
         if (!res.ok) {
@@ -117,6 +121,32 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
               value={liveness}
               min={1}
               onChange={(e) => setLiveness(e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Parallel plans"
+            hint="Max number of deploy plans allowed in 'running' status simultaneously for this task."
+          >
+            <input
+              type="number"
+              className="border rounded px-3 py-2 w-24"
+              value={parallelPlans}
+              min={1}
+              onChange={(e) => setParallelPlans(parseInt(e.target.value || "1", 10))}
+            />
+          </Field>
+
+          <Field
+            label="Max paused plans"
+            hint="When this many deploy plans are in 'paused' status, new plan creation is blocked until the count drops."
+          >
+            <input
+              type="number"
+              className="border rounded px-3 py-2 w-24"
+              value={maxPausedPlans}
+              min={1}
+              onChange={(e) => setMaxPausedPlans(parseInt(e.target.value || "1", 10))}
             />
           </Field>
 

@@ -32,6 +32,8 @@ export async function createTaskAction(input: {
   first_market_at?: string;
   is_create_active: boolean;
   is_resolve_active: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 }): Promise<ActionResult<{ id: number }>> {
   let task;
   try {
@@ -47,7 +49,13 @@ export async function createTaskAction(input: {
 
 export async function updateTaskAction(
   id: number,
-  input: { is_create_active?: boolean; is_resolve_active?: boolean; time_ahead_minutes?: number },
+  input: {
+    is_create_active?: boolean;
+    is_resolve_active?: boolean;
+    time_ahead_minutes?: number;
+    parallel_plans?: number;
+    max_paused_plans?: number;
+  },
 ): Promise<ActionResult> {
   try {
     await api.crypto.updateTask(id, input);

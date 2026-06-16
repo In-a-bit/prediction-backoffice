@@ -83,6 +83,8 @@ export function NewSportTaskForm() {
   const [slugEdited, setSlugEdited] = useState(false);
   const [timeAheadHours, setTimeAheadHours] = useState<number>(72);
   const [liveness, setLiveness] = useState<string>("");
+  const [parallelPlans, setParallelPlans] = useState<number>(1);
+  const [maxPausedPlans, setMaxPausedPlans] = useState<number>(10);
   const [tags, setTags] = useState<SportsTagSpec[]>([]);
   const [tagsEdited, setTagsEdited] = useState(false);
   const [category, setCategory] = useState("");
@@ -281,6 +283,8 @@ export function NewSportTaskForm() {
             market_type_keys: marketTypes,
             auto_start_plans: autoStart,
             liveness: liveness !== "" ? parseInt(liveness, 10) : undefined,
+            parallel_plans: parallelPlans,
+            max_paused_plans: maxPausedPlans,
           }),
         });
         if (!res.ok) {
@@ -496,6 +500,32 @@ export function NewSportTaskForm() {
               value={liveness}
               min={1}
               onChange={(e) => setLiveness(e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Parallel plans"
+            hint="Max number of deploy plans allowed in 'running' status simultaneously for this task. Default 1 keeps serial behaviour."
+          >
+            <input
+              type="number"
+              className="border rounded px-3 py-2 w-24"
+              value={parallelPlans}
+              min={1}
+              onChange={(e) => setParallelPlans(parseInt(e.target.value || "1", 10))}
+            />
+          </Field>
+
+          <Field
+            label="Max paused plans"
+            hint="When this many deploy plans are in 'paused' status, new plan creation is blocked until the count drops. Default 10."
+          >
+            <input
+              type="number"
+              className="border rounded px-3 py-2 w-24"
+              value={maxPausedPlans}
+              min={1}
+              onChange={(e) => setMaxPausedPlans(parseInt(e.target.value || "1", 10))}
             />
           </Field>
 
