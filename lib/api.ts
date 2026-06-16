@@ -157,20 +157,6 @@ export const manual = {
     request<MarketOutcome>(
       `/manual/markets/${encodeURIComponent(externalId)}/outcome`,
     ),
-  signalMarketBalance: (workflowId: string) =>
-    request<{ status: string; workflow_id: string }>(
-      "/manual/markets/signal-balance",
-      {
-        method: "POST",
-        body: { workflow_id: workflowId },
-        authed: true,
-      },
-    ),
-  pauseMarket: (externalId: string) =>
-    request<void>(
-      `/manual/markets/${encodeURIComponent(externalId)}/pause`,
-      { method: "POST", authed: true },
-    ),
   unpauseMarket: (externalId: string) =>
     request<void>(
       `/manual/markets/${encodeURIComponent(externalId)}/unpause`,
@@ -268,11 +254,6 @@ export const manual = {
       `/manual/deploy-plans/${encodeURIComponent(externalId)}/start`,
       { method: "POST", authed: true },
     ),
-  pauseDeployPlan: (externalId: string) =>
-    request<DeployPlan>(
-      `/manual/deploy-plans/${encodeURIComponent(externalId)}/pause`,
-      { method: "POST", authed: true },
-    ),
   recreatePlanMarket: (externalId: string, position: number) =>
     request<DeployPlan>(
       `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/recreate`,
@@ -288,17 +269,6 @@ export const manual = {
       `/manual/operator-log/${encodeURIComponent(externalId)}/retry`,
       { method: "POST", authed: true },
     ),
-  skipPlanMarket: (externalId: string, position: number) =>
-    request<DeployPlan>(
-      `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/skip`,
-      { method: "POST", authed: true },
-    ),
-  signalPlanMarketBalance: (externalId: string, position: number) =>
-    request<DeployPlan>(
-      `/manual/deploy-plans/${encodeURIComponent(externalId)}/markets/${position}/signal-balance`,
-      { method: "POST", authed: true },
-    ),
-
   // ----- Manual market resolution (backoffice DB table) -----
   listResolutionMarkets: (params?: {
     localStatus?: string;
@@ -405,7 +375,7 @@ export const alerts = {
 // ---------------------------------------------------------------------------
 // Sports — soccer/football today; the API surface is sport-agnostic so future
 // sports drop in without new endpoints. Reuses the manual deploy-plan controls
-// (start/pause/recreate/skip/signal-balance) via the existing manual.* methods.
+// (start/recreate/retry) via the existing manual.* methods.
 // ---------------------------------------------------------------------------
 
 import type {
@@ -680,9 +650,7 @@ export const dpm = {
       `/events/by-external-id/${encodeURIComponent(event_external_id)}/deactivate`,
       { method: "POST" },
     ),
-  // Market pause/unpause/activate take the dpm numeric id.
-  pauseMarket: (market_id: number) =>
-    dpmRequest<DpmActionResult>(`/markets/${market_id}/pause`, { method: "POST" }),
+  // Market unpause/activate take the dpm numeric id.
   unpauseMarket: (market_id: number) =>
     dpmRequest<DpmActionResult>(`/markets/${market_id}/unpause`, { method: "POST" }),
   activateMarket: (market_id: number) =>

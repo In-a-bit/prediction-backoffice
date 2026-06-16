@@ -13,8 +13,6 @@ export type MarketActionKey =
   // or while it's stuck mid-deploy).
   | "retry"
   | "recreate"
-  | "skip"
-  | "signal-balance"
   // dpm-api UMA resolution actions (apply once the market is on-chain).
   // Gating mirrors apps/dpm-api/handlers/uma_action.go:
   //   Propose  requires uma_resolution_status === INITIALIZING
@@ -28,16 +26,11 @@ export type MarketActionKey =
   // submits a payouts vector to /markets/ctf-oracle/report-payouts.
   | "ctf-oracle-report-payouts"
   // Generic lifecycle (apply to both UMA and CTF_ORACLE markets once they
-  // are on-chain). Pause/unpause toggle trading; activate is the manual
-  // analogue of automatically_active=true.
-  | "market-pause"
+  // are on-chain). Activate is the manual analogue of automatically_active=true.
   | "market-unpause"
   | "market-activate"
-  // Sport-specific cancel — wired through the backoffice's /sports endpoint.
-  | "sport-cancel"
   // Manual-market-specific actions — wired through the backoffice's
   // /manual/backoffice-markets endpoint (requires a manual_market DB row).
-  | "manual-cancel"
   | "manual-watch-dispute";
 
 export type MarketActionCtx = {
@@ -135,28 +128,9 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   if (ctx.planMarket && ctx.planExternalId) {
     const s = ctx.planMarket.status;
     if (s === "failed") actions.push("retry", "recreate");
-    if (
-      s === "idle" ||
-      s === "submitting" ||
-      s === "running" ||
-      s === "failed" ||
-      s === "waiting_for_balance"
-    ) {
-      actions.push("skip");
-    }
-    if (s === "waiting_for_balance") actions.push("signal-balance");
   }
 
-  // 2) Sport-specific cancel — only before the market is created on-chain.
-  //    Once local_status is "created" users can already place orders; cancelling
-  //    at that point is not meaningful and the button should be hidden.
-  if (ctx.source === "sport" && ctx.sportMarketId !== undefined) {
-    if (ctx.sportLocalStatus === "pending") {
-      actions.push("sport-cancel");
-    }
-  }
-
-  // 2b) Manual-market watch-dispute — available when the market is in the
+  // 2) Manual-market watch-dispute — available when the market is in the
   //     disputed phase and a backoffice manual_market row exists.
   if (ctx.source === "manual" && ctx.manualMarketId !== undefined) {
     if (ctx.manualLocalStatus === "disputed") {
@@ -235,7 +209,6 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   // a no-op.
   const d = ctx.dpmMarket;
   if (d) {
-    if (!d.paused) actions.push("market-pause");
     if (d.paused) actions.push("market-unpause");
     // Activate makes sense when the market isn't already active and the deploy
     // workflow finished (REGISTERED). The dpm-api handler validates the
@@ -265,22 +238,6 @@ export const ACTION_META: Record<
     tone: "secondary",
     title:
       "Mark this market skipped and append a fresh row in the plan with a new external_id.",
-  },
-  skip: {
-    label: "Skip",
-    tone: "ghost",
-    title: "Skip this market in the deploy plan.",
-  },
-  "signal-balance": {
-    label: "Signal balance",
-    tone: "primary",
-    title:
-      "Tell the deploy workflow that funds were topped up — unblocks waiting_for_balance.",
-  },
-  "sport-cancel": {
-    label: "Cancel market",
-    tone: "danger",
-    title: "Cancel this sport market on-chain. Irreversible.",
   },
   "uma-propose": {
     label: "Propose price",
@@ -312,11 +269,6 @@ export const ACTION_META: Record<
     title:
       "Admin-settle this managed-oracle market by reporting payouts. Pick the winning outcome.",
   },
-  "market-pause": {
-    label: "Pause trading",
-    tone: "secondary",
-    title: "Flip paused=true on the market. Halts trading via dpm-api.",
-  },
   "market-unpause": {
     label: "Resume trading",
     tone: "secondary",
@@ -327,11 +279,6 @@ export const ACTION_META: Record<
     tone: "primary",
     title:
       "Set active=true and open accepting_orders. Requires deployment_status=REGISTERED.",
-  },
-  "manual-cancel": {
-    label: "Cancel market",
-    tone: "danger",
-    title: "Cancel this manual market. Irreversible.",
   },
   "manual-watch-dispute": {
     label: "Watch dispute",

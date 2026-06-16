@@ -10,7 +10,7 @@ const TILES = [
     href: "/deploy-plans?source=manual",
     title: "Deploy plans",
     description:
-      "Live and past market deploy queues — see what's running, recreate failed markets, signal balance for waiting workflows. Execution is backend-driven and survives UI/server restarts.",
+      "Live and past market deploy queues — see what's running, recreate failed markets. Execution is backend-driven and survives UI/server restarts.",
   },
   {
     href: "/automations/manual/series/new",

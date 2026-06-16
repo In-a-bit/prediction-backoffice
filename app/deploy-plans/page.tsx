@@ -111,7 +111,7 @@ export default async function DeployPlansPage({
     <div className="px-6 py-8 max-w-5xl mx-auto space-y-6">
       <PageHeader
         title="Deploy plans"
-        description="Cross-cutting queue of market deploys — used by the manual creator and the sports automations alike. Each plan tracks one event's markets through submit → REGISTERED, surviving UI/server restarts. Open a plan to see live progress, recreate failed markets, or signal balance."
+        description="Cross-cutting queue of market deploys — used by the manual creator and the sports automations alike. Each plan tracks one event's markets through submit → REGISTERED, surviving UI/server restarts. Open a plan to see live progress or recreate failed markets."
       />
 
       <Tabs current={source} tabs={buildSourceTabs(sp)} label="Plan source" />

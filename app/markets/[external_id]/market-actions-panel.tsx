@@ -438,16 +438,8 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
   switch (key) {
     case "retry":
     case "recreate":
-    case "skip":
-    case "signal-balance":
       if (!ctx.planExternalId || !ctx.planMarket) return null;
       return `/api/manual/deploy-plans/${encodeURIComponent(ctx.planExternalId)}/markets/${ctx.planMarket.position}/${key}`;
-    case "sport-cancel":
-      if (ctx.sportMarketId === undefined) return null;
-      return `/api/sports/markets/${ctx.sportMarketId}/cancel`;
-    case "manual-cancel":
-      if (ctx.manualMarketId === undefined) return null;
-      return `/api/manual/backoffice-markets/${ctx.manualMarketId}/cancel`;
     case "manual-watch-dispute":
       if (ctx.manualMarketId === undefined) return null;
       return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/watch-dispute`;
@@ -455,8 +447,6 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/resolve`;
     case "uma-reset":
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/reset`;
-    case "market-pause":
-      return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/pause`;
     case "market-unpause":
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/unpause`;
     case "market-activate":
