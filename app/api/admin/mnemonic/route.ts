@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { admin } from "@/lib/api";
+import { ensurePermission } from "@/lib/route-guard";
 
 export async function GET() {
   try {
+    const denied = await ensurePermission("wallets.read");
+    if (denied) return denied;
+
     const data = await admin.getMnemonicStatus();
     return NextResponse.json(data);
   } catch (err) {

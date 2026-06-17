@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cookies } from "next/headers";
+
 import type {
   Asset,
   CreateAssetRequest,
@@ -37,7 +39,6 @@ export type Paginated<T> = {
 };
 
 const baseUrl = process.env.BACKOFFICE_API_URL ?? "http://localhost:8092";
-const apiKey = process.env.BACKOFFICE_API_KEY ?? "";
 const dpmUrl = process.env.DPM_API_URL ?? "http://localhost:8082";
 // Admin key for dpm-api privileged writes (admin route group).
 // Shared with other users of the dpm-api; do not rename.
@@ -49,8 +50,8 @@ const dpmAppApiKey = process.env.DPM_APP_API_KEY ?? "";
 type FetchOpts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
-  // When true, send the API key header. Required for all writes and any
-  // protected reads.
+  // Retained for call-site compatibility; auth is now carried by the forwarded
+  // session cookie (see request()), not an API key. Ignored.
   authed?: boolean;
   // Cache control. Defaults to no-store so dashboard data is always fresh.
   cache?: RequestCache;
@@ -69,16 +70,23 @@ export class BackofficeApiError extends Error {
   }
 }
 
+/** A 401 from the backoffice means the session is missing/expired. */
+export function isUnauthorized(err: unknown): boolean {
+  return err instanceof BackofficeApiError && err.status === 401;
+}
+
 async function request<T>(path: string, opts: FetchOpts = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
-  if (opts.authed) {
-    if (!apiKey) {
-      throw new Error("BACKOFFICE_API_KEY is required for this request");
-    }
-    headers["X-API-Key"] = apiKey;
+
+  // Forward the caller's backoffice session cookie so Go authenticates the
+  // user, enforces RBAC, and attributes the audit actor. The browser only
+  // talks to this Next BFF; we relay its predictionsession cookie to Go.
+  const session = (await cookies()).get("predictionsession")?.value;
+  if (session) {
+    headers["Cookie"] = `predictionsession=${session}`;
   }
 
   const init: RequestInit = {
@@ -796,4 +804,92 @@ export const admin = {
       auth: "admin",
       body: payload,
     }),
+};
+
+// ---------------------------------------------------------------------------
+// Auth / access control — the current session, users, roles, the permission
+// catalog, and the audit log. Login/logout live in route handlers because they
+// set/clear the session cookie.
+// ---------------------------------------------------------------------------
+
+import type {
+  AuditRow,
+  Me,
+  Permission,
+  PermissionCatalogDomain,
+  RoleRow,
+  UserRow,
+} from "./auth";
+
+export const auth = {
+  me: () => request<Me>("/auth/me"),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ status: string }>("/auth/change-password", {
+      method: "POST",
+      body: { current_password, new_password },
+    }),
+};
+
+export const users = {
+  list: () => request<{ data: UserRow[] }>("/auth/users").then((r) => r.data),
+  get: (id: number) => request<UserRow>(`/auth/users/${id}`),
+  create: (input: { email: string; password: string; role_ids: number[] }) =>
+    request<UserRow>("/auth/users", { method: "POST", body: input }),
+  update: (
+    id: number,
+    patch: { is_active?: boolean; role_ids?: number[]; new_password?: string },
+  ) => request<UserRow>(`/auth/users/${id}`, { method: "PATCH", body: patch }),
+};
+
+export const roles = {
+  list: () => request<{ data: RoleRow[] }>("/auth/roles").then((r) => r.data),
+  permissions: () =>
+    request<{ data: PermissionCatalogDomain[] }>("/auth/permissions").then(
+      (r) => r.data,
+    ),
+  create: (input: {
+    name: string;
+    description?: string;
+    permissions: Permission[];
+  }) => request<RoleRow>("/auth/roles", { method: "POST", body: input }),
+  update: (
+    id: number,
+    patch: { description?: string; permissions?: Permission[] },
+  ) => request<RoleRow>(`/auth/roles/${id}`, { method: "PATCH", body: patch }),
+  remove: (id: number) =>
+    request<{ status: string }>(`/auth/roles/${id}`, { method: "DELETE" }),
+};
+
+export const audit = {
+  list: (
+    filters: {
+      action?: string;
+      resource_type?: string;
+      actor_email?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+    }
+    const qs = q.toString();
+    return request<{
+      data: AuditRow[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/audit${qs ? `?${qs}` : ""}`);
+  },
+  // record() is used by route handlers to log wallet/treasury actions that
+  // bypass Go (Next → dpm-api direct). The actor is taken from the session.
+  record: (entry: {
+    action: string;
+    resource_type?: string;
+    resource_id?: string;
+    params?: Record<string, unknown>;
+    result_status?: number;
+    error?: string;
+  }) => request<{ status: string }>("/audit", { method: "POST", body: entry }),
 };

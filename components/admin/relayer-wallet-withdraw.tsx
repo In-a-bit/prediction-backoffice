@@ -9,6 +9,7 @@ import {
   buttonVariants,
   inputClass,
 } from "@/components/ui";
+import { useCan } from "@/components/auth/permission-context";
 import type {
   AssetBalance,
   WalletBalances,
@@ -52,6 +53,7 @@ export function RelayerWalletWithdrawDialog({
   const [submitting, setSubmitting] = useState(false);
   const [withdrawError, setWithdrawError] = useState("");
   const [result, setResult] = useState<WithdrawResult | null>(null);
+  const canWithdraw = useCan("treasury.withdraw");
 
   const refresh = useCallback(async () => {
     if (walletId == null) return;
@@ -326,8 +328,9 @@ export function RelayerWalletWithdrawDialog({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={submitting || isActive || !balances || !to || (!useMax && !amount)}
-              className={buttonVariants.primary}
+              disabled={!canWithdraw || submitting || isActive || !balances || !to || (!useMax && !amount)}
+              title={!canWithdraw ? 'Requires the "treasury.withdraw" permission' : undefined}
+              className={`${buttonVariants.primary} ${!canWithdraw ? "opacity-40 cursor-not-allowed" : ""}`}
             >
               {submitting ? "Broadcasting…" : "Withdraw"}
             </button>

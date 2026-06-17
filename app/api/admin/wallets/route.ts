@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { admin, type RelayerWalletListParams } from "@/lib/api";
+import { ensurePermission } from "@/lib/route-guard";
 
 export async function GET(req: NextRequest) {
   try {
+    const denied = await ensurePermission("wallets.read");
+    if (denied) return denied;
+
     const sp = req.nextUrl.searchParams;
     const params: RelayerWalletListParams = {};
     const limit = sp.get("limit");
