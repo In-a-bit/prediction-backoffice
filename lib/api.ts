@@ -39,7 +39,12 @@ export type Paginated<T> = {
 const baseUrl = process.env.BACKOFFICE_API_URL ?? "http://localhost:8092";
 const apiKey = process.env.BACKOFFICE_API_KEY ?? "";
 const dpmUrl = process.env.DPM_API_URL ?? "http://localhost:8082";
+// Admin key for dpm-api privileged writes (admin route group).
+// Shared with other users of the dpm-api; do not rename.
 const dpmApiKey = process.env.DPM_API_KEY ?? "";
+// App key for dpm-api protected reads (standard route group): relayer-wallet
+// listing, mnemonic status, wallet balances. Distinct secret from the admin key.
+const dpmAppApiKey = process.env.DPM_APP_API_KEY ?? "";
 
 type FetchOpts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -582,11 +587,12 @@ export const crypto = {
 
 async function dpmRequest<T>(
   path: string,
-  opts: { method?: "GET" | "POST"; body?: unknown } = {},
+  opts: { method?: "GET" | "POST"; body?: unknown; auth: "admin" | "app" },
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
-  if (dpmApiKey) headers["X-API-Key"] = dpmApiKey;
+  const apiKey = opts.auth === "app" ? dpmAppApiKey : dpmApiKey;
+  if (apiKey) headers["X-API-Key"] = apiKey;
   const res = await fetch(`${dpmUrl}${path}`, {
     method: opts.method ?? "GET",
     headers,
@@ -611,48 +617,183 @@ export const dpm = {
   umaPropose: (market_external_id: string, proposer_address: string, proposed_price: string) =>
     dpmRequest<DpmActionResult>(`/markets/uma/propose`, {
       method: "POST",
+      auth: "admin",
       body: { market_id: market_external_id, proposer_address, proposed_price },
     }),
   umaResolve: (market_external_id: string) =>
     dpmRequest<DpmActionResult>(`/markets/uma/resolve`, {
       method: "POST",
+      auth: "admin",
       body: { market_id: market_external_id },
     }),
   umaReset: (market_external_id: string) =>
     dpmRequest<DpmActionResult>(`/markets/uma/reset`, {
       method: "POST",
+      auth: "admin",
       body: { market_id: market_external_id },
     }),
   umaResolveManually: (market_external_id: string, payouts: string[]) =>
     dpmRequest<DpmActionResult>(`/markets/uma/resolve-manually`, {
       method: "POST",
+      auth: "admin",
       body: { market_id: market_external_id, payouts },
     }),
   ctfOracleReportPayouts: (market_external_id: string, payouts: string[]) =>
     dpmRequest<DpmActionResult>(`/markets/ctf-oracle/report-payouts`, {
       method: "POST",
+      auth: "admin",
       body: { market_id: market_external_id, payouts },
     }),
 
   // --- Lifecycle (event & market pause/unpause/activate) ---
   // Event pause/unpause take the dpm numeric id. Activate is keyed by external_id.
   pauseEvent: (event_id: number) =>
-    dpmRequest<DpmActionResult>(`/events/${event_id}/pause`, { method: "POST" }),
+    dpmRequest<DpmActionResult>(`/events/${event_id}/pause`, { method: "POST", auth: "admin" }),
   unpauseEvent: (event_id: number) =>
-    dpmRequest<DpmActionResult>(`/events/${event_id}/unpause`, { method: "POST" }),
+    dpmRequest<DpmActionResult>(`/events/${event_id}/unpause`, { method: "POST", auth: "admin" }),
   activateEvent: (event_external_id: string) =>
     dpmRequest<DpmActionResult>(
       `/events/by-external-id/${encodeURIComponent(event_external_id)}/activate`,
-      { method: "POST" },
+      { method: "POST", auth: "admin" },
     ),
   deactivateEvent: (event_external_id: string) =>
     dpmRequest<DpmActionResult>(
       `/events/by-external-id/${encodeURIComponent(event_external_id)}/deactivate`,
-      { method: "POST" },
+      { method: "POST", auth: "admin" },
     ),
   // Market unpause/activate take the dpm numeric id.
   unpauseMarket: (market_id: number) =>
-    dpmRequest<DpmActionResult>(`/markets/${market_id}/unpause`, { method: "POST" }),
+    dpmRequest<DpmActionResult>(`/markets/${market_id}/unpause`, { method: "POST", auth: "admin" }),
   activateMarket: (market_id: number) =>
-    dpmRequest<DpmActionResult>(`/markets/${market_id}/activate`, { method: "POST" }),
+    dpmRequest<DpmActionResult>(`/markets/${market_id}/activate`, { method: "POST", auth: "admin" }),
+};
+
+// ---------------------------------------------------------------------------
+// Admin — HD mnemonic + relayer-wallet initialization. Talks to dpm-api's
+// relayer-wallet handlers. Reads use the app key (standard group), writes use
+// the admin key (admin group). Ported from prediction-onchain-actions.
+// ---------------------------------------------------------------------------
+
+export type MnemonicStatus = {
+  exists: boolean;
+  max_used_index: number;
+  created_at?: string;
+};
+
+export type WalletType =
+  | "TREASURY_ADMIN"
+  | "FEE_ADMIN"
+  | "CTF_ADMIN"
+  | "UMA_ADMIN"
+  | "RELAYER_ADMIN"
+  | "ORACLE_ADMIN";
+
+export type InitRelayerWalletResponse = {
+  address: string;
+  type: WalletType;
+  initStatus: "PENDING" | "IN_PROGRESS" | "FAILED" | "COMPLETED";
+  wallet_id: number;
+  workflow_id: string;
+};
+
+export type RelayerWallet = {
+  id: number;
+  created_at?: string;
+  updated_at?: string;
+  address: string;
+  wallet_type: WalletType;
+  status: string;
+  init_status?: "PENDING" | "IN_PROGRESS" | "FAILED" | "COMPLETED";
+  init_error?: string;
+  current_nonce: number;
+  label?: string;
+  is_active: boolean;
+  workflow_id?: string;
+};
+
+export type RelayerWalletListParams = {
+  limit?: number;
+  offset?: number;
+  address?: string;
+  wallet_type?: string;
+  label?: string;
+};
+
+export type AssetBalance = {
+  symbol: string;
+  contract_address?: string;
+  decimals: number;
+  balance_raw: string;
+  balance_normalized: string;
+  max_withdrawable_raw: string;
+};
+
+export type WalletBalances = {
+  wallet_id: number;
+  address: string;
+  chain_id: string;
+  pol: AssetBalance;
+  collateral: AssetBalance;
+  gas: {
+    pol_transfer_gas_limit: number;
+    max_fee_per_gas: string;
+    max_priority_fee_per_gas: string;
+    pol_gas_reservation_wei: string;
+  };
+};
+
+export type WithdrawAsset = "POL" | "COLLATERAL";
+
+export type WithdrawPayload = {
+  asset: WithdrawAsset;
+  to: string;
+  amount_raw?: string;
+  max?: boolean;
+};
+
+export type WithdrawResult = {
+  tx_hash: string;
+  nonce: number;
+  status: "PENDING" | "MINED" | "REVERTED";
+  block_number?: string;
+  amount_raw: string;
+};
+
+function relayerWalletQuery(params: RelayerWalletListParams): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export const admin = {
+  getMnemonicStatus: () =>
+    dpmRequest<MnemonicStatus>(`/relayer-wallets/mnemonic`, { auth: "app" }),
+  initMnemonic: () =>
+    dpmRequest<MnemonicStatus>(`/relayer-wallets/mnemonic/init`, { method: "POST", auth: "admin" }),
+
+  listRelayerWallets: (params: RelayerWalletListParams = {}) =>
+    dpmRequest<Paginated<RelayerWallet> & { total_pages?: number }>(
+      `/relayer-wallets${relayerWalletQuery(params)}`,
+      { auth: "app" },
+    ),
+  initRelayerWallet: (payload: { type: WalletType; label?: string }) =>
+    dpmRequest<InitRelayerWalletResponse>(`/relayer-wallets/init`, {
+      method: "POST",
+      auth: "admin",
+      body: payload,
+    }),
+  deactivateRelayerWallet: (id: number) =>
+    dpmRequest<RelayerWallet>(`/relayer-wallets/${id}/deactivate`, { method: "POST", auth: "admin" }),
+
+  getRelayerWalletBalances: (id: number) =>
+    dpmRequest<WalletBalances>(`/relayer-wallets/${id}/balances`, { auth: "app" }),
+  withdrawFromRelayerWallet: (id: number, payload: WithdrawPayload) =>
+    dpmRequest<WithdrawResult>(`/relayer-wallets/${id}/withdraw`, {
+      method: "POST",
+      auth: "admin",
+      body: payload,
+    }),
 };

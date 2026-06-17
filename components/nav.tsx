@@ -279,6 +279,47 @@ const sections: Section[] = [
       },
     ],
   },
+  {
+    title: "Admin",
+    items: [
+      {
+        href: "/admin/mnemonic",
+        label: "HD Mnemonic",
+        icon: (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M7 10V7a5 5 0 0 1 10 0v3" />
+            <rect x="4" y="10" width="16" height="11" rx="2" />
+            <circle cx="12" cy="15" r="1.5" />
+          </svg>
+        ),
+      },
+      {
+        href: "/admin/init-wallet",
+        label: "Initialize Wallet",
+        icon: (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="6" width="18" height="13" rx="2" />
+            <path d="M3 10h18" />
+            <path d="M16 14h2" />
+          </svg>
+        ),
+      },
+    ],
+  },
 ];
 
 function isActive(pathname: string, item: Item) {
