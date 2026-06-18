@@ -155,9 +155,22 @@ export async function loadMarketRows(
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
+  // Cap per source so that when multiple sources are combined (source=all),
+  // each source gets up to `cap` hydrated rows rather than sharing one global
+  // budget. Without this, the first source's rows can fill the entire cap and
+  // leave later sources completely unhydrated.
+  const bySource = new Map<string, MarketRow[]>();
+  for (const r of rows) {
+    const list = bySource.get(r.source) ?? [];
+    list.push(r);
+    bySource.set(r.source, list);
+  }
   // Only hydrate rows that have a real dpm UUID — fallback IDs like
   // "crypto-42" or "sport-7" are not valid and will be rejected by dpm-api.
-  const head = rows.slice(0, cap).filter((r) => UUID_RE.test(r.market_external_id));
+  const head = [...bySource.values()]
+    .flatMap((g) => g.slice(0, cap))
+    .filter((r) => UUID_RE.test(r.market_external_id));
+
   const verdicts = await Promise.all(
     head.map(async (r) => {
       try {
@@ -171,8 +184,8 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
   for (const v of verdicts) if (v) verdictMap.set(v[0], v[1]);
 
   const eventIds = [
-    ...new Set(rows.map((r) => r.event_external_id).filter((x): x is string => !!x)),
-  ].slice(0, cap);
+    ...new Set(head.map((r) => r.event_external_id).filter((x): x is string => !!x)),
+  ];
   const events = await Promise.all(
     eventIds.map(async (id) => {
       try {
