@@ -10,7 +10,7 @@ export function PlanLimitEditor({
   value,
 }: {
   taskId: number;
-  field: "parallel_plans" | "max_paused_plans";
+  field: "parallel_plans" | "max_paused_plans" | "time_ahead_minutes";
   value: number;
 }) {
   const [current, setCurrent] = useState(value);

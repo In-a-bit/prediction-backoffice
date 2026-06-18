@@ -146,7 +146,6 @@ export default async function CryptoIntervalTaskDetailPage({
             <h2 className="text-sm font-semibold">Configuration</h2>
           </CardHeader>
           <CardBody className="space-y-3 text-sm">
-            <Row label="Time ahead" value={formatDuration(task.time_ahead_minutes)} />
             <Row label="First market at" value={formatDateTimeFull(task.first_market_at)} />
             <Row
               label="Next slot ends"
@@ -195,6 +194,10 @@ export default async function CryptoIntervalTaskDetailPage({
                 value={task.is_resolve_active}
                 label="Resolve active"
               />
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-sm text-foreground-muted">Time ahead (min)</span>
+                <PlanLimitEditor taskId={task.id} field="time_ahead_minutes" value={task.time_ahead_minutes} />
+              </div>
               <div className="flex items-center justify-between gap-2 pt-1">
                 <span className="text-sm text-foreground-muted">Parallel plans</span>
                 <PlanLimitEditor taskId={task.id} field="parallel_plans" value={task.parallel_plans} />
