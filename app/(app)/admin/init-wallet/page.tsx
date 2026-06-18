@@ -21,6 +21,20 @@ import type {
   WalletType,
 } from "@/lib/api";
 
+const tableBtn =
+  "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap";
+const tableBtnDanger = `${tableBtn} bg-danger/10 text-danger border border-danger/20 hover:bg-danger/15`;
+const tableBtnSecondary = `${tableBtn} bg-foreground/5 text-foreground hover:bg-foreground/10 border border-border`;
+
+const SHORT_TYPE: Record<string, string> = {
+  TREASURY_ADMIN: "Treasury",
+  FEE_ADMIN: "Fee",
+  CTF_ADMIN: "CTF",
+  UMA_ADMIN: "UMA",
+  RELAYER_ADMIN: "Relayer",
+  ORACLE_ADMIN: "Oracle",
+};
+
 const PAGE_SIZE = 10;
 const POLL_INTERVAL_MS = 3_000;
 const FINAL_INIT_STATUSES = new Set(["COMPLETED", "FAILED"]);
@@ -171,6 +185,14 @@ export default function InitWalletPage() {
 
   const [deactivatingId, setDeactivatingId] = useState<number | null>(null);
   const [activatingId, setActivatingId] = useState<number | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
+
+  function copyAddress(addr: string) {
+    navigator.clipboard.writeText(addr).then(() => {
+      setCopiedAddress(addr);
+      setTimeout(() => setCopiedAddress(null), 1500);
+    });
+  }
   const [withdrawWallet, setWithdrawWallet] = useState<RelayerWallet | null>(null);
 
   async function handleDeactivate(w: RelayerWallet) {
@@ -241,7 +263,7 @@ export default function InitWalletPage() {
     : null;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-full">
       <PageHeader
         title="Initialize Wallet"
         description="Derive a fresh wallet from the HD mnemonic and kick off the per-type on-chain init workflow (fund POL, grant roles, etc.). Returns immediately; the table below tracks init_status as the workflow runs."
@@ -402,10 +424,22 @@ export default function InitWalletPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-left text-xs">
+              <table className="w-full table-fixed text-left text-xs">
+                <colgroup>
+                  <col className="w-10" />
+                  <col />
+                  <col className="w-24" />
+                  <col className="w-28" />
+                  <col className="w-24" />
+                  <col className="w-10" />
+                  <col className="w-14" />
+                  <col className="w-24" />
+                  <col className="w-20" />
+                  <col className="w-[5.5rem]" />
+                </colgroup>
                 <thead className="border-b border-border bg-foreground/[0.03]">
                   <tr>
-                    {["ID", "Address", "Type", "Init", "Status", "Active", "Nonce", "Label", "Created", "Actions"].map(
+                    {["ID", "Address", "Type", "Init", "Status", "●", "Nonce", "Label", "Created", "Actions"].map(
                       (h) => (
                         <th key={h} className="px-3 py-2 font-medium text-foreground-muted">
                           {h}
@@ -422,9 +456,33 @@ export default function InitWalletPage() {
                       title={w.init_error ? `Init error: ${w.init_error}` : undefined}
                     >
                       <td className="px-3 py-2 font-mono text-foreground-muted">{w.id}</td>
-                      <td className="px-3 py-2 font-mono">{w.address}</td>
+                      <td className="px-3 py-2 font-mono">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="truncate" title={w.address}>{w.address}</span>
+                          <button
+                            type="button"
+                            onClick={() => copyAddress(w.address)}
+                            title={copiedAddress === w.address ? "Copied!" : "Copy address"}
+                            className="cursor-pointer text-foreground-muted hover:text-foreground transition-colors"
+                          >
+                            {copiedAddress === w.address ? (
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-success">
+                                <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+                              </svg>
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                                <path fillRule="evenodd" d="M10.986 3H12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h1.014A2.25 2.25 0 0 1 7.25 1.5h1.5a2.25 2.25 0 0 1 2.236 1.5ZM8.75 3a.75.75 0 0 0-.75-.75h-1.5a.75.75 0 0 0-.75.75v.25h3V3ZM6 6.75A.75.75 0 0 1 6.75 6h2.5a.75.75 0 0 1 0 1.5h-2.5A.75.75 0 0 1 6 6.75Zm.75 2.75a.75.75 0 0 0 0 1.5h2.5a.75.75 0 0 0 0-1.5h-2.5Z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </td>
                       <td className="px-3 py-2">
-                        <Badge tone={typeTone[w.wallet_type] ?? "neutral"}>{w.wallet_type}</Badge>
+                        <span title={w.wallet_type}>
+                          <Badge tone={typeTone[w.wallet_type] ?? "neutral"}>
+                            {SHORT_TYPE[w.wallet_type] ?? w.wallet_type}
+                          </Badge>
+                        </span>
                       </td>
                       <td className="px-3 py-2">
                         <Badge tone={initStatusTone[w.init_status ?? ""] ?? "neutral"}>
@@ -440,18 +498,18 @@ export default function InitWalletPage() {
                         />
                       </td>
                       <td className="px-3 py-2 font-mono">{w.current_nonce}</td>
-                      <td className="px-3 py-2 text-foreground-muted">{w.label ?? "-"}</td>
+                      <td className="px-3 py-2 text-foreground-muted">{w.label ?? "—"}</td>
                       <td className="px-3 py-2 text-foreground-muted">
-                        {w.created_at ? new Date(w.created_at).toLocaleDateString() : "-"}
+                        {w.created_at ? new Date(w.created_at).toLocaleDateString() : "—"}
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex gap-1">
+                        <div className="flex flex-col gap-1">
                           {w.is_active ? (
                             <button
                               type="button"
                               disabled={deactivatingId === w.id}
                               onClick={() => handleDeactivate(w)}
-                              className={buttonVariants.danger}
+                              className={tableBtnDanger}
                             >
                               {deactivatingId === w.id ? "…" : "Deactivate"}
                             </button>
@@ -460,7 +518,7 @@ export default function InitWalletPage() {
                               type="button"
                               disabled={activatingId === w.id}
                               onClick={() => handleActivate(w)}
-                              className={buttonVariants.secondary}
+                              className={tableBtnSecondary}
                             >
                               {activatingId === w.id ? "…" : "Activate"}
                             </button>
@@ -468,7 +526,7 @@ export default function InitWalletPage() {
                           <button
                             type="button"
                             onClick={() => setWithdrawWallet(w)}
-                            className={buttonVariants.secondary}
+                            className={tableBtnSecondary}
                             title={
                               w.is_active
                                 ? "Deactivate first — manual withdraws race the relayer pool"
