@@ -795,6 +795,8 @@ export const admin = {
     }),
   deactivateRelayerWallet: (id: number) =>
     dpmRequest<RelayerWallet>(`/relayer-wallets/${id}/deactivate`, { method: "POST", auth: "admin" }),
+  activateRelayerWallet: (id: number) =>
+    dpmRequest<RelayerWallet>(`/relayer-wallets/${id}/activate`, { method: "POST", auth: "admin" }),
 
   getRelayerWalletBalances: (id: number) =>
     dpmRequest<WalletBalances>(`/relayer-wallets/${id}/balances`, { auth: "app" }),

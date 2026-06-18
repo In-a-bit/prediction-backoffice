@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { RelayerWalletWithdrawDialog } from "@/components/admin/relayer-wallet-withdraw";
 import {
@@ -22,6 +22,8 @@ import type {
 } from "@/lib/api";
 
 const PAGE_SIZE = 10;
+const POLL_INTERVAL_MS = 3_000;
+const FINAL_INIT_STATUSES = new Set(["COMPLETED", "FAILED"]);
 
 const WALLET_TYPES: { value: WalletType; label: string; hint: string }[] = [
   {
@@ -105,9 +107,13 @@ export default function InitWalletPage() {
   const [filterLabel, setFilterLabel] = useState("");
   const [filterInitStatus, setFilterInitStatus] = useState("");
 
+  const fetchingRef = useRef(false);
+
   const fetchWallets = useCallback(
-    async (pageNum: number) => {
-      setListLoading(true);
+    async (pageNum: number, { silent = false }: { silent?: boolean } = {}) => {
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+      if (!silent) setListLoading(true);
       setListError("");
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
@@ -130,7 +136,8 @@ export default function InitWalletPage() {
       } catch (err) {
         setListError(err instanceof Error ? err.message : String(err));
       } finally {
-        setListLoading(false);
+        fetchingRef.current = false;
+        if (!silent) setListLoading(false);
       }
     },
     [filterAddress, filterType, filterLabel, filterInitStatus],
@@ -144,12 +151,26 @@ export default function InitWalletPage() {
     fetchWallets(page);
   }, [fetchWallets, page]);
 
+  useEffect(() => {
+    const hasNonFinal = wallets.some(
+      (w) => w.init_status && !FINAL_INIT_STATUSES.has(w.init_status),
+    );
+    if (!hasNonFinal) return;
+
+    const id = setInterval(() => {
+      fetchWallets(page, { silent: true });
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(id);
+  }, [wallets, page, fetchWallets]);
+
   function handleSearch() {
     setPage(0);
     fetchWallets(0);
   }
 
   const [deactivatingId, setDeactivatingId] = useState<number | null>(null);
+  const [activatingId, setActivatingId] = useState<number | null>(null);
   const [withdrawWallet, setWithdrawWallet] = useState<RelayerWallet | null>(null);
 
   async function handleDeactivate(w: RelayerWallet) {
@@ -170,6 +191,23 @@ export default function InitWalletPage() {
       setListError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeactivatingId(null);
+    }
+  }
+
+  async function handleActivate(w: RelayerWallet) {
+    if (!confirm(`Activate wallet ${w.address}?\nIt will be auto-funded and picked up for relaying.`)) {
+      return;
+    }
+    setActivatingId(w.id);
+    try {
+      const res = await fetch(`/api/admin/wallets/${w.id}/activate`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `Status ${res.status}`);
+      fetchWallets(page);
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActivatingId(null);
     }
   }
 
@@ -197,6 +235,10 @@ export default function InitWalletPage() {
   }
 
   const selected = WALLET_TYPES.find((t) => t.value === type);
+
+  const liveResultInitStatus = result
+    ? (wallets.find((w) => w.id === result.wallet_id)?.init_status ?? result.initStatus)
+    : null;
 
   return (
     <div className="max-w-5xl">
@@ -271,8 +313,8 @@ export default function InitWalletPage() {
                   <dd>{result.type}</dd>
                   <dt className="text-foreground-muted">Init status</dt>
                   <dd>
-                    <Badge tone={initStatusTone[result.initStatus] ?? "neutral"}>
-                      {result.initStatus}
+                    <Badge tone={initStatusTone[liveResultInitStatus ?? ""] ?? "neutral"}>
+                      {liveResultInitStatus ?? result.initStatus}
                     </Badge>
                   </dd>
                   <dt className="text-foreground-muted">Wallet ID</dt>
@@ -414,7 +456,14 @@ export default function InitWalletPage() {
                               {deactivatingId === w.id ? "…" : "Deactivate"}
                             </button>
                           ) : (
-                            <span className="text-foreground-muted">inactive</span>
+                            <button
+                              type="button"
+                              disabled={activatingId === w.id}
+                              onClick={() => handleActivate(w)}
+                              className={buttonVariants.secondary}
+                            >
+                              {activatingId === w.id ? "…" : "Activate"}
+                            </button>
                           )}
                           <button
                             type="button"
