@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { admin, type RelayerWalletListParams } from "@/lib/api";
-import { ensurePermission } from "@/lib/route-guard";
+import { proxyError } from "@/lib/route-guard";
 
+// Proxies the Go backoffice (/proxy/dpm/relayer-wallets), which enforces
+// wallets.read. proxyError forwards the upstream status.
 export async function GET(req: NextRequest) {
   try {
-    const denied = await ensurePermission("wallets.read");
-    if (denied) return denied;
-
     const sp = req.nextUrl.searchParams;
     const params: RelayerWalletListParams = {};
     const limit = sp.get("limit");
@@ -21,7 +20,6 @@ export async function GET(req: NextRequest) {
     const data = await admin.listRelayerWallets(params);
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

@@ -1,24 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { BackofficeApiError, contracts, type CreateContractInput } from "@/lib/api";
+import { contracts, type CreateContractInput } from "@/lib/api";
+import { proxyError } from "@/lib/route-guard";
 
 // Both routes proxy the Go backoffice (/proxy/dpm/contracts), which enforces
 // RBAC (wallets.read for list, wallets.admin for create) and audits the write.
-// We forward the upstream status so 401/403/409 surface to the client as-is.
-function errorResponse(err: unknown): NextResponse {
-  if (err instanceof BackofficeApiError) {
-    return NextResponse.json({ error: err.body || err.message }, { status: err.status });
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return NextResponse.json({ error: message }, { status: 500 });
-}
+// proxyError forwards the upstream status so 401/403/409 surface to the client.
 
 export async function GET() {
   try {
     const data = await contracts.list();
     return NextResponse.json(data);
   } catch (err) {
-    return errorResponse(err);
+    return proxyError(err);
   }
 }
 
@@ -38,6 +32,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return errorResponse(err);
+    return proxyError(err);
   }
 }

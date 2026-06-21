@@ -803,34 +803,36 @@ export const contracts = {
     request<Contract>("/proxy/dpm/contracts", { method: "POST", body: input }),
 };
 
+// Mnemonic + relayer-wallet reads/writes go through the Go backoffice proxy
+// (/proxy/dpm/relayer-wallets*), which holds the dpm-api keys, enforces RBAC
+// (reads = wallets.read, writes = wallets.admin, withdraw = treasury.withdraw),
+// and audits every write — same model as the contracts registry above. The
+// session cookie is forwarded by request(); no dpm-api key touches the BFF.
 export const admin = {
   getMnemonicStatus: () =>
-    dpmRequest<MnemonicStatus>(`/relayer-wallets/mnemonic`, { auth: "app" }),
+    request<MnemonicStatus>(`/proxy/dpm/relayer-wallets/mnemonic`),
   initMnemonic: () =>
-    dpmRequest<MnemonicStatus>(`/relayer-wallets/mnemonic/init`, { method: "POST", auth: "admin" }),
+    request<MnemonicStatus>(`/proxy/dpm/relayer-wallets/mnemonic/init`, { method: "POST" }),
 
   listRelayerWallets: (params: RelayerWalletListParams = {}) =>
-    dpmRequest<Paginated<RelayerWallet> & { total_pages?: number }>(
-      `/relayer-wallets${relayerWalletQuery(params)}`,
-      { auth: "app" },
+    request<Paginated<RelayerWallet> & { total_pages?: number }>(
+      `/proxy/dpm/relayer-wallets${relayerWalletQuery(params)}`,
     ),
   initRelayerWallet: (payload: { type: WalletType; label?: string }) =>
-    dpmRequest<InitRelayerWalletResponse>(`/relayer-wallets/init`, {
+    request<InitRelayerWalletResponse>(`/proxy/dpm/relayer-wallets/init`, {
       method: "POST",
-      auth: "admin",
       body: payload,
     }),
   deactivateRelayerWallet: (id: number) =>
-    dpmRequest<RelayerWallet>(`/relayer-wallets/${id}/deactivate`, { method: "POST", auth: "admin" }),
+    request<RelayerWallet>(`/proxy/dpm/relayer-wallets/${id}/deactivate`, { method: "POST" }),
   activateRelayerWallet: (id: number) =>
-    dpmRequest<RelayerWallet>(`/relayer-wallets/${id}/activate`, { method: "POST", auth: "admin" }),
+    request<RelayerWallet>(`/proxy/dpm/relayer-wallets/${id}/activate`, { method: "POST" }),
 
   getRelayerWalletBalances: (id: number) =>
-    dpmRequest<WalletBalances>(`/relayer-wallets/${id}/balances`, { auth: "app" }),
+    request<WalletBalances>(`/proxy/dpm/relayer-wallets/${id}/balances`),
   withdrawFromRelayerWallet: (id: number, payload: WithdrawPayload) =>
-    dpmRequest<WithdrawResult>(`/relayer-wallets/${id}/withdraw`, {
+    request<WithdrawResult>(`/proxy/dpm/relayer-wallets/${id}/withdraw`, {
       method: "POST",
-      auth: "admin",
       body: payload,
     }),
 };

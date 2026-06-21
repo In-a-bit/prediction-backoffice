@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { admin } from "@/lib/api";
-import { ensurePermission } from "@/lib/route-guard";
+import { proxyError } from "@/lib/route-guard";
 
+// Proxies the Go backoffice (/proxy/dpm/relayer-wallets/:id/balances), which
+// enforces wallets.read.
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const denied = await ensurePermission("wallets.read");
-    if (denied) return denied;
-
     const { id: idStr } = await ctx.params;
     const id = Number.parseInt(idStr, 10);
     if (!Number.isFinite(id)) {
@@ -16,7 +15,6 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const data = await admin.getRelayerWalletBalances(id);
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }
