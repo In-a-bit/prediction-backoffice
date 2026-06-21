@@ -776,6 +776,33 @@ function relayerWalletQuery(params: RelayerWalletListParams): string {
   return qs ? `?${qs}` : "";
 }
 
+// ---------------------------------------------------------------------------
+// Contracts — infrastructure contract registry (USDC.e, CTF, exchanges,
+// oracles, treasury, …). Goes through the Go backoffice proxy
+// (/proxy/dpm/contracts), which holds the dpm-api keys, enforces RBAC, and
+// audits the create. List = read; create = wallet admin.
+// ---------------------------------------------------------------------------
+
+export type Contract = {
+  id: number;
+  created_at?: string;
+  address: string;
+  name: string;
+  contract_type: string;
+};
+
+export type CreateContractInput = {
+  address: string;
+  name: string;
+  contract_type: string;
+};
+
+export const contracts = {
+  list: () => request<Contract[]>("/proxy/dpm/contracts"),
+  create: (input: CreateContractInput) =>
+    request<Contract>("/proxy/dpm/contracts", { method: "POST", body: input }),
+};
+
 export const admin = {
   getMnemonicStatus: () =>
     dpmRequest<MnemonicStatus>(`/relayer-wallets/mnemonic`, { auth: "app" }),

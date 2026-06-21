@@ -278,6 +278,18 @@ const sections: Section[] = [
           </svg>
         ),
       },
+      {
+        href: "/admin/contracts",
+        label: "Contracts",
+        requires: "wallets.read",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9" />
+            <path d="M14 3h7v7" />
+            <path d="M10 14L20 4" />
+          </svg>
+        ),
+      },
     ],
   },
   {
