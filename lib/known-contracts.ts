@@ -77,6 +77,13 @@ const CATALOG: {
     envKey: "NEXT_PUBLIC_CONTRACT_TREASURY",
     override: process.env.NEXT_PUBLIC_CONTRACT_TREASURY,
   },
+  {
+    name: "Relay Hub",
+    contract_type: "relay_hub",
+    testnet: "0xcfed328256B3b71a0C942A7FC8B560B598536b5d",
+    envKey: "NEXT_PUBLIC_CONTRACT_RELAY_HUB",
+    override: process.env.NEXT_PUBLIC_CONTRACT_RELAY_HUB,
+  },
 ];
 
 export type KnownContractsResult = {

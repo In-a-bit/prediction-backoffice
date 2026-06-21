@@ -31,6 +31,7 @@ const typeTone: Record<string, "info" | "accent" | "warning" | "success" | "neut
   managed_oracle: "info",
   ctf_oracle: "warning",
   treasury: "success",
+  relay_hub: "neutral",
 };
 
 export default function ContractsPage() {
