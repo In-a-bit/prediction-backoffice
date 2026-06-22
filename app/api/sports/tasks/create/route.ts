@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { sports } from "@/lib/api";
+import { proxyError } from "@/lib/route-guard";
 import type { CreateSportTaskInput } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +22,6 @@ export async function POST(req: NextRequest) {
     const data = await sports.createTask(body);
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }

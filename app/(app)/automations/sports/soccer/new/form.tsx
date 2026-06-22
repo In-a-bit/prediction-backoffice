@@ -17,6 +17,7 @@ import {
   slugify,
   suggestSoccerTags,
 } from "@/components/sports/tag-chips";
+import { isLivenessValidationError, readFetchErrorMessage } from "@/lib/api-error";
 import type {
   ApiFootballLeagueSearchResult,
   SportTask,
@@ -93,6 +94,7 @@ export function NewSportTaskForm() {
   const [marketTypes, setMarketTypes] = useState<string[]>(["moneyline"]);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [livenessError, setLivenessError] = useState<string | null>(null);
 
   // Fetch leagues + existing configs whenever the season changes. The
   // leagues call is a large payload (~1000 rows) but server-side cached.
@@ -266,6 +268,7 @@ export function NewSportTaskForm() {
   const onSubmit = () => {
     if (!canSubmit || !selectedLeague) return;
     setSubmitError(null);
+    setLivenessError(null);
     startTransition(async () => {
       try {
         const res = await fetch(`/api/sports/tasks/create`, {
@@ -288,8 +291,12 @@ export function NewSportTaskForm() {
           }),
         });
         if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          setSubmitError(`status ${res.status}: ${text}`);
+          const message = await readFetchErrorMessage(res);
+          if (isLivenessValidationError(message)) {
+            setLivenessError(message);
+          } else {
+            setSubmitError(message);
+          }
           return;
         }
         const created = (await res.json()) as { id: number };
@@ -492,6 +499,7 @@ export function NewSportTaskForm() {
           <Field
             label="UMA liveness"
             hint="How long (in seconds) UMA's Optimistic Oracle waits before a proposal can be resolved. Leave blank to use the global default (7200 s = 2 h)."
+            error={livenessError}
           >
             <input
               type="number"
@@ -499,7 +507,10 @@ export function NewSportTaskForm() {
               placeholder="7200 (default)"
               value={liveness}
               min={1}
-              onChange={(e) => setLiveness(e.target.value)}
+              onChange={(e) => {
+                setLiveness(e.target.value);
+                if (livenessError) setLivenessError(null);
+              }}
             />
           </Field>
 

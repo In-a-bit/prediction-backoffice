@@ -12,6 +12,7 @@ import {
   buttonVariants,
 } from "@/components/ui";
 import { TagChipsEditor, suggestSoccerTags } from "@/components/sports/tag-chips";
+import { isLivenessValidationError, readFetchErrorMessage } from "@/lib/api-error";
 import type { SportTask, SportsTagSpec } from "@/lib/types";
 
 // EditSportTaskForm edits the mutable parts of a league config:
@@ -22,6 +23,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [livenessError, setLivenessError] = useState<string | null>(null);
 
   // Initial tag state: we only have numeric tag_ids from the existing
   // config — slugs/labels aren't stored locally. We seed the chip editor
@@ -55,6 +57,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
   const onSubmit = () => {
     if (!canSubmit) return;
     setSubmitError(null);
+    setLivenessError(null);
     startTransition(async () => {
       try {
         const res = await fetch(`/api/sports/tasks/${config.id}/update`, {
@@ -79,8 +82,12 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
           }),
         });
         if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          setSubmitError(`status ${res.status}: ${text}`);
+          const message = await readFetchErrorMessage(res);
+          if (isLivenessValidationError(message)) {
+            setLivenessError(message);
+          } else {
+            setSubmitError(message);
+          }
           return;
         }
         router.push(`/automations/sports/soccer/${config.id}`);
@@ -113,6 +120,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
           <Field
             label="UMA liveness"
             hint="How long (in seconds) UMA's Optimistic Oracle waits before a proposal can be resolved. Clear the field to revert to the global default (7200 s = 2 h)."
+            error={livenessError}
           >
             <input
               type="number"
@@ -120,7 +128,10 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
               placeholder="7200 (global default)"
               value={liveness}
               min={1}
-              onChange={(e) => setLiveness(e.target.value)}
+              onChange={(e) => {
+                setLiveness(e.target.value);
+                if (livenessError) setLivenessError(null);
+              }}
             />
           </Field>
 

@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { auth, BackofficeApiError, isUnauthorized } from "@/lib/api";
+import { parseApiErrorPayload } from "@/lib/api-error";
 import { can, type Permission } from "@/lib/auth";
 
 // proxyError maps an error from a Go-backed proxy call into a NextResponse,
@@ -12,7 +13,10 @@ import { can, type Permission } from "@/lib/auth";
 // locally with ensurePermission.
 export function proxyError(err: unknown): NextResponse {
   if (err instanceof BackofficeApiError) {
-    return NextResponse.json({ error: err.body || err.message }, { status: err.status });
+    const message = err.body
+      ? parseApiErrorPayload(err.body)
+      : err.message || "request failed";
+    return NextResponse.json({ error: message }, { status: err.status });
   }
   const message = err instanceof Error ? err.message : String(err);
   return NextResponse.json({ error: message }, { status: 500 });
