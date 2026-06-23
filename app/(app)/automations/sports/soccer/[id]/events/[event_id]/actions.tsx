@@ -9,12 +9,10 @@ export function SportEventActions({
   eventId,
   sportTaskId,
   hasCreationPlan,
-  isSkipped,
 }: {
   eventId: number;
   sportTaskId: number;
   hasCreationPlan: boolean;
-  isSkipped: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -53,20 +51,6 @@ export function SportEventActions({
         }
       >
         {hasCreationPlan ? "Plan already created" : "Retry / force create"}
-      </button>
-
-      <button
-        type="button"
-        className={buttonVariants.secondary}
-        disabled={pending || isSkipped}
-        onClick={() =>
-          post(
-            `/api/sports/events/${eventId}/skip`,
-            "Skip auto-creation? The upcoming ticker will leave this fixture alone. Markets that already exist keep their lifecycle.",
-          )
-        }
-      >
-        {isSkipped ? "Skipped" : "Skip auto-creation"}
       </button>
 
       {error && <ErrorMessage>{error}</ErrorMessage>}

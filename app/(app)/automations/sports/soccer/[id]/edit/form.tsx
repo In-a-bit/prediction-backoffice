@@ -50,7 +50,6 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
   const [isMetadataUpdateActive, setIsMetadataUpdateActive] = useState<boolean>(
     config.is_metadata_update_active,
   );
-  const [autoStartPlans, setAutoStartPlans] = useState<boolean>(config.auto_start_plans);
 
   const canSubmit = timeAheadHours > 0;
 
@@ -71,7 +70,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
             is_create_active: isCreateActive,
             is_resolve_active: isResolveActive,
             is_metadata_update_active: isMetadataUpdateActive,
-            auto_start_plans: autoStartPlans,
+            auto_start_plans: true,
             ...(liveness !== ""
               ? { liveness: parseInt(liveness, 10) }
               : config.liveness !== undefined
@@ -209,12 +208,6 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
             note="When off, no PATCH calls are sent even if team stats change."
             value={isMetadataUpdateActive}
             onChange={setIsMetadataUpdateActive}
-          />
-          <ToggleRow
-            label="Auto-start plans"
-            note="When off, new DeployPlans start paused — operator must click Start."
-            value={autoStartPlans}
-            onChange={setAutoStartPlans}
           />
         </CardBody>
       </Card>

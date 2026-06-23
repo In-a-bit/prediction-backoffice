@@ -90,7 +90,6 @@ export function NewSportTaskForm() {
   const [tagsEdited, setTagsEdited] = useState(false);
   const [category, setCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
-  const [autoStart, setAutoStart] = useState(true);
   const [marketTypes, setMarketTypes] = useState<string[]>(["moneyline"]);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -284,7 +283,7 @@ export function NewSportTaskForm() {
             category: category || undefined,
             sub_category: subCategory || undefined,
             market_type_keys: marketTypes,
-            auto_start_plans: autoStart,
+            auto_start_plans: true,
             liveness: liveness !== "" ? parseInt(liveness, 10) : undefined,
             parallel_plans: parallelPlans,
             max_paused_plans: maxPausedPlans,
@@ -581,18 +580,6 @@ export function NewSportTaskForm() {
               />
             </Field>
           </div>
-
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={autoStart}
-              onChange={(e) => setAutoStart(e.target.checked)}
-            />
-            <span className="text-sm">
-              Auto-start DeployPlans (recommended). When off, every fixture's plan starts paused and
-              waits for an operator click.
-            </span>
-          </label>
         </CardBody>
       </Card>
 

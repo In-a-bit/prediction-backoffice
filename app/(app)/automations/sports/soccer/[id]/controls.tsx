@@ -42,7 +42,7 @@ export function SportTaskControls({ config }: { config: SportTask }) {
     });
   };
 
-  const toggle = (field: "is_create_active" | "is_resolve_active" | "is_metadata_update_active" | "auto_start_plans", next: boolean) => {
+  const toggle = (field: "is_create_active" | "is_resolve_active" | "is_metadata_update_active", next: boolean) => {
     post(`/api/sports/tasks/${config.id}/update`, { [field]: next });
   };
 
@@ -72,13 +72,6 @@ export function SportTaskControls({ config }: { config: SportTask }) {
             note="When off, no PATCH calls are sent to dpm-api even if team stats change."
             value={config.is_metadata_update_active}
             onChange={(v) => toggle("is_metadata_update_active", v)}
-            disabled={pending}
-          />
-          <ToggleRow
-            label="Auto-start plans"
-            note="When off, new DeployPlans for fixtures start paused — operator must click Start in the plan UI."
-            value={config.auto_start_plans}
-            onChange={(v) => toggle("auto_start_plans", v)}
             disabled={pending}
           />
         </CardBody>

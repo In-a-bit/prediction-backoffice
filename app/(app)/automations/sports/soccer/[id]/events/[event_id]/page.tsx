@@ -42,7 +42,6 @@ export default async function SportEventDetailPage({
         eventId={fixture.id}
         sportTaskId={sportTaskId}
         hasCreationPlan={Boolean(fixture.creation_plan_external_id)}
-        isSkipped={fixture.is_skipped_by_operator}
       />
 
       {/* Creation plan — uses the existing DeployPlanDriver verbatim. */}
