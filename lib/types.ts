@@ -493,6 +493,7 @@ export type DeployPlanMarket = {
   error?: string;
   question: string;
   parent_market_id?: number;
+  end_date?: string;
   request_payload?: unknown;
   created_at: string;
   updated_at: string;

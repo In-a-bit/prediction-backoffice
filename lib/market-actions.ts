@@ -5,6 +5,7 @@ import type {
   MarketStatus,
   SportMarketStatus,
 } from "./types";
+import { isMarketDeployDeadlinePassed } from "./deploy-plan";
 import type { PlanSource } from "./source-from-plan";
 
 // Catalog of every action an operator can fire on a market.
@@ -127,7 +128,12 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   // 1) Plan-phase actions while the deploy is still in flight.
   if (ctx.planMarket && ctx.planExternalId) {
     const s = ctx.planMarket.status;
-    if (s === "failed") actions.push("retry", "recreate");
+    if (s === "failed") {
+      if (!isMarketDeployDeadlinePassed(ctx.planMarket)) {
+        actions.push("retry");
+      }
+      actions.push("recreate");
+    }
   }
 
   // 2) Manual-market watch-dispute — available when the market is in the

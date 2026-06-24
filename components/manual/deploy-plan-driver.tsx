@@ -11,6 +11,9 @@ import {
   ErrorMessage,
   buttonVariants,
 } from "@/components/ui";
+import {
+  isMarketDeployDeadlinePassed,
+} from "@/lib/deploy-plan";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   DeployPlan,
@@ -245,6 +248,7 @@ function MarketRow({
   const marketHref = market.external_id
     ? `/markets/${encodeURIComponent(market.external_id)}?source=${source}&plan_id=${encodeURIComponent(planExternalId)}&pos=${market.position}`
     : null;
+  const retryBlocked = isMarketDeployDeadlinePassed(market);
   return (
     <li className="rounded-lg border border-border bg-foreground/[0.02]">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border gap-2">
@@ -291,9 +295,13 @@ function MarketRow({
               <button
                 type="button"
                 onClick={onRetry}
-                disabled={isPending}
+                disabled={isPending || retryBlocked}
                 className={buttonVariants.primary}
-                title="Retry this market in place. If the original CreateMarket call never reached dpm-api, re-issues it. If dpm-api has the market with deployment_status=FAILED, asks dpm-api to reset and restart the deploy workflow."
+                title={
+                  retryBlocked
+                    ? "Market end date has passed — deploy retry is disabled"
+                    : "Retry this market in place. If the original CreateMarket call never reached dpm-api, re-issues it. If dpm-api has the market with deployment_status=FAILED, asks dpm-api to reset and restart the deploy workflow."
+                }
               >
                 {isPending && pendingActionType === "retry"
                   ? "Retrying…"
