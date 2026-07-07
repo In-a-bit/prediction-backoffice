@@ -1,6 +1,7 @@
 import type {
   DeployPlanMarket,
   DpmMarket,
+  ManualMarketLocalStatus,
   MarketStatus,
   SportMarketStatus,
 } from "./types";
@@ -12,8 +13,6 @@ export type MarketActionKey =
   // or while it's stuck mid-deploy).
   | "retry"
   | "recreate"
-  | "skip"
-  | "signal-balance"
   // dpm-api UMA resolution actions (apply once the market is on-chain).
   // Gating mirrors apps/dpm-api/handlers/uma_action.go:
   //   Propose  requires uma_resolution_status === INITIALIZING
@@ -27,13 +26,12 @@ export type MarketActionKey =
   // submits a payouts vector to /markets/ctf-oracle/report-payouts.
   | "ctf-oracle-report-payouts"
   // Generic lifecycle (apply to both UMA and CTF_ORACLE markets once they
-  // are on-chain). Pause/unpause toggle trading; activate is the manual
-  // analogue of automatically_active=true.
-  | "market-pause"
+  // are on-chain). Activate is the manual analogue of automatically_active=true.
   | "market-unpause"
   | "market-activate"
-  // Sport-specific cancel — wired through the backoffice's /sports endpoint.
-  | "sport-cancel";
+  // Manual-market-specific actions — wired through the backoffice's
+  // /manual/backoffice-markets endpoint (requires a manual_market DB row).
+  | "manual-watch-dispute";
 
 export type MarketActionCtx = {
   source: PlanSource;
@@ -43,6 +41,8 @@ export type MarketActionCtx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
+  manualMarketId?: number;
+  manualLocalStatus?: ManualMarketLocalStatus;
 };
 
 // ---------------------------------------------------------------------------
@@ -117,14 +117,6 @@ function ctfIsTerminal(d?: DpmMarket): boolean {
   return !!(d?.closed || d?.archived);
 }
 
-function canReportCryptoPayouts(d?: DpmMarket): boolean {
-  const end = d?.end_date;
-  if (!end) return false;
-  const endMs = Date.parse(end);
-  if (Number.isNaN(endMs)) return false;
-  return Date.now() >= endMs + 2 * 60 * 1000;
-}
-
 // ---------------------------------------------------------------------------
 // Visibility
 // ---------------------------------------------------------------------------
@@ -136,23 +128,13 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   if (ctx.planMarket && ctx.planExternalId) {
     const s = ctx.planMarket.status;
     if (s === "failed") actions.push("retry", "recreate");
-    if (
-      s === "idle" ||
-      s === "submitting" ||
-      s === "running" ||
-      s === "failed" ||
-      s === "waiting_for_balance"
-    ) {
-      actions.push("skip");
-    }
-    if (s === "waiting_for_balance") actions.push("signal-balance");
   }
 
-  // 2) Sport-specific cancel — only while the on-chain market is cancellable.
-  if (ctx.source === "sport" && ctx.sportMarketId !== undefined) {
-    const ls = ctx.sportLocalStatus;
-    if (ls === "created" || ls === "proposing" || ls === "proposed") {
-      actions.push("sport-cancel");
+  // 2) Manual-market watch-dispute — available when the market is in the
+  //     disputed phase and a backoffice manual_market row exists.
+  if (ctx.source === "manual" && ctx.manualMarketId !== undefined) {
+    if (ctx.manualLocalStatus === "disputed") {
+      actions.push("manual-watch-dispute");
     }
   }
 
@@ -166,14 +148,50 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   // dpm-api reports for resolution_type.
   if (isCtfOracle(ctx.dpmMarket) || ctx.source === "crypto") {
     if (!ctfIsTerminal(ctx.dpmMarket)) {
-      // Crypto payouts are only valid once the market end time has passed and
-      // the 1m post-close candle should be available.
-      if (ctx.source !== "crypto" || canReportCryptoPayouts(ctx.dpmMarket)) {
-        actions.push("ctf-oracle-report-payouts");
+      actions.push("ctf-oracle-report-payouts");
+    }
+  } else if (ctx.source === "sport" && ctx.sportLocalStatus) {
+    // Sport markets: gate UMA actions on local_status which is the authoritative
+    // source of truth (mirrors uma_resolution_status but also tracks disputed states).
+    const ls = ctx.sportLocalStatus;
+    const isTerminal =
+      ls === "resolved" ||
+      ls === "refunded" ||
+      ls === "cancelled" ||
+      ls === "failed";
+    if (!isTerminal) {
+      if (ls === "created" || ls === "reset") {
+        actions.push("uma-propose");
+      }
+      // uma-resolve is intentionally omitted for sport markets: the Temporal
+      // workflow resolves automatically after the liveness window. Operators
+      // should not manually trigger settlement.
+      if (ls !== "proposing" && ls !== "resolving") {
+        actions.push("uma-reset");
+      }
+    }
+  } else if (ctx.source === "manual" && ctx.manualLocalStatus) {
+    // Manual markets with a backoffice DB row: gate on local_status, mirroring
+    // the sport market flow.
+    const ls = ctx.manualLocalStatus;
+    const isTerminal =
+      ls === "resolved" ||
+      ls === "refunded" ||
+      ls === "cancelled" ||
+      ls === "failed";
+    if (!isTerminal) {
+      if (ls === "created" || ls === "reset") {
+        actions.push("uma-propose");
+      }
+      if (ls === "proposed" || ls === "disputed") {
+        actions.push("uma-resolve");
+      }
+      if (ls !== "proposing" && ls !== "resolving") {
+        actions.push("uma-reset");
       }
     }
   } else {
-    // UMA market.
+    // UMA market (manual without a backoffice row): fall back to dpm-api status.
     const u = umaStatus(ctx.dpmMarket);
     if (!umaIsTerminal(u)) {
       if (u === "INITIALIZING" || u === undefined) {
@@ -182,7 +200,6 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       if (u === "PROPOSED" || u === "DISPUTED") {
         actions.push("uma-resolve");
       }
-      // Keep only reset as the operator escape hatch.
       actions.push("uma-reset");
     }
   }
@@ -192,7 +209,6 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   // a no-op.
   const d = ctx.dpmMarket;
   if (d) {
-    if (!d.paused) actions.push("market-pause");
     if (d.paused) actions.push("market-unpause");
     // Activate makes sense when the market isn't already active and the deploy
     // workflow finished (REGISTERED). The dpm-api handler validates the
@@ -222,22 +238,6 @@ export const ACTION_META: Record<
     tone: "secondary",
     title:
       "Mark this market skipped and append a fresh row in the plan with a new external_id.",
-  },
-  skip: {
-    label: "Skip",
-    tone: "ghost",
-    title: "Skip this market in the deploy plan.",
-  },
-  "signal-balance": {
-    label: "Signal balance",
-    tone: "primary",
-    title:
-      "Tell the deploy workflow that funds were topped up — unblocks waiting_for_balance.",
-  },
-  "sport-cancel": {
-    label: "Cancel market",
-    tone: "danger",
-    title: "Cancel this sport market on-chain. Irreversible.",
   },
   "uma-propose": {
     label: "Propose price",
@@ -269,11 +269,6 @@ export const ACTION_META: Record<
     title:
       "Admin-settle this managed-oracle market by reporting payouts. Pick the winning outcome.",
   },
-  "market-pause": {
-    label: "Pause trading",
-    tone: "secondary",
-    title: "Flip paused=true on the market. Halts trading via dpm-api.",
-  },
   "market-unpause": {
     label: "Resume trading",
     tone: "secondary",
@@ -284,5 +279,10 @@ export const ACTION_META: Record<
     tone: "primary",
     title:
       "Set active=true and open accepting_orders. Requires deployment_status=REGISTERED.",
+  },
+  "manual-watch-dispute": {
+    label: "Watch dispute",
+    tone: "secondary",
+    title: "Start the DvmPollWorkflow to monitor the active dispute for this manual market.",
   },
 };

@@ -10,78 +10,95 @@ import type {
   CryptoEvent,
   DeployPlan,
   DpmMarket,
-  OperatorLogEntry,
   SportEvent,
   SportMarket,
 } from "./types";
 
 // ---------------------------------------------------------------------------
-// UMA resolution status — the canonical bucketing for /resolutions tabs.
-// dpm-api stores the raw string from UMA's contracts; we normalise here so
-// the rest of the UI can switch on a closed set of values.
+// Local-status bucketing — the canonical bucketing for /resolutions tabs.
+//
+// All sport and crypto market states come from local_status in the backoffice
+// DB. Manual markets fall back to uma_resolution_status since they have no
+// local_status row.
+//
+// Returns null for states not in the known set (safety valve for unknown values
+// from future DB migrations).
 // ---------------------------------------------------------------------------
 
-export type UmaBucket =
-  | "unstarted"
-  | "ready_to_request"
-  | "ready_to_propose"
+export type LocalBucket =
+  // Sport market states
+  | "pending"
+  | "created"
+  | "proposing"
   | "proposed"
+  | "reset"
   | "disputed"
-  | "settled"
-  | "challenge_period"
-  | "unknown";
+  | "resolving"
+  | "resolved"
+  | "refunded"
+  | "cancelled"
+  | "failed"
+  // Manual market fallback buckets (from uma_resolution_status)
+  | "uma_initializing"
+  | "uma_proposed"
+  | "uma_disputed"
+  | "uma_resolved";
 
-export function bucketUma(raw: string | null | undefined): UmaBucket {
-  const s = (raw ?? "").toLowerCase().replace(/[\s-]+/g, "_");
-  if (!s) return "unstarted";
-  // UMA "INITIALIZING" means the question exists but resolution hasn't begun —
-  // it belongs in "Not started", not the catch-all "Unknown" bucket.
-  if (s === "initializing" || s === "initialized") return "unstarted";
-  if (s.startsWith("ready_to_request") || s === "ready_to_request_resolution")
-    return "ready_to_request";
-  if (s.startsWith("ready_to_propose") || s === "ready_to_propose_resolution")
-    return "ready_to_propose";
-  if (s.includes("propos")) return "proposed";
-  if (s.includes("disput")) return "disputed";
-  if (s === "settled" || s === "resolved") return "settled";
-  if (s.includes("challenge")) return "challenge_period";
-  return "unknown";
+const SPORT_CRYPTO_BUCKETS = new Set<LocalBucket>([
+  "pending", "created", "proposing", "proposed", "reset",
+  "disputed", "resolving", "resolved", "refunded", "cancelled", "failed",
+]);
+
+// Active (non-terminal) sport local_status values — used by the server-side
+// pagination logic on the resolutions page to decide which tabs hit the
+// dedicated sport-resolutions endpoint versus falling back to loadMarketRows.
+export const SPORT_LOCAL_STATUSES = new Set<string>([
+  "pending", "created", "proposing", "proposed",
+  "reset", "disputed", "resolving",
+]);
+
+export function bucketLocal(
+  source: string | undefined,
+  localStatus: string | null | undefined,
+  umaStatus?: string | null,
+): LocalBucket | null {
+  if (source === "sport" || source === "crypto") {
+    const s = (localStatus ?? "") as LocalBucket;
+    return SPORT_CRYPTO_BUCKETS.has(s) ? s : null;
+  }
+  // Manual markets with a backoffice DB row now carry local_status directly
+  // (same values as sport/crypto). If present, use it.
+  if (localStatus) {
+    const s = localStatus as LocalBucket;
+    return SPORT_CRYPTO_BUCKETS.has(s) ? s : null;
+  }
+  // Legacy/fallback: manual markets without a local_status row use
+  // uma_resolution_status so they still appear in the uma_* tabs.
+  const u = (umaStatus ?? "").toUpperCase();
+  if (u === "INITIALIZING") return "uma_initializing";
+  if (u === "PROPOSED") return "uma_proposed";
+  if (u === "DISPUTED") return "uma_disputed";
+  if (u === "RESOLVED" || u === "MANUALLY_RESOLVED") return "uma_resolved";
+  return null;
 }
 
-export const UMA_BUCKET_LABEL: Record<UmaBucket, string> = {
-  unstarted: "Not started",
-  ready_to_request: "Ready to request",
-  ready_to_propose: "Ready to propose",
-  proposed: "Proposed",
-  disputed: "Disputed",
-  settled: "Settled",
-  challenge_period: "In challenge period",
-  unknown: "Unknown",
+export const LOCAL_BUCKET_LABEL: Record<LocalBucket, string> = {
+  pending:             "Pending",
+  created:             "Created",
+  proposing:           "Proposing",
+  proposed:            "Proposed",
+  reset:               "Reset",
+  disputed:            "Disputed",
+  resolving:           "Resolving",
+  resolved:            "Resolved",
+  refunded:            "Refunded",
+  cancelled:           "Cancelled",
+  failed:              "Failed",
+  uma_initializing:    "Initialized (manual)",
+  uma_proposed:        "Proposed (manual)",
+  uma_disputed:        "Disputed (manual)",
+  uma_resolved:        "Resolved (manual)",
 };
-
-// ---------------------------------------------------------------------------
-// First-time disputed — an alert-worthy signal: a market that just entered
-// the disputed bucket and has never been disputed before. We approximate
-// "first time" by checking the operator log for any prior dispute action
-// against the same resource_external_id.
-// ---------------------------------------------------------------------------
-
-export function isFirstTimeDisputed(
-  marketExternalId: string,
-  log: OperatorLogEntry[],
-): boolean {
-  // Approximate "first dispute": no prior log row whose payload mentions
-  // dispute exists for this market. The create_market row is excluded
-  // because the freshly-disputed state is itself a creation event in some
-  // flows, and including it would always answer false.
-  const priorDisputeMentions = log.filter((entry) => {
-    if (entry.resource_external_id !== marketExternalId) return false;
-    if (entry.action === "create_market") return false;
-    const payloadStr = JSON.stringify(entry.request_payload ?? {}).toLowerCase();
-    return payloadStr.includes("disput");
-  });
-  return priorDisputeMentions.length <= 1;
-}
 
 // ---------------------------------------------------------------------------
 // Volume / accepting-orders status for a DpmMarket. The UI surfaces "Accepting

@@ -15,13 +15,8 @@ import type {
   SportEvent,
   SportMarket,
   Task,
+  TokenOutcome,
 } from "./types";
-
-type ListEnvelope<T> = T[] | { data: T[] };
-
-function asList<T>(payload: ListEnvelope<T>): T[] {
-  return Array.isArray(payload) ? payload : payload.data;
-}
 
 // Shared market loader powering /markets, /resolutions, and /operations.
 // Returns the same flat row shape across all three sources, with optional
@@ -41,13 +36,15 @@ export type MarketRow = {
   plan_external_id?: string;
   position?: number;
   sport_market_id?: number;
+  manual_market_id?: number;
   crypto_event_id?: number;
   active: boolean | null;
   closed: boolean | null;
   accepting: AcceptingFlag | null;
   accepting_orders_at: string | null;
+  local_status: string | null;
   uma_resolution_status: string | null;
-  liveness: string | null;
+  uma_resolution_statuses: string[] | null;
   closed_time: string | null;
   lifecycle: Lifecycle;
   result: Result;
@@ -65,6 +62,9 @@ export type LoadOptions = {
   marketsPerTask?: number;
   // Cap on hydration roundtrips. Markets past this index keep null fields.
   hydrationCap?: number;
+  // Free-text search query. When non-empty, scan limits are expanded and rows
+  // are filtered before hydration so the full dataset is searched.
+  q?: string;
 };
 
 const DEFAULTS: Required<LoadOptions> = {
@@ -73,6 +73,7 @@ const DEFAULTS: Required<LoadOptions> = {
   taskLimit: 5,
   marketsPerTask: 20,
   hydrationCap: 80,
+  q: "",
 };
 
 export async function loadMarketRows(
@@ -84,6 +85,15 @@ export async function loadMarketRows(
   error: string | null;
 }> {
   const cfg = { ...DEFAULTS, ...opts };
+
+  // Expand scan limits when a search query is present so we cover the full
+  // dataset rather than just the first page window.
+  if (cfg.q) {
+    cfg.planLimit = opts.planLimit ?? 2000;
+    cfg.taskLimit = opts.taskLimit ?? 50;
+    cfg.marketsPerTask = opts.marketsPerTask ?? 500;
+  }
+
   try {
     const loaders: Promise<MarketRow[]>[] = [];
     if (cfg.source === "all" || cfg.source === "manual")
@@ -103,7 +113,22 @@ export async function loadMarketRows(
     }
     rows = [...byKey.values()].sort((a, b) => b.sortKey - a.sortKey);
 
+    // Filter before hydration so we don't make expensive DPM API calls for
+    // rows that won't appear in the results.
+    if (cfg.q) {
+      const query = cfg.q.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.question?.toLowerCase().includes(query) ||
+          r.market_external_id?.toLowerCase().includes(query) ||
+          r.event_external_id?.toLowerCase().includes(query) ||
+          r.event_title?.toLowerCase().includes(query) ||
+          r.series_slug?.toLowerCase().includes(query),
+      );
+    }
+
     rows = await hydrate(rows, cfg.hydrationCap);
+    rows = await hydrateSportOutcomes(rows);
 
     const seriesSet = new Set<string>();
     const umaSet = new Set<string>();
@@ -130,13 +155,22 @@ export async function loadMarketRows(
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
+  // Cap per source so that when multiple sources are combined (source=all),
+  // each source gets up to `cap` hydrated rows rather than sharing one global
+  // budget. Without this, the first source's rows can fill the entire cap and
+  // leave later sources completely unhydrated.
+  const bySource = new Map<string, MarketRow[]>();
+  for (const r of rows) {
+    const list = bySource.get(r.source) ?? [];
+    list.push(r);
+    bySource.set(r.source, list);
+  }
   // Only hydrate rows that have a real dpm UUID — fallback IDs like
   // "crypto-42" or "sport-7" are not valid and will be rejected by dpm-api.
-  // Select the hydration window round-robin across sources so a sparse source
-  // (e.g. a single old manual plan) isn't crowded out of the cap by a flood of
-  // recent sport/crypto rows — otherwise its UMA status never loads and it
-  // silently disappears from every resolution tab.
-  const head = selectHydrationHead(rows, cap);
+  const head = [...bySource.values()]
+    .flatMap((g) => g.slice(0, cap))
+    .filter((r) => UUID_RE.test(r.market_external_id));
+
   const verdicts = await Promise.all(
     head.map(async (r) => {
       try {
@@ -149,25 +183,8 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
   const verdictMap = new Map<string, MarketStatusVerdict>();
   for (const v of verdicts) if (v) verdictMap.set(v[0], v[1]);
 
-  // Build the event-fetch set with manual IDs always included first so they
-  // aren't crowded out by the larger set of sport/crypto event IDs before cap.
-  const manualEventIds = [
-    ...new Set(
-      rows
-        .filter((r) => r.source === "manual" && r.event_external_id)
-        .map((r) => r.event_external_id as string),
-    ),
-  ];
-  const otherEventIds = [
-    ...new Set(
-      rows
-        .filter((r) => r.source !== "manual" && r.event_external_id)
-        .map((r) => r.event_external_id as string),
-    ),
-  ];
   const eventIds = [
-    ...manualEventIds,
-    ...otherEventIds.slice(0, Math.max(0, cap - manualEventIds.length)),
+    ...new Set(head.map((r) => r.event_external_id).filter((x): x is string => !!x)),
   ];
   const events = await Promise.all(
     eventIds.map(async (id) => {
@@ -195,7 +212,8 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
         dpm?.accepting_orders_timestamp ?? row.accepting_orders_at,
       uma_resolution_status:
         dpm?.uma_resolution_status ?? row.uma_resolution_status,
-      liveness: dpm?.liveness ?? row.liveness,
+      uma_resolution_statuses:
+        dpm?.uma_resolution_statuses ?? row.uma_resolution_statuses,
       closed_time:
         dpm?.closed && dpm?.end_date ? dpm.end_date : row.closed_time,
       event_title: event?.title?.trim() || event?.slug?.trim() || row.event_title,
@@ -203,31 +221,6 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
         (event?.metadata?.series_slug as string | undefined) ?? row.series_slug,
     };
   });
-}
-
-function selectHydrationHead(rows: MarketRow[], cap: number): MarketRow[] {
-  const uuidRows = rows.filter((r) => UUID_RE.test(r.market_external_id));
-  const bySource = new Map<PlanSource, MarketRow[]>();
-  for (const r of uuidRows) {
-    const arr = bySource.get(r.source) ?? [];
-    arr.push(r);
-    bySource.set(r.source, arr);
-  }
-  const sources = [...bySource.keys()];
-  const head: MarketRow[] = [];
-  for (let i = 0; head.length < cap; i++) {
-    let advanced = false;
-    for (const s of sources) {
-      const arr = bySource.get(s);
-      if (arr && i < arr.length) {
-        head.push(arr[i]);
-        advanced = true;
-        if (head.length >= cap) break;
-      }
-    }
-    if (!advanced) break;
-  }
-  return head;
 }
 
 function preferRow(a: MarketRow, b: MarketRow): boolean {
@@ -240,25 +233,14 @@ function preferRow(a: MarketRow, b: MarketRow): boolean {
 // ----- per-source loaders -----
 
 async function manualRows(planLimit: number): Promise<MarketRow[]> {
-  const plans: DeployPlan[] = [];
-  const pageSize = Math.max(planLimit, 80);
-  const maxPages = 6;
-  for (let page = 0; page < maxPages; page++) {
-    try {
-      const payload = await manual.listDeployPlans({
-        limit: pageSize,
-        offset: page * pageSize,
-      });
-      const pagePlans = asList(payload);
-      if (pagePlans.length === 0) break;
-      plans.push(...pagePlans);
-      if (pagePlans.length < pageSize) break;
-    } catch {
-      break;
-    }
+  let plans: DeployPlan[];
+  try {
+    plans = (await manual.listDeployPlans({ limit: planLimit })).data;
+  } catch {
+    return [];
   }
   const out: MarketRow[] = [];
-  for (const plan of asList(plans)) {
+  for (const plan of plans) {
     if (inferSourceFromPlan(plan) !== "manual") continue;
     for (const m of plan.markets) out.push(rowFromManual(m, plan));
   }
@@ -281,8 +263,9 @@ function rowFromManual(m: DeployPlanMarket, plan: DeployPlan): MarketRow {
     closed: null,
     accepting: null,
     accepting_orders_at: null,
+    local_status: null,
     uma_resolution_status: null,
-    liveness: null,
+    uma_resolution_statuses: null,
     closed_time: null,
     lifecycle,
     result,
@@ -294,13 +277,13 @@ async function cryptoRows(
   taskLimit: number,
   marketsPerTask: number,
 ): Promise<MarketRow[]> {
-  let tasks: ListEnvelope<Task>;
+  let tasks: Task[];
   try {
-    tasks = await crypto.listTasks();
+    tasks = (await crypto.listTasks()).data;
   } catch {
     return [];
   }
-  const subset = asList(tasks).slice(0, taskLimit);
+  const subset = tasks.slice(0, taskLimit);
   const events = await Promise.all(
     subset.map((t) =>
       crypto.listCryptoEvents(t.id).catch(() => [] as CryptoEvent[]),
@@ -338,8 +321,9 @@ function rowFromCrypto(m: CryptoMarket, ev: CryptoEvent): MarketRow {
     closed: null,
     accepting: null,
     accepting_orders_at: null,
+    local_status: m.local_status,
     uma_resolution_status: null,
-    liveness: null,
+    uma_resolution_statuses: null,
     closed_time: null,
     lifecycle,
     result,
@@ -351,13 +335,13 @@ async function sportRows(
   taskLimit: number,
   marketsPerTask: number,
 ): Promise<MarketRow[]> {
-  let tasks: Awaited<ReturnType<typeof sports.listTasks>> | { data: Awaited<ReturnType<typeof sports.listTasks>> };
+  let tasks: Awaited<ReturnType<typeof sports.listTasks>>;
   try {
     tasks = await sports.listTasks();
   } catch {
     return [];
   }
-  const subset = asList(tasks).slice(0, taskLimit);
+  const subset = tasks.slice(0, taskLimit);
   const events = await Promise.all(
     subset.map((t) =>
       sports.listEvents(t.id).catch(() => [] as SportEvent[]),
@@ -372,6 +356,55 @@ async function sportRows(
     }
   }
   return out;
+}
+
+// After hydrate() fills uma_resolution_status, fetch token outcomes for sport
+// markets that dpm-api considers resolved. local_status stays "created" forever
+// so we can't use it — uma_resolution_status is the authoritative signal.
+async function hydrateSportOutcomes(rows: MarketRow[]): Promise<MarketRow[]> {
+  const UMA_RESOLVED = new Set(["RESOLVED", "MANUALLY_RESOLVED"]);
+  const targets = rows.filter(
+    (r) =>
+      r.source === "sport" &&
+      UUID_RE.test(r.market_external_id) &&
+      r.uma_resolution_status !== null &&
+      UMA_RESOLVED.has((r.uma_resolution_status ?? "").toUpperCase()),
+  );
+  if (targets.length === 0) return rows;
+
+  const fetched = await Promise.all(
+    targets.map((r) => manual.getMarketOutcome(r.market_external_id).catch(() => null)),
+  );
+  const outcomeMap = new Map(
+    targets.flatMap((r, i) => (fetched[i] ? [[r.market_external_id, fetched[i]!]] : [])),
+  );
+
+  return rows.map((row) => {
+    const outcome = outcomeMap.get(row.market_external_id);
+    if (!outcome) return row;
+    return { ...row, result: resultFromTokens(outcome.tokens) };
+  });
+}
+
+function resultFromTokens(tokens: TokenOutcome[]): Result {
+  const anyResolved = tokens.some(
+    (t) => t.winner !== null && t.winner !== undefined,
+  );
+  if (!anyResolved) return { kind: "pending", label: "Pending" };
+
+  const winners = tokens.filter((t) => t.winner === true);
+
+  // DVM voted "unknown" → both tokens receive 50 % each.
+  if (winners.length > 1) return { kind: "refund", label: "50/50" };
+
+  // No winner but some tokens are resolved → explicit refund / void.
+  if (winners.length === 0) return { kind: "refund", label: "Refund" };
+
+  // tokens[0] is the YES side. Use the winning token's outcome label directly
+  // so operators see e.g. "YES" / "NO" rather than generic "Won" / "Lost".
+  const win = winners[0];
+  const kind = tokens.indexOf(win) === 0 ? "won" : "lost";
+  return { kind, label: win.outcome.toUpperCase() };
 }
 
 function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
@@ -395,8 +428,9 @@ function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
     closed: null,
     accepting: null,
     accepting_orders_at: null,
+    local_status: m.local_status,
     uma_resolution_status: null,
-    liveness: null,
+    uma_resolution_statuses: null,
     closed_time: null,
     lifecycle,
     result,

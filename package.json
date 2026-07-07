@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:loadtest": "node scripts/with-loadtest-env.mjs dev",
     "build": "next build",
     "start": "next start",
+    "start:loadtest": "node scripts/with-loadtest-env.mjs start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -14,6 +16,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "ai": "^6.0.182",
     "cmdk": "^1.1.1",
+    "geist": "^1.7.2",
     "jsonwebtoken": "^9.0.3",
     "next": "16.2.4",
     "react": "19.2.4",

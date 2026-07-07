@@ -55,6 +55,8 @@ export type Task = {
   is_create_active: boolean;
   is_resolve_active: boolean;
   tag_ids: number[];
+  parallel_plans: number;
+  max_paused_plans: number;
   asset?: Asset;
   interval?: Interval;
   stats?: TaskStats;
@@ -101,12 +103,16 @@ export type CreateTaskRequest = {
   first_market_at?: string;
   is_create_active?: boolean;
   is_resolve_active?: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 export type UpdateTaskRequest = {
   time_ahead_minutes?: number;
   is_create_active?: boolean;
   is_resolve_active?: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -354,6 +360,7 @@ export type DpmMarket = {
   // but not yet echoed back by dpm-api's read responses — populated once the
   // backend includes it (see docs/prediction-go-handoff.md).
   liveness?: string | null;
+  uma_resolution_statuses?: string[] | null;
 
   paused?: boolean | null;
   flagged?: boolean | null;
@@ -544,6 +551,10 @@ export type SportTask = {
   is_resolve_active: boolean;
   is_metadata_update_active: boolean;
   auto_start_plans: boolean;
+  /** Per-task UMA liveness override in seconds. Absent means the global default (7200s) applies. */
+  liveness?: number;
+  parallel_plans: number;
+  max_paused_plans: number;
   market_types: SportMarketTypeSummary[];
   event_count: number;
 };
@@ -580,6 +591,8 @@ export type SportMarketStatus =
   | "created"
   | "proposing"
   | "proposed"
+  | "reset"
+  | "disputed"
   | "resolving"
   | "resolved"
   | "refunded"
@@ -601,6 +614,23 @@ export type SportMarket = {
   error?: string;
   created_at: string;
   updated_at: string;
+};
+
+export type SportResolutionMarket = {
+  id: number;
+  sport_event_id: number;
+  market_external_id: string | null;
+  market_slug: string;
+  outcome_key: string;
+  local_status: SportMarketStatus;
+  updated_at: string;
+};
+
+export type SportResolutionList = {
+  items: SportResolutionMarket[];
+  total: number;
+  offset: number;
+  limit: number;
 };
 
 export type SportDecision = {
@@ -646,6 +676,10 @@ export type CreateSportTaskInput = {
   sub_category?: string;
   market_type_keys: string[];
   auto_start_plans?: boolean;
+  /** UMA OO liveness in seconds. Omit to use the global default (7200s). */
+  liveness?: number;
+  parallel_plans?: number;
+  max_paused_plans?: number;
 };
 
 export type UpdateSportTaskInput = {
@@ -659,6 +693,76 @@ export type UpdateSportTaskInput = {
   is_resolve_active?: boolean;
   is_metadata_update_active?: boolean;
   auto_start_plans?: boolean;
+  /** UMA OO liveness in seconds. Omit to leave unchanged. Set clear_liveness to revert to global default. */
+  liveness?: number;
+  /** When true, removes the per-task liveness override and reverts to the global default. */
+  clear_liveness?: boolean;
+  parallel_plans?: number;
+  max_paused_plans?: number;
+};
+
+// ---------------------------------------------------------------------------
+// Manual markets + events — mirrors the new manual_markets / manual_events
+// backoffice DB tables and their API handlers.
+// ---------------------------------------------------------------------------
+
+export type ManualMarketLocalStatus =
+  | "pending"
+  | "created"
+  | "proposing"
+  | "proposed"
+  | "reset"
+  | "disputed"
+  | "resolving"
+  | "resolved"
+  | "refunded"
+  | "cancelled"
+  | "failed";
+
+export type ManualMarket = {
+  id: number;
+  manual_event_id: number;
+  market_external_id?: string | null;
+  deploy_plan_external_id?: string | null;
+  deploy_plan_position?: number | null;
+  market_slug: string;
+  outcome_key: string;
+  local_status: ManualMarketLocalStatus;
+  propose_workflow_id?: string | null;
+  resolve_workflow_id?: string | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ManualResolutionMarket = {
+  id: number;
+  manual_event_id: number;
+  market_external_id: string | null;
+  market_slug: string;
+  outcome_key: string;
+  local_status: ManualMarketLocalStatus;
+  updated_at: string;
+};
+
+export type ManualResolutionList = {
+  items: ManualResolutionMarket[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+export type ManualEvent = {
+  id: number;
+  event_external_id?: string | null;
+  event_slug: string;
+  is_skipped_by_operator: boolean;
+  creation_plan_external_id?: string | null;
+  backfill_plan_external_ids?: string[];
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  manual_markets?: ManualMarket[];
 };
 
 // ---------------------------------------------------------------------------

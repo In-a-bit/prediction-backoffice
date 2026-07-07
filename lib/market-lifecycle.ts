@@ -51,23 +51,30 @@ const PRICE_5050 = "500000000000000000";
 // Sport
 // ---------------------------------------------------------------------------
 
+// local_status drives every lifecycle stage for sport markets — it mirrors
+// the UMA on-chain state machine once the market is created, so there is no
+// need to also read uma_resolution_status here.
 const SPORT_STAGE_TABLE: Record<
-  SportMarketStatus,
+  string,
   [LifecycleStageStatus, LifecycleStageStatus, LifecycleStageStatus]
 > = {
-  pending:    ["active",  "pending", "pending"],
-  created:    ["done",    "pending", "pending"],
-  proposing:  ["done",    "active",  "pending"],
-  proposed:   ["done",    "done",    "pending"],
-  resolving:  ["done",    "done",    "active"],
-  resolved:   ["done",    "done",    "done"],
-  refunded:   ["done",    "done",    "skipped"],
-  cancelled:  ["done",    "skipped", "skipped"],
-  failed:     ["failed",  "pending", "pending"],
+  //               created   proposed   resolved
+  pending:            ["active",   "pending", "pending"],
+  created:            ["done",     "pending", "pending"],
+  proposing:          ["done",     "active",  "pending"],
+  proposed:           ["done",     "done",    "pending"],
+  reset:              ["done",     "failed",  "pending"],
+  disputed:           ["done",     "failed",  "pending"],
+  resolving:          ["done",     "done",    "active"],
+  resolved:           ["done",     "done",    "done"],
+  refunded:           ["done",     "done",    "done"],
+  cancelled:          ["done",     "skipped", "skipped"],
+  failed:             ["failed",   "pending", "pending"],
 };
 
 export function deriveSportLifecycle(market: SportMarket): Lifecycle {
-  const row = SPORT_STAGE_TABLE[market.local_status] ?? SPORT_STAGE_TABLE.pending;
+  const row =
+    SPORT_STAGE_TABLE[market.local_status] ?? SPORT_STAGE_TABLE.pending;
   return {
     stages: [
       { key: "created",  status: row[0] },
@@ -270,7 +277,7 @@ export function deriveManualResult(): Result {
 // ---------------------------------------------------------------------------
 
 export type DeriveInput =
-  | { source: "sport"; sportMarket: SportMarket; sportEvent?: SportEvent }
+  | { source: "sport"; sportMarket: SportMarket; sportEvent?: SportEvent; verdict?: MarketStatusVerdict | null }
   | { source: "crypto"; cryptoMarket: CryptoMarket; cryptoEvent?: CryptoEvent; verdict?: MarketStatusVerdict | null }
   | {
       source: "manual";

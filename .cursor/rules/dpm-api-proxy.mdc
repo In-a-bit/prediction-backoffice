@@ -1,0 +1,38 @@
+---
+description: dpm-api must never be called directly from the browser — always proxy through the Next.js server
+alwaysApply: true
+---
+
+# dpm-api Access — Server Proxy Only
+
+`lib/api.ts` is `server-only`. **Never** import it (or call dpm-api URLs) from `"use client"` components or any code that runs in the browser.
+
+## Rule
+
+| Context | Allowed |
+|---------|---------|
+| Server component (`page.tsx`, `layout.tsx`, no `"use client"`) | ✅ `import { manual } from "@/lib/api"` |
+| `lib/*.ts` with `import "server-only"` at the top | ✅ |
+| Next.js API route (`app/api/**/route.ts`) | ✅ proxy layer |
+| `"use client"` component | ❌ never — call the Next.js API route instead |
+
+## Pattern
+
+```ts
+// ✅ server component / server-only lib — direct call
+import { manual } from "@/lib/api";
+const market = await manual.getMarketStatus(external_id);
+
+// ✅ client component — call the Next.js proxy route
+const res = await fetch(`/api/dpm/markets/${id}/activate`, { method: "POST" });
+
+// ❌ never do this in a "use client" file
+import { manual } from "@/lib/api";   // will throw at runtime
+fetch(process.env.DPM_API_URL + "/markets/...");  // exposes internal URL + key
+```
+
+## Adding a new dpm-api action
+
+1. Create `app/api/dpm/<resource>/<action>/route.ts` — call `manual.*` there.
+2. Call `fetch("/api/dpm/...")` from the client component.
+3. Never pass `DPM_API_URL` or `DPM_API_KEY` to the browser.

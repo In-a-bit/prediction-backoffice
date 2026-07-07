@@ -21,13 +21,7 @@ import type {
 
 const POLL_INTERVAL_MS = 1000;
 
-type Action =
-  | "start"
-  | "pause"
-  | "recreate"
-  | "retry"
-  | "skip"
-  | "signal-balance";
+type Action = "start" | "recreate" | "retry";
 
 // DeployPlanDriver is a thin observer over the backend-driven deploy plan.
 // All state lives in Postgres; the UI just polls /deploy-plans/:id and
@@ -113,20 +107,11 @@ export function DeployPlanDriver({
             case "start":
               path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/start`;
               break;
-            case "pause":
-              path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/pause`;
-              break;
             case "recreate":
               path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/recreate`;
               break;
             case "retry":
               path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/retry`;
-              break;
-            case "skip":
-              path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/skip`;
-              break;
-            case "signal-balance":
-              path = `/api/manual/deploy-plans/${encodeURIComponent(planExternalId)}/markets/${pos}/signal-balance`;
               break;
           }
           const res = await fetch(path, { method: "POST" });
@@ -195,16 +180,6 @@ export function DeployPlanDriver({
                   {plan.status === "pending" ? "Deploy queue" : "Resume"}
                 </button>
               ) : null}
-              {plan.status === "running" ? (
-                <button
-                  type="button"
-                  onClick={() => fire("pause")}
-                  disabled={isPending}
-                  className={buttonVariants.secondary}
-                >
-                  Pause
-                </button>
-              ) : null}
             </div>
           </div>
         </CardHeader>
@@ -226,8 +201,6 @@ export function DeployPlanDriver({
                   pendingActionType={pendingAction?.type}
                   onRetry={() => fire("retry", m.position)}
                   onRecreate={() => fire("recreate", m.position)}
-                  onSkip={() => fire("skip", m.position)}
-                  onSignalBalance={() => fire("signal-balance", m.position)}
                 />
               ))}
             </ul>
@@ -260,8 +233,6 @@ function MarketRow({
   pendingActionType,
   onRetry,
   onRecreate,
-  onSkip,
-  onSignalBalance,
 }: {
   market: DeployPlanMarket;
   planExternalId: string;
@@ -270,8 +241,6 @@ function MarketRow({
   pendingActionType?: Action;
   onRetry: () => void;
   onRecreate: () => void;
-  onSkip: () => void;
-  onSignalBalance: () => void;
 }) {
   const marketHref = market.external_id
     ? `/markets/${encodeURIComponent(market.external_id)}?source=${source}&plan_id=${encodeURIComponent(planExternalId)}&pos=${market.position}`
@@ -340,36 +309,6 @@ function MarketRow({
                 {isPending && pendingActionType === "recreate"
                   ? "Recreating…"
                   : "Recreate"}
-              </button>
-              <button
-                type="button"
-                onClick={onSkip}
-                disabled={isPending}
-                className={buttonVariants.ghost}
-              >
-                Skip
-              </button>
-            </>
-          ) : null}
-          {market.status === "waiting_for_balance" ? (
-            <>
-              <button
-                type="button"
-                onClick={onSignalBalance}
-                disabled={isPending}
-                className={buttonVariants.primary}
-              >
-                {isPending && pendingActionType === "signal-balance"
-                  ? "Signaling…"
-                  : "Signal balance added"}
-              </button>
-              <button
-                type="button"
-                onClick={onSkip}
-                disabled={isPending}
-                className={buttonVariants.ghost}
-              >
-                Skip
               </button>
             </>
           ) : null}
