@@ -22,6 +22,7 @@ type FilterDef = {
 };
 
 const FILTERS: FilterDef[] = [
+  { key: "all", label: "All", match: () => true },
   {
     key: "active",
     label: "Active",
@@ -40,7 +41,6 @@ const FILTERS: FilterDef[] = [
     match: (m, nowMs) =>
       m.status === "PENDING" && new Date(m.slot_end).getTime() < nowMs,
   },
-  { key: "all", label: "All", match: () => true },
 ];
 
 type GlobalCounts = {
@@ -70,7 +70,7 @@ export function MarketsPanel({
   markets: CreatedMarket[];
   taskStats?: TaskStats;
 }) {
-  const [filter, setFilter] = useState<FilterKey>("active");
+  const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CreatedMarket | null>(null);
 
@@ -80,20 +80,21 @@ export function MarketsPanel({
   const pageCounts = useMemo(() => {
     const c = { active: 0, verified: 0, failed: 0, awaiting_price: 0 };
     for (const m of markets) {
-      if (FILTERS[0].match(m, nowMs)) c.active++;
-      if (FILTERS[1].match(m, nowMs)) c.verified++;
-      if (FILTERS[2].match(m, nowMs)) c.failed++;
-      if (FILTERS[3].match(m, nowMs)) c.awaiting_price++;
+      if (FILTERS[1].match(m, nowMs)) c.active++;
+      if (FILTERS[2].match(m, nowMs)) c.verified++;
+      if (FILTERS[3].match(m, nowMs)) c.failed++;
+      if (FILTERS[4].match(m, nowMs)) c.awaiting_price++;
     }
     return c;
   }, [markets, nowMs]);
 
   // Global counts for the filter tab badges — from task.stats when available,
-  // otherwise fall back to the page-local tally.
+  // otherwise fall back to the page-local tally. "All" always uses markets.length
+  // because stats.total_created excludes PENDING markets.
   const counts: GlobalCounts = useMemo(
     () =>
       taskStats
-        ? statsToGlobalCounts(taskStats)
+        ? { ...statsToGlobalCounts(taskStats), all: markets.length }
         : { ...pageCounts, all: markets.length },
     [taskStats, pageCounts, markets.length],
   );
