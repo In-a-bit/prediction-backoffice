@@ -22,6 +22,8 @@ export type Permission =
   | "wallets.read"
   | "wallets.admin"
   | "treasury.withdraw"
+  | "liquidity_providers.read"
+  | "liquidity_providers.manage"
   | "users.read"
   | "users.manage"
   | "roles.manage"
