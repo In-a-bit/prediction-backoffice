@@ -74,24 +74,42 @@ export default async function DeployPlansPage({
 
   const perPage = clampPerPage(Number(sp.per_page) || DEFAULT_PER_PAGE);
   const page = Math.max(1, Number(sp.page) || 1);
-  const offset = (page - 1) * perPage;
 
-  let result: Paginated<DeployPlan> = { data: [], total: 0, limit: perPage, offset };
+  let result: Paginated<DeployPlan> = { data: [], total: 0, limit: perPage, offset: 0 };
   let error: string | null = null;
   try {
-    result = await manual.listDeployPlans({
-      status: sp.status,
-      event_external_id: sp.event_external_id,
-      limit: perPage,
-      offset,
-    });
+    if (source === "all") {
+      // For "all" tab the backend drives pagination directly.
+      const offset = (page - 1) * perPage;
+      result = await manual.listDeployPlans({
+        status: sp.status,
+        event_external_id: sp.event_external_id,
+        limit: perPage,
+        offset,
+      });
+    } else {
+      // For source-specific tabs, fetch all matching plans so we can paginate
+      // within that source correctly (backend has no source filter).
+      const all = await manual.listDeployPlans({
+        status: sp.status,
+        event_external_id: sp.event_external_id,
+        limit: 1000,
+        offset: 0,
+      });
+      const sourceFiltered = all.data.filter((p) => classifySource(p) === source);
+      const offset = (page - 1) * perPage;
+      result = {
+        data: sourceFiltered.slice(offset, offset + perPage),
+        total: sourceFiltered.length,
+        limit: perPage,
+        offset,
+      };
+    }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 
-  // Source partition is computed after fetch — backend doesn't filter by source.
-  const filtered =
-    source === "all" ? result.data : result.data.filter((p) => classifySource(p) === source);
+  const filtered = result.data;
 
   const active = filtered.filter((p) => ACTIVE_STATUSES.includes(p.status));
   const done = filtered.filter((p) => !ACTIVE_STATUSES.includes(p.status));
@@ -181,7 +199,8 @@ function buildSourceTabs(sp: SearchParams): Tab<Source>[] {
   return keys.map((key) => {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
-      if (k === "source" || v === undefined || v === "") continue;
+      // Drop page when switching tabs — each tab starts from page 1.
+      if (k === "source" || k === "page" || v === undefined || v === "") continue;
       qs.set(k, String(v));
     }
     if (key !== "all") qs.set("source", key);

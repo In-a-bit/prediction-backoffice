@@ -412,11 +412,23 @@ async function countAcrossSources(): Promise<{
       .catch(() => 0),
     crypto
       .listTasks()
-      .then(({ data: tasks }) => tasks.length)
+      .then(({ data: tasks }) =>
+        Promise.all(
+          tasks.map((t) =>
+            crypto.listCryptoEvents(t.id).then((evs) => evs.length).catch(() => 0),
+          ),
+        ).then((counts) => counts.reduce((sum, c) => sum + c, 0)),
+      )
       .catch(() => 0),
     sports
       .listTasks()
-      .then((tasks) => tasks.length)
+      .then((tasks) =>
+        Promise.all(
+          tasks.map((t) =>
+            sports.listEvents(t.id).then((evs) => evs.length).catch(() => 0),
+          ),
+        ).then((counts) => counts.reduce((sum, c) => sum + c, 0)),
+      )
       .catch(() => 0),
   ]);
   return { manual: manualCount, crypto: cryptoCount, sport: sportCount };
