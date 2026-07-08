@@ -243,6 +243,21 @@ export type SeriesResponse = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type ManualEventListItem = {
+  id: number;
+  created_at: string;
+  event_external_id: string | null;
+  event_slug: string;
+  market_count: number;
+  liveness: number | null;
+};
+
+export type ManualEventListResponse = {
+  items: ManualEventListItem[];
+  total: number;
+  limit: number;
+};
+
 export type EventResponse = {
   id: number;
   external_id: string;

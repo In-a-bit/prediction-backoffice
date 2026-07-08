@@ -11,9 +11,9 @@ import { crypto, manual, sports } from "@/lib/api";
 import type {
   Asset,
   CryptoEvent,
-  DeployPlan,
   EventResponse,
   Interval,
+  ManualEventListItem,
   SportEvent,
   SportTask,
   Task,
@@ -150,82 +150,60 @@ function emptyManualPayload(): ManualPayload {
 }
 
 async function loadManual(q?: string): Promise<ManualPayload> {
-  const planLimit = q ? 2000 : 80;
   const titleCap = q ? Infinity : 50;
+  const eventLimit = q ? 2000 : 100;
 
-  let plans: DeployPlan[] = [];
+  let manualEvents: ManualEventListItem[] = [];
   try {
-    plans = (await manual.listDeployPlans({ limit: planLimit })).data;
+    const resp = await manual.listEvents({ limit: eventLimit });
+    manualEvents = resp.items;
   } catch (err) {
     return { rows: [], knownSeries: [], error: stringifyError(err) };
   }
 
-  // Filter to operator-driven plans (skip auto plans — those go on their tabs).
-  const manualPlans = plans.filter(
-    (p) => p.actor !== "crypto-auto" && p.actor !== "sports-auto",
-  );
-
-  // Bucket by event so the row count is per-event rather than per-plan.
-  const byEvent = new Map<string, DeployPlan[]>();
-  for (const p of manualPlans) {
-    const list = byEvent.get(p.event_external_id) ?? [];
-    list.push(p);
-    byEvent.set(p.event_external_id, list);
-  }
-
-  // Resolve titles in parallel — capped to keep TTFB low.
-  const ids = [...byEvent.keys()].slice(0, titleCap);
-  const events = await Promise.all(
-    ids.map(async (id) => {
+  // Enrich a capped subset with live dpm-api data (title, active, closed …).
+  const toEnrich = manualEvents.slice(0, titleCap);
+  const dpmEvents = await Promise.all(
+    toEnrich
+      .filter((e) => !!e.event_external_id)
+      .map(async (e) => {
       try {
-        return [id, await manual.getEventByExternalId(id)] as const;
+        const externalID = e.event_external_id as string;
+        return [externalID, await manual.getEventByExternalId(externalID)] as const;
       } catch {
         return null;
       }
-    }),
+      }),
   );
   const byId = new Map<string, EventResponse>();
-  for (const r of events) if (r) byId.set(r[0], r[1]);
+  for (const r of dpmEvents) if (r) byId.set(r[0], r[1]);
 
-  // Series map — we'll derive slug from the event metadata if exposed; otherwise
-  // we display the series_id and let the operator pick from a future series list.
-  // The /manual/series/by-slug endpoint is keyed on slug, not id, so we don't
-  // resolve every series id here. The known-series list is built below from
-  // whatever rows surface a series_id so the filter dropdown stays scoped.
   const knownSeries = new Map<number, { id: number; slug: string }>();
 
   let rows: ManualEventRow[] = [];
-  for (const [externalId, ps] of byEvent.entries()) {
-    const ev = byId.get(externalId);
-    const newest = ps.reduce((a, b) =>
-      new Date(a.updated_at) > new Date(b.updated_at) ? a : b,
-    );
-    const marketCount = new Set(
-      ps.flatMap((p) =>
-        p.markets.map((m) => m.external_id ?? `pos-${p.id}-${m.position}`),
-      ),
-    ).size;
+
+  for (const me of manualEvents) {
+    const ev = me.event_external_id ? byId.get(me.event_external_id) : undefined;
     const seriesId = ev?.series_id ?? null;
     const seriesSlug = ev?.metadata?.series_slug as string | undefined;
     if (seriesId !== null && seriesSlug) {
       knownSeries.set(seriesId, { id: seriesId, slug: seriesSlug });
     }
-
     rows.push({
-      external_id: externalId,
+      external_id: me.event_external_id ?? "",
       title:
         (ev?.title && ev.title.trim()) ||
         (ev?.slug && ev.slug.trim()) ||
-        `Event ${externalId.slice(0, 8)}…`,
+        me.event_slug,
       series: seriesSlug ?? null,
       series_id: seriesId,
-      created_at: ev?.created_at ?? newest.created_at,
+      created_at: me.created_at,
       active: !!ev?.active,
       closed: !!ev?.closed,
       archived: !!ev?.archived,
       paused: !!ev?.paused,
-      market_count: marketCount,
-      deployment_status: ev?.deployment_status ?? newest.status,
+      market_count: me.market_count,
+      deployment_status: ev?.deployment_status ?? (me.event_external_id ? "UNKNOWN" : "PENDING"),
     });
   }
 
@@ -400,15 +378,8 @@ async function countAcrossSources(): Promise<{
 }> {
   const [manualCount, cryptoCount, sportCount] = await Promise.all([
     manual
-      .listDeployPlans({ limit: 80 })
-      .then(
-        ({ data: plans }) =>
-          new Set(
-            plans
-              .filter((p) => p.actor !== "crypto-auto" && p.actor !== "sports-auto")
-              .map((p) => p.event_external_id),
-          ).size,
-      )
+      .listEvents({ limit: 1 })
+      .then((resp) => resp.total)
       .catch(() => 0),
     crypto
       .listTasks()

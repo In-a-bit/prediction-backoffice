@@ -15,6 +15,7 @@ import type {
   EventResponse,
   Interval,
   ManualAudit,
+  ManualEventListResponse,
   MarketAccepted,
   MarketPayload,
   MarketOutcome,
@@ -144,6 +145,12 @@ export const manual = {
     request<EventResponse>(
       `/manual/events/by-external-id/${encodeURIComponent(externalId)}`,
     ),
+  listEvents: (opts?: { limit?: number }) => {
+    const q = new URLSearchParams();
+    if (opts?.limit !== undefined) q.set("limit", String(opts.limit));
+    const qs = q.toString();
+    return request<ManualEventListResponse>(`/manual/events${qs ? `?${qs}` : ""}`);
+  },
 
   // ----- Tags -----
   upsertTag: (slug: string, label: string) =>
