@@ -854,6 +854,75 @@ export const admin = {
     }),
 };
 
+export type LiquidityProviderRow = {
+  id: number;
+  name: string;
+  email: string;
+  max_addresses: number;
+  is_active: boolean;
+  private_api_key?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateLiquidityProviderInput = {
+  name: string;
+  email: string;
+  max_addresses?: number;
+};
+
+export type UpdateLiquidityProviderInput = {
+  name?: string;
+  email?: string;
+  is_active?: boolean;
+};
+
+function liquidityProviderQuery(params: {
+  name?: string;
+  email?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  }
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export const liquidityProviders = {
+  list: (params: {
+    name?: string;
+    email?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) =>
+    request<Paginated<LiquidityProviderRow>>(
+      `/proxy/dpm/liquidity-providers${liquidityProviderQuery(params)}`,
+    ),
+  create: (input: CreateLiquidityProviderInput) =>
+    request<LiquidityProviderRow>("/proxy/dpm/liquidity-providers", {
+      method: "POST",
+      body: input,
+    }),
+  update: (id: number, patch: UpdateLiquidityProviderInput) =>
+    request<LiquidityProviderRow>(`/proxy/dpm/liquidity-providers/${id}`, {
+      method: "PATCH",
+      body: patch,
+    }),
+  createKey: (id: number) =>
+    request<LiquidityProviderRow>(
+      `/proxy/dpm/liquidity-providers/${id}/api-keys`,
+      { method: "POST" },
+    ),
+  revokeKey: (id: number) =>
+    request<{ revoked: boolean }>(
+      `/proxy/dpm/liquidity-providers/${id}/api-keys/revoke`,
+      { method: "PATCH" },
+    ),
+};
+
 // ---------------------------------------------------------------------------
 // Auth / access control — the current session, users, roles, the permission
 // catalog, and the audit log. Login/logout live in route handlers because they

@@ -290,6 +290,18 @@ const sections: Section[] = [
           </svg>
         ),
       },
+      {
+        href: "/admin/liquidity-providers",
+        label: "Liquidity Providers",
+        requires: "liquidity_providers.read",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v18" />
+            <path d="M3 12h18" />
+            <circle cx="12" cy="12" r="9" />
+          </svg>
+        ),
+      },
     ],
   },
   {
