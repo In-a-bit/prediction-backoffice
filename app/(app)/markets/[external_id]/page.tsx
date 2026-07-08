@@ -565,6 +565,7 @@ function KeyFactsGrid({
     row("uma_resolution_status", m?.uma_resolution_status),
     row("uma_bond", m?.uma_bond, true),
     row("uma_reward", m?.uma_reward, true),
+    row("liveness", m ? `${m.liveness ?? "7200"}s${m.liveness ? "" : " (default)"}` : undefined, true),
   ];
 
   const timing = [

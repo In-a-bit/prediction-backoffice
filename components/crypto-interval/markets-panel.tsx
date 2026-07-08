@@ -13,7 +13,7 @@ import {
 } from "@/lib/format";
 import type { CreatedMarket, TaskStats } from "@/lib/types";
 
-type FilterKey = "active" | "verified" | "failed" | "awaiting_price" | "all";
+type FilterKey = "active" | "verified" | "resolved" | "failed" | "awaiting_price" | "all";
 
 type FilterDef = {
   key: FilterKey;
@@ -26,13 +26,17 @@ const FILTERS: FilterDef[] = [
   {
     key: "active",
     label: "Active",
-    match: (m) =>
-      m.status === "PENDING" || (m.status === "CREATED" && !m.verified_at),
+    match: (m) => m.status === "PENDING" || m.status === "CREATED",
   },
   {
     key: "verified",
     label: "Verified",
-    match: (m) => m.status === "CREATED" && Boolean(m.verified_at),
+    match: (m) => m.status === "VERIFIED",
+  },
+  {
+    key: "resolved",
+    label: "Resolved",
+    match: (m) => m.status === "RESOLVED",
   },
   { key: "failed", label: "Failed", match: (m) => m.status === "FAILED" },
   {
@@ -46,6 +50,7 @@ const FILTERS: FilterDef[] = [
 type GlobalCounts = {
   active: number;
   verified: number;
+  resolved: number;
   failed: number;
   awaiting_price: number;
   all: number;
@@ -56,10 +61,12 @@ function statsToGlobalCounts(stats: TaskStats): GlobalCounts {
     // active = PENDING (not yet past slot_end) + CREATED but not yet verified
     active: (stats.pending_now ?? 0) + (stats.awaiting_verify_now ?? 0),
     verified: stats.total_verified ?? 0,
+    resolved: stats.total_resolved ?? 0,
     // failed_last_24h is the best available proxy for failed total
     failed: stats.failed_last_24h ?? 0,
     awaiting_price: stats.awaiting_price_count ?? 0,
-    all: stats.total_created ?? 0,
+    // total_all covers all markets regardless of status.
+    all: stats.total_all ?? 0,
   };
 }
 
@@ -78,23 +85,23 @@ export function MarketsPanel({
 
   // Page-local counts — used for the status bar summary.
   const pageCounts = useMemo(() => {
-    const c = { active: 0, verified: 0, failed: 0, awaiting_price: 0 };
+    const c = { active: 0, verified: 0, resolved: 0, failed: 0, awaiting_price: 0 };
     for (const m of markets) {
       if (FILTERS[1].match(m, nowMs)) c.active++;
       if (FILTERS[2].match(m, nowMs)) c.verified++;
-      if (FILTERS[3].match(m, nowMs)) c.failed++;
-      if (FILTERS[4].match(m, nowMs)) c.awaiting_price++;
+      if (FILTERS[3].match(m, nowMs)) c.resolved++;
+      if (FILTERS[4].match(m, nowMs)) c.failed++;
+      if (FILTERS[5].match(m, nowMs)) c.awaiting_price++;
     }
     return c;
   }, [markets, nowMs]);
 
   // Global counts for the filter tab badges — from task.stats when available,
-  // otherwise fall back to the page-local tally. "All" always uses markets.length
-  // because stats.total_created excludes PENDING markets.
+  // otherwise fall back to the page-local tally.
   const counts: GlobalCounts = useMemo(
     () =>
       taskStats
-        ? { ...statsToGlobalCounts(taskStats), all: markets.length }
+        ? statsToGlobalCounts(taskStats)
         : { ...pageCounts, all: markets.length },
     [taskStats, pageCounts, markets.length],
   );
@@ -255,12 +262,10 @@ function MarketRow({
 function MarketStatusBadge({ market }: { market: CreatedMarket }) {
   if (market.status === "FAILED") return <Badge tone="danger">FAILED</Badge>;
   if (market.status === "PENDING") return <Badge tone="warning">PENDING</Badge>;
+  if (market.status === "VERIFIED") return <Badge tone="success">VERIFIED</Badge>;
+  if (market.status === "RESOLVED") return <Badge tone="neutral">RESOLVED</Badge>;
   if (market.status === "CREATED") {
-    return market.verified_at ? (
-      <Badge tone="success">VERIFIED</Badge>
-    ) : (
-      <Badge tone="info">VERIFYING</Badge>
-    );
+    return <Badge tone="info">VERIFYING</Badge>;
   }
   return <Badge tone="neutral">{market.status}</Badge>;
 }

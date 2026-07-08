@@ -36,6 +36,8 @@ export type TaskStats = {
   awaiting_resolution: number;
   total_created: number;
   total_verified: number;
+  total_resolved: number;
+  total_all: number;
   next_slot_end?: string | null;
   last_created_at?: string | null;
   last_verified_at?: string | null;
@@ -62,7 +64,7 @@ export type Task = {
   stats?: TaskStats;
 };
 
-export type CreatedMarketStatus = "PENDING" | "CREATED" | "FAILED";
+export type CreatedMarketStatus = "PENDING" | "CREATED" | "FAILED" | "VERIFIED" | "RESOLVED";
 
 export type CreatedMarket = {
   id: number;
@@ -357,6 +359,7 @@ export type DpmMarket = {
   uma_reward?: string | null;
   uma_resolution_status?: string | null;
   uma_resolution_statuses?: string[] | null;
+  liveness?: string | null;
 
   paused?: boolean | null;
   flagged?: boolean | null;
