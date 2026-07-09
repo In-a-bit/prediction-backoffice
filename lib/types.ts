@@ -161,19 +161,13 @@ export type EventPayload = {
   ticker?: string;
   description?: string;
   resolution_source?: string;
-  start_date?: string; // ISO 8601
   end_date?: string;
   icon?: string;
-  active?: boolean;
-  closed?: boolean;
-  archived?: boolean;
-  restricted?: boolean;
-  neg_risk?: boolean;
-  neg_risk_market_id?: string;
-  deployment_status?: "PENDING" | "DEPLOYING" | "DEPLOYED";
-  deploying_timestamp?: string;
+  // start_date, active, closed, archived, restricted, neg_risk,
+  // neg_risk_market_id, comment_count, deployment_status and
+  // deploying_timestamp are intentionally absent — they cannot be set at
+  // event creation time.
   parent_event_id?: number;
-  comment_count?: number;
   series_id?: number;
   series_external_id?: string;
   metadata_type?: string;
