@@ -875,11 +875,11 @@ export type UpdateLiquidityProviderInput = {
   name?: string;
   email?: string;
   is_active?: boolean;
+  max_addresses?: number;
 };
 
 function liquidityProviderQuery(params: {
-  name?: string;
-  email?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }) {
@@ -893,8 +893,7 @@ function liquidityProviderQuery(params: {
 
 export const liquidityProviders = {
   list: (params: {
-    name?: string;
-    email?: string;
+    search?: string;
     limit?: number;
     offset?: number;
   } = {}) =>

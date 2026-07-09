@@ -10,13 +10,11 @@ export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
     const params: {
-      name?: string;
-      email?: string;
+      search?: string;
       limit?: number;
       offset?: number;
     } = {};
-    if (sp.get("name")) params.name = sp.get("name") ?? undefined;
-    if (sp.get("email")) params.email = sp.get("email") ?? undefined;
+    if (sp.get("search")) params.search = sp.get("search") ?? undefined;
     const limit = sp.get("limit");
     const offset = sp.get("offset");
     if (limit) params.limit = Number.parseInt(limit, 10);
