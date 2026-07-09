@@ -372,7 +372,7 @@ function EventDetailsCard({
     <Card>
       <CardHeader>
         <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">
-          Event details
+          Event details (DPM)
         </h2>
       </CardHeader>
       <CardBody className="space-y-4">

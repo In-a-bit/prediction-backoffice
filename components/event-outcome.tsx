@@ -3,6 +3,7 @@
 // price + direction. Defensive against api-football payload shape drift.
 
 import type { CryptoEvent, SportEvent } from "@/lib/types";
+import { formatDateTimeFull } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
 // Sport
@@ -58,7 +59,13 @@ export function SportOutcomeBlock({ event }: { event: SportEvent | undefined }) 
   const halfKnown = s.halfHome !== null && s.halfAway !== null;
 
   return (
-    <div className="rounded-lg border border-border bg-surface px-4 py-3">
+    <div className="rounded-lg border border-border bg-surface px-4 py-3 space-y-2">
+      {event?.kickoff_at ? (
+        <div className="text-center text-[11px] text-foreground-muted">
+          <span className="uppercase tracking-wider">Kickoff</span>{" "}
+          <span className="font-mono">{formatDateTimeFull(event.kickoff_at)}</span>
+        </div>
+      ) : null}
       <div className="flex items-center gap-4">
         <span className="flex-1 text-right text-sm font-medium truncate">
           {s.homeName}
