@@ -29,7 +29,6 @@ export const dynamic = "force-dynamic";
 type TabKey = LocalBucket;
 
 const TAB_ORDER: { key: TabKey; label: string }[] = [
-  { key: "pending",             label: "Pending" },
   { key: "created",             label: "Created" },
   { key: "proposing",           label: "Proposing" },
   { key: "proposed",            label: "Proposed" },
@@ -84,8 +83,8 @@ export default async function ResolutionsPage({
         source: "all",
         hydrationCap: 60,
         planLimit: 80,
-        taskLimit: 5,
-        marketsPerTask: 30,
+        taskLimit: 50,
+        marketsPerTask: 200,
         q: q || undefined,
       }),
       manual.listOperatorLog({ limit: 200 }),
@@ -115,7 +114,7 @@ export default async function ResolutionsPage({
     logResult.status === "fulfilled" ? logResult.value.data : [];
 
   // Non-sport rows (crypto + manual) are still provided by loadMarketRows.
-  const nonSportRows = baseRows.filter((r) => r.source !== "sport");
+  const nonSportRows = baseRows.filter((r) => r.source !== "sport" && r.local_status !== "pending");
   const nonSportCounts = countBuckets(nonSportRows);
 
   // Merge counts: sport + manual from dedicated DB endpoints, everything else from base rows.

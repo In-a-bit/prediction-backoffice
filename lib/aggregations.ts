@@ -63,8 +63,13 @@ export function bucketLocal(
   umaStatus?: string | null,
 ): LocalBucket | null {
   if (source === "sport" || source === "crypto") {
-    const s = (localStatus ?? "") as LocalBucket;
-    return SPORT_CRYPTO_BUCKETS.has(s) ? s : null;
+    const s = localStatus ?? "";
+    // Crypto "verified" = market is live and awaiting UMA proposal — same
+    // resolution stage as sport "created".
+    if (source === "crypto" && s === "verified") return "created";
+    // Crypto "created" = plan just deployed, not yet a live market; skip it.
+    if (source === "crypto" && s === "created") return null;
+    return SPORT_CRYPTO_BUCKETS.has(s as LocalBucket) ? (s as LocalBucket) : null;
   }
   // Manual markets with a backoffice DB row now carry local_status directly
   // (same values as sport/crypto). If present, use it.
