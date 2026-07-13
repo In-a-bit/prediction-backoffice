@@ -627,6 +627,7 @@ export type SportResolutionMarket = {
   outcome_key: string;
   local_status: SportMarketStatus;
   updated_at: string;
+  event_slug: string;
 };
 
 export type SportResolutionList = {

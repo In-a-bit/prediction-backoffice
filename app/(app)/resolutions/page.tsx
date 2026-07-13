@@ -278,7 +278,7 @@ function rowFromSportResolution(m: SportResolutionMarket): MarketRow {
     question: m.market_slug,
     source: "sport" as PlanSource,
     event_external_id: null,
-    event_title: null,
+    event_title: m.event_slug || null,
     series_slug: null,
     created_at: m.updated_at,
     sport_market_id: m.id,

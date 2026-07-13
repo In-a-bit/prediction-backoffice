@@ -98,18 +98,22 @@ export function ResolutionsTable({
         id: "event_title",
         accessorKey: "event_title",
         header: "Event",
-        cell: ({ row }) =>
-          row.original.event_title ? (
+        cell: ({ row }) => {
+          const title = row.original.event_title;
+          if (!title) return <span className="text-xs text-foreground-muted">—</span>;
+          const href = row.original.event_external_id
+            ? `/events/${encodeURIComponent(row.original.event_external_id)}?from=resolutions`
+            : `/events?q=${encodeURIComponent(title)}`;
+          return (
             <Link
-              href={`/events/${encodeURIComponent(row.original.event_external_id ?? "")}?from=resolutions`}
+              href={href}
               className="text-xs text-accent hover:underline truncate max-w-[16rem] inline-block align-middle"
-              title={row.original.event_title}
+              title={title}
             >
-              {row.original.event_title}
+              {title}
             </Link>
-          ) : (
-            <span className="text-xs text-foreground-muted">—</span>
-          ),
+          );
+        },
       },
       {
         id: "local_status",
