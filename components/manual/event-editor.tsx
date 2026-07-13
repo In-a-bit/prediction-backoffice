@@ -20,14 +20,20 @@ import type { EventPayload } from "@/lib/types";
 import { SeriesSearchSelect } from "./series-search-select";
 import { TagSearchSelect } from "./tag-search-select";
 
-export type EventEditorState = Omit<
-  EventPayload,
-  "metadata" | "start_date" | "end_date" | "deploying_timestamp"
-> & {
+export type EventEditorState = Omit<EventPayload, "metadata" | "end_date"> & {
   metadataText: string;
   start_date_local: string;
   end_date_local: string;
   deploying_timestamp_local: string;
+  // Not in EventPayload (cannot be set at creation time) but kept as local
+  // editor state so the form can display/prefill from existing event data.
+  active?: boolean;
+  closed?: boolean;
+  archived?: boolean;
+  restricted?: boolean;
+  neg_risk?: boolean;
+  neg_risk_market_id?: string;
+  comment_count?: number;
 };
 
 export function emptyEventEditorState(): EventEditorState {
@@ -64,13 +70,13 @@ export function eventEditorStateFromPayload(p: EventPayload): EventEditorState {
     description: p.description ?? "",
     resolution_source: p.resolution_source ?? "",
     icon: p.icon ?? "",
-    neg_risk_market_id: p.neg_risk_market_id ?? "",
+    neg_risk_market_id: "",
     series_external_id: p.series_external_id ?? "",
     metadata_type: p.metadata_type ?? "",
     metadataText: stringifyMetadata(p.metadata),
-    start_date_local: isoToLocalInput(p.start_date),
+    start_date_local: "",
     end_date_local: isoToLocalInput(p.end_date),
-    deploying_timestamp_local: isoToLocalInput(p.deploying_timestamp),
+    deploying_timestamp_local: "",
     tag_ids: p.tag_ids ?? [],
   };
 }
@@ -84,21 +90,12 @@ export function eventEditorStateToPayload(s: EventEditorState): EventPayload {
     description: cleanString(s.description),
     resolution_source: cleanString(s.resolution_source),
     icon: cleanString(s.icon),
-    active: s.active,
-    closed: s.closed,
-    archived: s.archived,
-    restricted: s.restricted,
-    neg_risk: s.neg_risk,
-    neg_risk_market_id: cleanString(s.neg_risk_market_id),
     parent_event_id: s.parent_event_id,
-    comment_count: s.comment_count,
     series_id: s.series_id,
     series_external_id: cleanString(s.series_external_id),
     metadata_type: cleanString(s.metadata_type),
     metadata: parseMetadata(s.metadataText),
-    start_date: localInputToIso(s.start_date_local),
     end_date: localInputToIso(s.end_date_local),
-    deploying_timestamp: localInputToIso(s.deploying_timestamp_local),
     tag_ids: s.tag_ids?.length ? s.tag_ids : undefined,
   };
 }
