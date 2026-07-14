@@ -143,16 +143,18 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   if (!isOnChain(ctx)) return actions;
 
   // Resolution-type-specific actions.
-  // Crypto markets are always CTF_ORACLE (resolved via the price-ticker
-  // decision flow), never UMA — skip UMA actions regardless of what
-  // dpm-api reports for resolution_type.
-  if (isCtfOracle(ctx.dpmMarket) || ctx.source === "crypto") {
+  // Crypto markets are resolved automatically via the price-ticker decision
+  // flow — operators never manually report payouts.
+  if (ctx.source === "crypto") {
+    // No operator actions for crypto resolution.
+  } else if (isCtfOracle(ctx.dpmMarket)) {
     if (!ctfIsTerminal(ctx.dpmMarket)) {
       actions.push("ctf-oracle-report-payouts");
     }
   } else if (ctx.source === "sport" && ctx.sportLocalStatus) {
     // Sport markets: gate UMA actions on local_status which is the authoritative
-    // source of truth (mirrors uma_resolution_status but also tracks disputed states).
+    // source of truth. Only "reset" allows operator proposal — "created" means
+    // the automated flow hasn't triggered yet, not that a re-proposal is needed.
     const ls = ctx.sportLocalStatus;
     const isTerminal =
       ls === "resolved" ||
@@ -160,7 +162,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       ls === "cancelled" ||
       ls === "failed";
     if (!isTerminal) {
-      if (ls === "created" || ls === "reset") {
+      if (ls === "reset") {
         actions.push("uma-propose");
       }
       // uma-resolve is intentionally omitted for sport markets: the Temporal
