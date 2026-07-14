@@ -201,7 +201,10 @@ function ActionButton({ row }: { row: MarketRow }) {
   let label = "Open →";
   let variant: keyof typeof buttonVariants = "secondary";
 
-  if (ls === "created" || ls === "reset") {
+  if (ls === "reset") {
+    label = "Propose →";
+    variant = "primary";
+  } else if (ls === "created" && row.source === "manual") {
     label = "Propose →";
     variant = "primary";
   } else if (ls === "disputed") {
