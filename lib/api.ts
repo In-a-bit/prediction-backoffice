@@ -333,6 +333,11 @@ export const manual = {
       `/manual/backoffice-markets/${manualMarketId}/trigger-resolution`,
       { method: "POST", body: { proposed_price: proposedPrice }, authed: true },
     ),
+  recoverFunds: (manualMarketId: number, audit?: Record<string, unknown>) =>
+    request<{ workflow_id: string; run_id: string }>(
+      `/manual/backoffice-markets/${manualMarketId}/recover-funds`,
+      { method: "POST", body: audit ?? {}, authed: true },
+    ),
 };
 
 // ---------------------------------------------------------------------------
@@ -493,6 +498,11 @@ export const sports = {
     request<{ workflow_id: string; run_id: string }>(
       `/sports/markets/${sportMarketId}/trigger-resolution`,
       { method: "POST", body: { proposed_price: proposedPrice }, authed: true },
+    ),
+  recoverFunds: (sportMarketId: number, audit?: Record<string, unknown>) =>
+    request<{ workflow_id: string; run_id: string }>(
+      `/sports/markets/${sportMarketId}/recover-funds`,
+      { method: "POST", body: audit ?? {}, authed: true },
     ),
   listResolutionMarkets: (params?: {
     localStatus?: string;

@@ -397,6 +397,8 @@ export type DpmMarket = {
 
   metadata_type?: string | null;
   metadata?: Record<string, unknown> | null;
+
+  settle_status?: string | null;
 };
 
 export type MarketStatusVerdict = {

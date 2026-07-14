@@ -451,6 +451,14 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/unpause`;
     case "market-activate":
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/activate`;
+    case "uma-recover-funds":
+      if (ctx.sportMarketId !== undefined) {
+        return `/api/sports/markets/${ctx.sportMarketId}/recover-funds`;
+      }
+      if (ctx.manualMarketId !== undefined) {
+        return `/api/manual/backoffice-markets/${ctx.manualMarketId}/recover-funds`;
+      }
+      return null;
     case "uma-propose":
     case "uma-resolve-manually":
     case "ctf-oracle-report-payouts":

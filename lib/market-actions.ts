@@ -31,7 +31,11 @@ export type MarketActionKey =
   | "market-activate"
   // Manual-market-specific actions — wired through the backoffice's
   // /manual/backoffice-markets endpoint (requires a manual_market DB row).
-  | "manual-watch-dispute";
+  | "manual-watch-dispute"
+  // Recover stuck CTF funds after a first-dispute DVM reset. Visible when
+  // settle_status === "settle_required" and a backoffice market ID is present
+  // (sport or manual only — crypto markets have no backoffice row).
+  | "uma-recover-funds";
 
 export type MarketActionCtx = {
   source: PlanSource;
@@ -168,9 +172,6 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       // uma-resolve is intentionally omitted for sport markets: the Temporal
       // workflow resolves automatically after the liveness window. Operators
       // should not manually trigger settlement.
-      if (ls !== "proposing" && ls !== "resolving") {
-        actions.push("uma-reset");
-      }
     }
   } else if (ctx.source === "manual" && ctx.manualLocalStatus) {
     // Manual markets with a backoffice DB row: gate on local_status, mirroring
@@ -188,9 +189,6 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       if (ls === "proposed" || ls === "disputed") {
         actions.push("uma-resolve");
       }
-      if (ls !== "proposing" && ls !== "resolving") {
-        actions.push("uma-reset");
-      }
     }
   } else {
     // UMA market (manual without a backoffice row): fall back to dpm-api status.
@@ -202,7 +200,6 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       if (u === "PROPOSED" || u === "DISPUTED") {
         actions.push("uma-resolve");
       }
-      actions.push("uma-reset");
     }
   }
 
@@ -216,6 +213,16 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     // workflow finished (REGISTERED). The dpm-api handler validates the
     // deployment_status itself, so we just gate on the active flag.
     if (d.active === false) actions.push("market-activate");
+
+    // Recover stuck CTF funds after a first-dispute DVM reset. Only sport and
+    // manual markets have a backoffice ID that the endpoint requires; crypto
+    // markets have no such ID so the action cannot be completed.
+    if (
+      d.settle_status === "settle_required" &&
+      (ctx.sportMarketId !== undefined || ctx.manualMarketId !== undefined)
+    ) {
+      actions.push("uma-recover-funds");
+    }
   }
 
   return actions;
@@ -286,5 +293,11 @@ export const ACTION_META: Record<
     label: "Watch dispute",
     tone: "secondary",
     title: "Start the DvmPollWorkflow to monitor the active dispute for this manual market.",
+  },
+  "uma-recover-funds": {
+    label: "Recover funds",
+    tone: "danger",
+    title:
+      "Trigger a RESOLVE workflow to settle stuck CTF funds after a first-dispute DVM reset. Only available when settle_status=settle_required.",
   },
 };
