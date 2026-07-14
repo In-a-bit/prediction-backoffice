@@ -628,6 +628,7 @@ export type SportResolutionMarket = {
   local_status: SportMarketStatus;
   updated_at: string;
   event_slug: string;
+  event_external_id: string | null;
 };
 
 export type SportResolutionList = {
@@ -747,6 +748,8 @@ export type ManualResolutionMarket = {
   outcome_key: string;
   local_status: ManualMarketLocalStatus;
   updated_at: string;
+  event_slug: string;
+  event_external_id: string | null;
 };
 
 export type ManualResolutionList = {
