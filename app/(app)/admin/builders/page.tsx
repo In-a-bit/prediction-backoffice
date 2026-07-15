@@ -47,6 +47,11 @@ export default function BuildersPage() {
   const [createdKey, setCreatedKey] = useState("");
   const [copied, setCopied] = useState(false);
 
+  // Per-row reveal state for the builders table's API key column. Keys are
+  // publishable but hidden by default so the operator reveals them deliberately.
+  const [revealedKeys, setRevealedKeys] = useState<Set<number>>(new Set());
+  const [copiedRowId, setCopiedRowId] = useState<number | null>(null);
+
   const offset = (page - 1) * perPage;
 
   const load = useCallback(async () => {
@@ -128,6 +133,29 @@ export default function BuildersPage() {
     await navigator.clipboard.writeText(key);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  function toggleReveal(id: number) {
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function copyRowKey(id: number, key: string) {
+    await navigator.clipboard.writeText(key);
+    setCopiedRowId(id);
+    setTimeout(() => setCopiedRowId((cur) => (cur === id ? null : cur)), 1500);
+  }
+
+  // Mask everything after the "pk_builder_" prefix so a hidden key reveals no
+  // usable material at a glance.
+  function maskKey(key: string) {
+    const prefix = "pk_builder_";
+    if (key.startsWith(prefix)) return `${prefix}${"•".repeat(12)}`;
+    return "•".repeat(16);
   }
 
   return (
@@ -231,19 +259,20 @@ export default function BuildersPage() {
                   <th className="py-2 pr-3">Name</th>
                   <th className="py-2 pr-3">Wallet type</th>
                   <th className="py-2 pr-3">Wallet public key</th>
+                  <th className="py-2 pr-3">API key</th>
                   <th className="py-2 pr-3">Created</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="py-6 text-foreground-muted">
+                    <td colSpan={5} className="py-6 text-foreground-muted">
                       Loading…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-6 text-foreground-muted">
+                    <td colSpan={5} className="py-6 text-foreground-muted">
                       No builders found.
                     </td>
                   </tr>
@@ -254,6 +283,35 @@ export default function BuildersPage() {
                       <td className="py-3 pr-3">{row.wallet_type}</td>
                       <td className="py-3 pr-3">
                         <code className="text-xs break-all">{row.wallet_public_key}</code>
+                      </td>
+                      <td className="py-3 pr-3">
+                        {row.api_public_key ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <code className="text-xs break-all">
+                              {revealedKeys.has(row.id)
+                                ? row.api_public_key
+                                : maskKey(row.api_public_key)}
+                            </code>
+                            <button
+                              type="button"
+                              className={buttonVariants.secondary}
+                              onClick={() => toggleReveal(row.id)}
+                            >
+                              {revealedKeys.has(row.id) ? "Hide" : "Reveal"}
+                            </button>
+                            {revealedKeys.has(row.id) && (
+                              <button
+                                type="button"
+                                className={buttonVariants.secondary}
+                                onClick={() => copyRowKey(row.id, row.api_public_key)}
+                              >
+                                {copiedRowId === row.id ? "Copied" : "Copy"}
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-foreground-muted">—</span>
+                        )}
                       </td>
                       <td className="py-3 pr-3 tabular-nums">
                         {new Date(row.created_at).toLocaleString()}

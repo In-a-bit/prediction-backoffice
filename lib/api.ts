@@ -927,6 +927,8 @@ export type BuilderRow = {
   name: string;
   wallet_type: string;
   wallet_public_key: string;
+  // Active publishable API key (pk_builder_…); "" when the builder has no active key.
+  api_public_key: string;
   created_at: string;
   updated_at: string;
 };
