@@ -922,6 +922,44 @@ export const liquidityProviders = {
     ),
 };
 
+export type BuilderRow = {
+  id: number;
+  name: string;
+  wallet_type: string;
+  wallet_public_key: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateBuilderInput = {
+  name: string;
+  wallet_public_key: string;
+  wallet_secret_key: string;
+  wallet_verification_key?: string;
+};
+
+export type CreateBuilderResult = { api_public_key: string };
+
+function builderQuery(params: { search?: string; limit?: number; offset?: number }) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  }
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export const builders = {
+  list: (params: { search?: string; limit?: number; offset?: number } = {}) =>
+    request<Paginated<BuilderRow>>(`/proxy/dpm/builders${builderQuery(params)}`),
+  create: (input: CreateBuilderInput) =>
+    request<CreateBuilderResult>("/proxy/dpm/builders", {
+      method: "POST",
+      // wallet_type is fixed for now; the dpm-api accepts it in the body.
+      body: { ...input, wallet_type: "privy_proxy" },
+    }),
+};
+
 // ---------------------------------------------------------------------------
 // Auth / access control — the current session, users, roles, the permission
 // catalog, and the audit log. Login/logout live in route handlers because they
