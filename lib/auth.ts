@@ -24,6 +24,8 @@ export type Permission =
   | "treasury.withdraw"
   | "liquidity_providers.read"
   | "liquidity_providers.manage"
+  | "builders.read"
+  | "builders.manage"
   | "users.read"
   | "users.manage"
   | "roles.manage"
