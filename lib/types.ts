@@ -640,6 +640,24 @@ export type SportResolutionList = {
   limit: number;
 };
 
+export type CryptoResolutionMarket = {
+  id: number;
+  crypto_event_id: number;
+  market_external_id: string | null;
+  market_slug: string;
+  local_status: string;
+  updated_at: string;
+  event_slug: string;
+  event_external_id: string | null;
+};
+
+export type CryptoResolutionList = {
+  items: CryptoResolutionMarket[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
 export type SportDecision = {
   id: number;
   sport_market_type_id: number;

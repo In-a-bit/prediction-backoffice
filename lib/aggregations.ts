@@ -49,12 +49,14 @@ const SPORT_CRYPTO_BUCKETS = new Set<LocalBucket>([
   "disputed", "resolving", "resolved", "refunded", "cancelled", "failed",
 ]);
 
-// Active (non-terminal) sport local_status values — used by the server-side
-// pagination logic on the resolutions page to decide which tabs hit the
-// dedicated sport-resolutions endpoint versus falling back to loadMarketRows.
+// All sport local_status values — used by the server-side pagination logic on
+// the resolutions page to decide which tabs hit the dedicated sport-resolutions
+// endpoint. Includes terminal statuses so resolved/refunded/cancelled/failed
+// sport markets are fetched and displayed correctly.
 export const SPORT_LOCAL_STATUSES = new Set<string>([
   "pending", "created", "proposing", "proposed",
   "reset", "disputed", "resolving",
+  "resolved", "refunded", "cancelled", "failed",
 ]);
 
 export function bucketLocal(

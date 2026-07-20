@@ -113,17 +113,27 @@ export default async function ResolutionsPage({
   const log: OperatorLogEntry[] =
     logResult.status === "fulfilled" ? logResult.value.data : [];
 
-  // Non-sport rows (crypto + manual) are still provided by loadMarketRows.
-  const nonSportRows = baseRows.filter((r) => r.source !== "sport" && r.local_status !== "pending");
-  const nonSportCounts = countBuckets(nonSportRows);
+  // Crypto markets come from loadMarketRows (no dedicated endpoint). Sport and
+  // manual have dedicated DB endpoints that are authoritative for counts and
+  // primary rows. We only use the base rows for crypto counting, but keep all
+  // non-pending base rows for display so any market not covered by the
+  // dedicated endpoints still appears (deduped below).
+  const cryptoBaseRows = baseRows.filter(
+    (r) => r.source !== "sport" && r.source !== "manual" && r.local_status !== "pending",
+  );
+  const cryptoCounts = countBuckets(cryptoBaseRows);
 
-  // Merge counts: sport + manual from dedicated DB endpoints, everything else from base rows.
+  // All base rows (including sport) used for supplemental display only.
+  const allBaseRows = baseRows.filter((r) => r.local_status !== "pending");
+
+  // Merge counts: dedicated DB endpoints are authoritative for sport/manual;
+  // cryptoCounts covers everything else (avoids double-counting).
   const counts: Record<TabKey, number> = {} as Record<TabKey, number>;
   for (const t of TAB_ORDER) {
     counts[t.key] =
       (sportCounts[t.key] ?? 0) +
       (manualCounts[t.key] ?? 0) +
-      (nonSportCounts[t.key] ?? 0);
+      (cryptoCounts[t.key] ?? 0);
   }
 
   // For the current tab: sport rows (paginated) + manual rows (DB) + matching
@@ -134,7 +144,7 @@ export default async function ResolutionsPage({
   const sportExtIds = new Set(allSportRows.map((r) => r.market_external_id));
   const manualExtIds = new Set(allManualRows.map((r) => r.market_external_id));
 
-  const allTabNonDbRows = filterFor(nonSportRows, tab).filter(
+  const allTabNonDbRows = filterFor(allBaseRows, tab).filter(
     (r) =>
       !sportExtIds.has(r.market_external_id) &&
       !manualExtIds.has(r.market_external_id),
@@ -143,12 +153,9 @@ export default async function ResolutionsPage({
   // Apply source filter server-side so the table receives only the relevant rows.
   const sportRows = !sourceFilter || sourceFilter === "sport" ? allSportRows : [];
   const manualRows = !sourceFilter || sourceFilter === "manual" ? allManualRows : [];
-  const tabNonDbRows =
-    sourceFilter && sourceFilter !== "sport" && sourceFilter !== "manual"
-      ? allTabNonDbRows.filter((r) => r.source === sourceFilter)
-      : sourceFilter === "sport" || sourceFilter === "manual"
-        ? []
-        : allTabNonDbRows;
+  const tabNonDbRows = sourceFilter
+    ? allTabNonDbRows.filter((r) => r.source === sourceFilter)
+    : allTabNonDbRows;
 
   const displayed = [...sportRows, ...manualRows, ...tabNonDbRows];
 
