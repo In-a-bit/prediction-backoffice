@@ -235,7 +235,7 @@ function preferRow(a: MarketRow, b: MarketRow): boolean {
 async function manualRows(planLimit: number): Promise<MarketRow[]> {
   let plans: DeployPlan[];
   try {
-    plans = (await manual.listDeployPlans({ limit: planLimit })).data;
+    plans = (await manual.listDeployPlans({ source: "manual", limit: planLimit })).data;
   } catch {
     return [];
   }

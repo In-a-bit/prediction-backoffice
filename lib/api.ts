@@ -259,7 +259,7 @@ export const manual = {
     request<DeployPlan>(
       `/manual/deploy-plans/${encodeURIComponent(externalId)}`,
     ),
-  listDeployPlans: (filters: { event_external_id?: string; status?: string; limit?: number; offset?: number } = {}) => {
+  listDeployPlans: (filters: { event_external_id?: string; status?: string; source?: string; limit?: number; offset?: number } = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
