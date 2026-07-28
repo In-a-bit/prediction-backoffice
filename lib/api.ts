@@ -328,6 +328,26 @@ export const manual = {
       `/manual/backoffice-markets/${id}/uma/watch-dispute`,
       { method: "POST", body: audit, authed: true },
     ),
+
+  // ----- External (non-operator) proposals on manual markets -----
+  // The running ManualMarketResolutionWorkflow polls operator_logs for the
+  // operator's call, so accept/dispute here is what steers the dispute-watch.
+  getExternalProposal: (id: number) =>
+    request<import("./types").ExternalProposalView>(
+      `/manual/backoffice-markets/${id}/external-proposal`,
+    ),
+  // Accept only records the decision — the workflow sleeps to expiration and
+  // resolves. Dispute is sent on-chain immediately by the backoffice.
+  acceptExternalProposal: (id: number, audit: { actor?: string } = {}) =>
+    request<{ decision: import("./types").ExternalProposalDecision }>(
+      `/manual/backoffice-markets/${id}/uma/accept-external-proposal`,
+      { method: "POST", body: audit, authed: true },
+    ),
+  disputeExternalProposal: (id: number, audit: { actor?: string } = {}) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/backoffice-markets/${id}/uma/dispute-external-proposal`,
+      { method: "POST", body: audit, authed: true },
+    ),
   triggerManualResolution: (manualMarketId: number, proposedPrice: string) =>
     request<{ workflow_id: string; run_id: string }>(
       `/manual/backoffice-markets/${manualMarketId}/trigger-resolution`,
@@ -634,7 +654,33 @@ async function dpmRequest<T>(
 
 export type DpmActionResult = { workflow_id?: string; status?: string };
 
+/** Query params for dpm-api GET /markets. All filters are AND-combined. */
+export type DpmListMarketsFilter = {
+  has_external_proposal?: boolean;
+  has_external_dispute?: boolean;
+  uma_resolution_status?: string;
+  limit?: number;
+  offset?: number;
+};
+
+function dpmMarketsQuery(filter: DpmListMarketsFilter): string {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value === undefined || value === null || value === "") continue;
+    q.set(key, String(value));
+  }
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
+}
+
 export const dpm = {
+  // --- Reads ---
+  // dpm-api owns the external-proposal flags (the monitor sets them), so this
+  // is the authoritative list of markets with non-operator UMA activity —
+  // unlike the per-row hydration in lib/market-rows.ts, it isn't capped.
+  listMarkets: (filter: DpmListMarketsFilter = {}) =>
+    dpmRequest<DpmMarket[]>(`/markets${dpmMarketsQuery(filter)}`, { auth: "app" }),
+
   // --- Resolution actions ---
   // Submit a UMA price proposal. proposed_price is a wei-encoded integer string;
   // typical values are "0" (NO), "1000000000000000000" (YES), or

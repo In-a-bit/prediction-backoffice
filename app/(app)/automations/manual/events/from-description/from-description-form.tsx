@@ -239,6 +239,7 @@ export function FromDescriptionForm() {
         event_external_id: event.external_id,
         event_id: event.id,
         note: `From AI description (event ${index + 1} of ${eventRows.length})`,
+        create_method: "ai_generated",
         markets: row.markets.map((m) =>
           marketEditorStateToPayload(m, {
             event_id: event.id,

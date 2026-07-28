@@ -80,6 +80,7 @@ export function MarketsForm({
             event_external_id: eventExternalId,
             event_id: eventId,
             note: `Manual markets for event ${eventExternalId}`,
+            create_method: "manually",
             markets,
           }),
         });

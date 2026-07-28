@@ -211,6 +211,10 @@ export function FromSlugForm() {
             event_external_id: event.external_id,
             event_id: event.id,
             note: `From Polymarket slug: ${slug}`,
+            // Marks the manual_market rows so the resolution workflow enriches
+            // them with the Polymarket standing when an external proposal
+            // arrives — the market slugs are Polymarket's, verbatim.
+            create_method: "polymarket_slug",
             markets: drafts.map((m) =>
               marketEditorStateToPayload(m, {
                 event_id: event.id,

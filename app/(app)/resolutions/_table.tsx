@@ -24,18 +24,75 @@ const SOURCE_OPTIONS = [
   { value: "manual", label: "Manual" },
 ];
 
+/**
+ * The tab listing markets that an outside party proposed or disputed. Not a
+ * local_status bucket — the rows come straight from the dpm-side external
+ * flags, so the key lives here next to the table that renders them.
+ */
+export const EXTERNAL_TAB = "external";
+export const EXTERNAL_TAB_LABEL = "External activity";
+
+/** "" means both flags — see filterExternalKind on the page. */
+export type ExternalKindFilter = "" | "proposal" | "dispute";
+
+/**
+ * How many of the tab's rows carry each flag, counted before the kind filter is
+ * applied. Shown in the filter labels so a dispute is visible without having to
+ * switch the filter to discover it. A market can carry both flags, so the two
+ * do not have to add up to `total`.
+ */
+export type ExternalKindCounts = {
+  total: number;
+  proposal: number;
+  dispute: number;
+};
+
+const EXTERNAL_KIND_LABEL: Record<ExternalKindFilter, string> = {
+  "": "Proposals & disputes",
+  proposal: "Proposals only",
+  dispute: "Disputes only",
+};
+
+const NO_EXTERNAL_ACTIVITY: ExternalKindCounts = {
+  total: 0,
+  proposal: 0,
+  dispute: 0,
+};
+
+function externalKindLabel(
+  kind: ExternalKindFilter,
+  counts: ExternalKindCounts,
+): string {
+  const count = kind === "" ? counts.total : counts[kind];
+  return `${EXTERNAL_KIND_LABEL[kind]} (${count})`;
+}
+
+function externalKindOptions(
+  counts: ExternalKindCounts,
+): { value: ExternalKindFilter; label: string }[] {
+  const kinds: ExternalKindFilter[] = ["", "proposal", "dispute"];
+  return kinds.map((kind) => ({
+    value: kind,
+    label: externalKindLabel(kind, counts),
+  }));
+}
+
 export function ResolutionsTable({
   rows,
   log,
   tab,
   initialQ = "",
   initialSource = "",
+  initialExternalKind = "",
+  externalCounts = NO_EXTERNAL_ACTIVITY,
 }: {
   rows: MarketRow[];
   log: OperatorLogEntry[];
   tab: string;
   initialQ?: string;
   initialSource?: string;
+  initialExternalKind?: ExternalKindFilter;
+  externalCounts?: ExternalKindCounts;
 }) {
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -61,9 +118,17 @@ export function ResolutionsTable({
   }
 
   function handleSource(v: string | undefined) {
+    navigateWithParam("source", v);
+  }
+
+  function handleExternalKind(v: string | undefined) {
+    navigateWithParam("external", v);
+  }
+
+  function navigateWithParam(name: string, value: string | undefined) {
     const sp = new URLSearchParams(window.location.search);
-    if (v) sp.set("source", v);
-    else sp.delete("source");
+    if (value) sp.set(name, value);
+    else sp.delete(name);
     sp.delete("page");
     router.push(`${window.location.pathname}?${sp.toString()}`);
   }
@@ -120,11 +185,14 @@ export function ResolutionsTable({
         accessorKey: "local_status",
         header: "Status",
         cell: ({ row }) => (
-          <LocalStatusChip
-            localStatus={row.original.local_status}
-            source={row.original.source}
-            umaStatus={row.original.uma_resolution_status}
-          />
+          <div className="flex flex-wrap items-center gap-1">
+            <LocalStatusChip
+              localStatus={row.original.local_status}
+              source={row.original.source}
+              umaStatus={row.original.uma_resolution_status}
+            />
+            <ExternalActivityChips row={row.original} />
+          </div>
         ),
       },
       {
@@ -172,10 +240,19 @@ export function ResolutionsTable({
             triggerLabel={initialSource ? `Source: ${capitalize(initialSource)}` : "Source: all"}
             clearable
           />
+          {tab === EXTERNAL_TAB ? (
+            <ComboSearch
+              options={externalKindOptions(externalCounts)}
+              value={initialExternalKind}
+              onChange={handleExternalKind}
+              ariaLabel="External activity filter"
+              triggerLabel={externalKindLabel(initialExternalKind, externalCounts)}
+              clearable
+            />
+          ) : null}
         </div>
         <span className="text-xs text-foreground-muted">
-          {rows.length} markets —{" "}
-          {LOCAL_BUCKET_LABEL[tab as LocalBucket] ?? tab}
+          {rows.length} markets — {tabLabel(tab)}
         </span>
       </div>
       <DataTable
@@ -201,6 +278,16 @@ function ActionButton({ row }: { row: MarketRow }) {
   let label = "Open →";
   let variant: keyof typeof buttonVariants = "secondary";
 
+  // An external proposal needs a human accept/dispute call before the
+  // dispute-watch deadline, which outranks whatever local_status suggests.
+  if (row.has_external_proposal || row.has_external_dispute) {
+    return (
+      <Link href={href} className={buttonVariants.danger}>
+        Review →
+      </Link>
+    );
+  }
+
   if (ls === "reset") {
     label = "Propose →";
     variant = "primary";
@@ -222,6 +309,22 @@ function ActionButton({ row }: { row: MarketRow }) {
     <Link href={href} className={buttonVariants[variant]}>
       {label}
     </Link>
+  );
+}
+
+// Flags a market that an outside party proposed or disputed. Rendered wherever
+// the flags are known — on the external tab they always are, on the others only
+// for rows the dpm hydration reached (null = unknown, so nothing is shown).
+function ExternalActivityChips({ row }: { row: MarketRow }) {
+  return (
+    <>
+      {row.has_external_proposal ? (
+        <Badge tone="warning">external proposal</Badge>
+      ) : null}
+      {row.has_external_dispute ? (
+        <Badge tone="danger">external dispute</Badge>
+      ) : null}
+    </>
   );
 }
 
@@ -365,4 +468,9 @@ function formatDate(iso: string): string {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function tabLabel(tab: string): string {
+  if (tab === EXTERNAL_TAB) return EXTERNAL_TAB_LABEL;
+  return LOCAL_BUCKET_LABEL[tab as LocalBucket] ?? tab;
 }

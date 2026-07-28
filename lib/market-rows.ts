@@ -46,6 +46,11 @@ export type MarketRow = {
   uma_resolution_status: string | null;
   uma_resolution_statuses: string[] | null;
   closed_time: string | null;
+  // Non-operator UMA activity, filled during dpm hydration. null means "not
+  // hydrated" — only the dedicated external view (lib/external-proposals.ts)
+  // reads these straight from dpm-api for every flagged market.
+  has_external_proposal: boolean | null;
+  has_external_dispute: boolean | null;
   lifecycle: Lifecycle;
   result: Result;
   sortKey: number;
@@ -216,6 +221,10 @@ async function hydrate(rows: MarketRow[], cap: number): Promise<MarketRow[]> {
         dpm?.uma_resolution_statuses ?? row.uma_resolution_statuses,
       closed_time:
         dpm?.closed && dpm?.end_date ? dpm.end_date : row.closed_time,
+      has_external_proposal:
+        dpm?.has_external_proposal ?? row.has_external_proposal,
+      has_external_dispute:
+        dpm?.has_external_dispute ?? row.has_external_dispute,
       event_title: event?.title?.trim() || event?.slug?.trim() || row.event_title,
       series_slug:
         (event?.metadata?.series_slug as string | undefined) ?? row.series_slug,
@@ -267,6 +276,8 @@ function rowFromManual(m: DeployPlanMarket, plan: DeployPlan): MarketRow {
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
+    has_external_proposal: null,
+    has_external_dispute: null,
     lifecycle,
     result,
     sortKey: new Date(m.updated_at).getTime(),
@@ -325,6 +336,8 @@ function rowFromCrypto(m: CryptoMarket, ev: CryptoEvent): MarketRow {
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
+    has_external_proposal: null,
+    has_external_dispute: null,
     lifecycle,
     result,
     sortKey: new Date(ev.slot_end ?? ev.slot_start ?? m.updated_at).getTime(),
@@ -432,6 +445,8 @@ function rowFromSport(m: SportMarket, ev: SportEvent): MarketRow {
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
+    has_external_proposal: null,
+    has_external_dispute: null,
     lifecycle,
     result,
     sortKey: new Date(ev.kickoff_at ?? m.updated_at).getTime(),

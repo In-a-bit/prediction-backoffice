@@ -370,6 +370,18 @@ export type DpmMarket = {
   uma_resolution_statuses?: string[] | null;
   liveness?: string | null;
 
+  // Non-operator UMA activity flagged by the monitor. Set when a propose /
+  // dispute tx arrives that has no matching outbound_transactions row; cleared
+  // once our own propose/dispute confirms, and on reset. The last_proposal_*
+  // fields snapshot the most recent on-chain proposal (any proposer), so the
+  // dispute deadline and the proposed answer are readable without the chain.
+  has_external_proposal?: boolean | null;
+  has_external_dispute?: boolean | null;
+  last_proposal_proposer?: string | null;
+  last_proposal_price?: string | null;
+  /** Unix seconds — when the proposal's liveness window closes. */
+  last_proposal_expiration?: number | null;
+
   paused?: boolean | null;
   flagged?: boolean | null;
 
@@ -450,7 +462,9 @@ export type OperatorLogEntry = {
     | "create_event_from_slug"
     | "create_event_from_description"
     | "create_market"
-    | "signal_market_balance";
+    | "signal_market_balance"
+    | "uma_accept_external_proposal"
+    | "uma_dispute_external_proposal";
   resource_type: "series" | "event" | "market";
   resource_external_id?: string;
   workflow_id?: string;
@@ -531,6 +545,14 @@ export type CreateDeployPlanInput = ManualAudit & {
   event_id?: number;
   note?: string;
   markets: MarketPayload[];
+  /**
+   * How the operator produced this batch. Stamped on every manual_market row
+   * the plan creates and read back by the resolution workflow — a
+   * `polymarket_slug` market with an external proposal is enriched with the
+   * Polymarket standing before the operator is asked to accept or dispute.
+   * One create flow per plan, hence plan-level rather than per-market.
+   */
+  create_method?: ManualMarketCreateMethod;
 };
 
 // ---------------------------------------------------------------------------
@@ -744,6 +766,18 @@ export type ManualMarketLocalStatus =
   | "cancelled"
   | "failed";
 
+/** Mirrors manual_markets.create_method in libs/db-backoffice. */
+export type ManualMarketCreateMethod =
+  | "manually"
+  | "polymarket_slug"
+  | "ai_generated";
+
+export const CREATE_METHOD_LABEL: Record<ManualMarketCreateMethod, string> = {
+  manually: "Manual",
+  polymarket_slug: "Polymarket slug",
+  ai_generated: "AI generated",
+};
+
 export type ManualMarket = {
   id: number;
   manual_event_id: number;
@@ -767,9 +801,53 @@ export type ManualResolutionMarket = {
   market_slug: string;
   outcome_key: string;
   local_status: ManualMarketLocalStatus;
+  create_method?: ManualMarketCreateMethod;
   updated_at: string;
   event_slug: string;
   event_external_id: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// External (non-operator) proposals. Mirrors
+// apps/backoffice/handlers/manual_external_proposal.go.
+// ---------------------------------------------------------------------------
+
+/** The operator's recorded call, absent while the decision is still open. */
+export type ExternalProposalDecision = "accepted" | "disputed";
+
+/** How Polymarket stands on the same question, cached for slug-sourced markets. */
+export type PolymarketReference = {
+  polymarket_slug: string;
+  polymarket_url?: string;
+  question?: string;
+  resolved: boolean;
+  resolved_outcome?: string;
+  fetched_at: string;
+};
+
+export type ExternalProposalView = {
+  market_id: number;
+  market_external_id: string;
+  create_method: ManualMarketCreateMethod;
+  local_status: ManualMarketLocalStatus;
+
+  has_external_proposal: boolean;
+  has_external_dispute: boolean;
+  uma_resolution_status?: string;
+  proposed_price?: string;
+  proposer?: string;
+  /** When the on-chain liveness window closes and the proposal settles. */
+  expires_at?: string;
+  /**
+   * The operator's real deadline: past this the automated dispute-watch acts
+   * on its own (disputing, since silence is treated as "unverified").
+   */
+  dispute_by?: string;
+
+  decision?: ExternalProposalDecision;
+  decided_at?: string;
+  decided_by?: string;
+  polymarket?: PolymarketReference;
 };
 
 export type ManualResolutionList = {

@@ -13,6 +13,10 @@ import {
   type LocalBucket,
 } from "@/lib/aggregations";
 import { manual, sports } from "@/lib/api";
+import {
+  loadExternalMarketRows,
+  type ExternalMarketRow,
+} from "@/lib/external-proposals";
 import { loadMarketRows, type MarketRow } from "@/lib/market-rows";
 import type {
   ManualResolutionMarket,
@@ -22,13 +26,23 @@ import type {
 import { deriveSportLifecycle } from "@/lib/market-lifecycle";
 import type { PlanSource } from "@/lib/source-from-plan";
 import { Pagination } from "./_pagination";
-import { ResolutionsTable } from "./_table";
+import {
+  EXTERNAL_TAB,
+  EXTERNAL_TAB_LABEL,
+  ResolutionsTable,
+  type ExternalKindCounts,
+  type ExternalKindFilter,
+} from "./_table";
 
 export const dynamic = "force-dynamic";
 
-type TabKey = LocalBucket;
+// The external tab sits outside the local_status buckets: a market that was
+// proposed by an outside party has no backoffice propose step, so its urgency
+// comes from the dpm-side external flags rather than from local_status.
+type TabKey = LocalBucket | typeof EXTERNAL_TAB;
 
 const TAB_ORDER: { key: TabKey; label: string }[] = [
+  { key: EXTERNAL_TAB,          label: EXTERNAL_TAB_LABEL },
   { key: "created",             label: "Created" },
   { key: "proposing",           label: "Proposing" },
   { key: "proposed",            label: "Proposed" },
@@ -54,7 +68,13 @@ function isTabKey(v: unknown): v is TabKey {
 export default async function ResolutionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; page?: string; q?: string; source?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    page?: string;
+    q?: string;
+    source?: string;
+    external?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const tab: TabKey = isTabKey(sp.tab) ? sp.tab : "created";
@@ -62,12 +82,14 @@ export default async function ResolutionsPage({
   const offset = (page - 1) * PER_PAGE;
   const q = sp.q?.trim() ?? "";
   const sourceFilter = sp.source ?? "";
+  const externalFilter = parseExternalKind(sp.external);
 
   // Sport tabs drive paginated queries against the dedicated endpoint.
   // Non-sport tabs (manual UMA fallbacks, terminal) use base rows only.
   const isSportTab = SPORT_LOCAL_STATUSES.has(tab);
+  const isExternalTab = tab === EXTERNAL_TAB;
 
-  const [sportCountsResult, sportPageResult, manualCountsResult, manualPageResult, baseRowsResult, logResult] =
+  const [sportCountsResult, sportPageResult, manualCountsResult, manualPageResult, baseRowsResult, logResult, externalResult] =
     await Promise.allSettled([
       sports.listResolutionMarketCounts(),
       isSportTab
@@ -78,7 +100,9 @@ export default async function ResolutionsPage({
           })
         : Promise.resolve({ items: [], total: 0, offset: 0, limit: PER_PAGE }),
       manual.listResolutionMarketCounts(),
-      manual.listResolutionMarkets({ localStatus: tab, limit: 200 }),
+      isExternalTab
+        ? Promise.resolve({ items: [], total: 0, offset: 0, limit: 200 })
+        : manual.listResolutionMarkets({ localStatus: tab, limit: 200 }),
       loadMarketRows({
         source: "all",
         hydrationCap: 60,
@@ -88,6 +112,9 @@ export default async function ResolutionsPage({
         q: q || undefined,
       }),
       manual.listOperatorLog({ limit: 200 }),
+      // Always loaded: the tab badge must show pending external proposals and
+      // disputes even while the operator is looking at another tab.
+      loadExternalMarketRows(),
     ]);
 
   const sportCounts =
@@ -112,6 +139,12 @@ export default async function ResolutionsPage({
       : baseRowsResult.value.error;
   const log: OperatorLogEntry[] =
     logResult.status === "fulfilled" ? logResult.value.data : [];
+  const externalRows: ExternalMarketRow[] =
+    externalResult.status === "fulfilled" ? externalResult.value.rows : [];
+  const externalError =
+    externalResult.status === "fulfilled"
+      ? externalResult.value.error
+      : String(externalResult.reason);
 
   // Crypto markets come from loadMarketRows (no dedicated endpoint). Sport and
   // manual have dedicated DB endpoints that are authoritative for counts and
@@ -135,6 +168,10 @@ export default async function ResolutionsPage({
       (manualCounts[t.key] ?? 0) +
       (cryptoCounts[t.key] ?? 0);
   }
+  // dpm-api is authoritative for the external flags, so this count replaces
+  // rather than adds to the per-source ones.
+  const externalCounts = countExternalKinds(externalRows);
+  counts[EXTERNAL_TAB] = externalCounts.total;
 
   // For the current tab: sport rows (paginated) + manual rows (DB) + matching
   // non-DB rows from loadMarketRows. Deduplicate by external_id throughout.
@@ -144,11 +181,13 @@ export default async function ResolutionsPage({
   const sportExtIds = new Set(allSportRows.map((r) => r.market_external_id));
   const manualExtIds = new Set(allManualRows.map((r) => r.market_external_id));
 
-  const allTabNonDbRows = filterFor(allBaseRows, tab).filter(
-    (r) =>
-      !sportExtIds.has(r.market_external_id) &&
-      !manualExtIds.has(r.market_external_id),
-  );
+  const allTabNonDbRows = isExternalTab
+    ? []
+    : filterFor(allBaseRows, tab).filter(
+        (r) =>
+          !sportExtIds.has(r.market_external_id) &&
+          !manualExtIds.has(r.market_external_id),
+      );
 
   // Apply source filter server-side so the table receives only the relevant rows.
   const sportRows = !sourceFilter || sourceFilter === "sport" ? allSportRows : [];
@@ -157,7 +196,9 @@ export default async function ResolutionsPage({
     ? allTabNonDbRows.filter((r) => r.source === sourceFilter)
     : allTabNonDbRows;
 
-  const displayed = [...sportRows, ...manualRows, ...tabNonDbRows];
+  const displayed = isExternalTab
+    ? applySourceFilter(filterExternalKind(externalRows, externalFilter), sourceFilter)
+    : [...sportRows, ...manualRows, ...tabNonDbRows];
 
   // totalPages must reflect the filtered row count. If the source filter
   // narrows to manual/crypto, sport pagination is irrelevant (all rows are
@@ -182,10 +223,20 @@ export default async function ResolutionsPage({
     <div className="space-y-6">
       <PageHeader
         title="Resolution Manager"
-        description="All sport and crypto markets by their current local_status, plus manual markets by UMA resolution state."
+        description="All sport and crypto markets by their current local_status, manual markets by UMA resolution state, and every market carrying an external proposal or dispute."
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Card>
+          <CardBody>
+            <Stat
+              label="External"
+              value={externalCounts.total}
+              tone={externalCounts.total > 0 ? "danger" : "neutral"}
+              hint={`${externalCounts.proposal} proposed, ${externalCounts.dispute} disputed by an outside party`}
+            />
+          </CardBody>
+        </Card>
         <Card>
           <CardBody>
             <Stat
@@ -242,6 +293,12 @@ export default async function ResolutionsPage({
         <ErrorMessage>Source unreachable: {error}</ErrorMessage>
       ) : null}
 
+      {externalError ? (
+        <ErrorMessage>
+          External proposals and disputes unavailable: {externalError}
+        </ErrorMessage>
+      ) : null}
+
       <Card>
         <CardBody className="space-y-4">
           <ResolutionsTable
@@ -250,6 +307,8 @@ export default async function ResolutionsPage({
             tab={tab}
             initialQ={q}
             initialSource={sourceFilter}
+            initialExternalKind={externalFilter}
+            externalCounts={externalCounts}
           />
           {isSportTab && totalPages > 1 && (!sourceFilter || sourceFilter === "sport") && (
             <Pagination
@@ -297,6 +356,8 @@ function rowFromSportResolution(m: SportResolutionMarket): MarketRow {
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
+    has_external_proposal: null,
+    has_external_dispute: null,
     lifecycle: deriveSportLifecycle(sportMarket),
     result: { kind: "pending", label: "Pending" },
     sortKey: new Date(m.updated_at).getTime(),
@@ -321,6 +382,8 @@ function rowFromManualResolution(m: ManualResolutionMarket): MarketRow {
     uma_resolution_status: null,
     uma_resolution_statuses: null,
     closed_time: null,
+    has_external_proposal: null,
+    has_external_dispute: null,
     lifecycle: { stages: [
       { key: "created" as const, status: m.local_status === "created" || m.local_status === "proposed" || m.local_status === "resolved" ? "done" as const : "pending" as const },
       { key: "proposed" as const, status: m.local_status === "proposed" || m.local_status === "resolved" ? "done" as const : "pending" as const },
@@ -328,6 +391,36 @@ function rowFromManualResolution(m: ManualResolutionMarket): MarketRow {
     ] },
     result: { kind: "pending" as const, label: "Pending" },
     sortKey: new Date(m.updated_at).getTime(),
+  };
+}
+
+function applySourceFilter(rows: MarketRow[], sourceFilter: string): MarketRow[] {
+  if (!sourceFilter) return rows;
+  return rows.filter((r) => r.source === sourceFilter);
+}
+
+function parseExternalKind(value: string | undefined): ExternalKindFilter {
+  return value === "proposal" || value === "dispute" ? value : "";
+}
+
+function filterExternalKind(
+  rows: ExternalMarketRow[],
+  kind: ExternalKindFilter,
+): ExternalMarketRow[] {
+  if (kind === "proposal") return rows.filter((r) => r.has_external_proposal);
+  if (kind === "dispute") return rows.filter((r) => r.has_external_dispute);
+  return rows;
+}
+
+// Counted on the unfiltered rows: the filter labels have to state how many
+// disputes exist even while the operator is looking at proposals only. A market
+// disputed by an outside party after our own proposal carries only the dispute
+// flag, so the two kinds are counted independently.
+function countExternalKinds(rows: ExternalMarketRow[]): ExternalKindCounts {
+  return {
+    total: rows.length,
+    proposal: rows.filter((r) => r.has_external_proposal).length,
+    dispute: rows.filter((r) => r.has_external_dispute).length,
   };
 }
 

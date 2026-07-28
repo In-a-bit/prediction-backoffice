@@ -13,6 +13,7 @@ import type { PlanSource } from "@/lib/source-from-plan";
 import type {
   DeployPlanMarket,
   DpmMarket,
+  ExternalProposalDecision,
   ManualMarketLocalStatus,
   MarketStatus,
   SportMarketStatus,
@@ -36,6 +37,7 @@ type Ctx = {
   sportLocalStatus?: SportMarketStatus;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
+  externalProposalDecision?: ExternalProposalDecision;
   marketExternalId: string;
 };
 
@@ -110,6 +112,10 @@ const ACTIONS_WITH_FORM = new Set<MarketActionKey>([
   "uma-propose",
   "uma-resolve-manually",
   "ctf-oracle-report-payouts",
+  // Disputing spends a bond and resets or escalates the question on-chain, so
+  // it gets a confirmation step. Accepting is reversible until dispute_by and
+  // fires inline.
+  "uma-dispute-external-proposal",
 ]);
 
 // One-click actions — fire immediately with no parameters.
@@ -192,6 +198,8 @@ function ActionForm({
       return <PayoutsForm ctx={ctx} onClose={onClose} kind="uma-manual" />;
     case "ctf-oracle-report-payouts":
       return <PayoutsForm ctx={ctx} onClose={onClose} kind="ctf-oracle" />;
+    case "uma-dispute-external-proposal":
+      return <DisputeExternalProposalForm ctx={ctx} onClose={onClose} />;
     default:
       return null;
   }
@@ -310,6 +318,73 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
           className={buttonVariants.primary}
         >
           {isPending ? "Submitting…" : "Submit"}
+        </button>
+      </div>
+    </FormCard>
+  );
+}
+
+function DisputeExternalProposalForm({
+  ctx,
+  onClose,
+}: {
+  ctx: Ctx;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [confirm, setConfirm] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const ready = confirm.trim().toUpperCase() === "DISPUTE";
+
+  function submit() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/dispute-external-proposal`,
+          { method: "POST" },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
+        }
+        router.refresh();
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    });
+  }
+
+  return (
+    <FormCard title="UMA · Dispute external proposal" tone="danger">
+      <p className="text-[11px] text-foreground-muted leading-snug">
+        Broadcasts <code>disputePriceFor</code> from the UMA_ADMIN wallet and
+        posts the dispute bond. The first dispute resets the question so a new
+        price can be proposed; a second sends it to the UMA DVM for a vote.
+      </p>
+      <label className="flex flex-col gap-1 text-[11px]">
+        Type <strong>DISPUTE</strong> to confirm
+        <input
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs font-mono"
+        />
+      </label>
+      {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} className={buttonVariants.ghost}>
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!ready || isPending}
+          className={buttonVariants.danger}
+        >
+          {isPending ? "Disputing…" : "Dispute"}
         </button>
       </div>
     </FormCard>
@@ -443,6 +518,9 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
     case "manual-watch-dispute":
       if (ctx.manualMarketId === undefined) return null;
       return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/watch-dispute`;
+    case "uma-accept-external-proposal":
+      if (ctx.manualMarketId === undefined) return null;
+      return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/accept-external-proposal`;
     case "uma-resolve":
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/resolve`;
     case "uma-reset":
@@ -462,6 +540,7 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
     case "uma-propose":
     case "uma-resolve-manually":
     case "ctf-oracle-report-payouts":
+    case "uma-dispute-external-proposal":
       // Multi-step — handled by ActionForm.
       return null;
   }

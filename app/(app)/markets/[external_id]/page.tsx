@@ -21,6 +21,7 @@ import type {
   CryptoMarket,
   DeployPlan,
   DeployPlanMarket,
+  ExternalProposalView,
   ManualMarket,
   ManualMarketLocalStatus,
   MarketOutcome,
@@ -29,6 +30,7 @@ import type {
   SportMarket,
 } from "@/lib/types";
 
+import { ExternalProposalCard } from "./external-proposal-card";
 import { MarketActionsPanel } from "./market-actions-panel";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +47,11 @@ type SearchParams = {
 function parseSource(value: string | undefined): PlanSource | undefined {
   if (value === "manual" || value === "crypto" || value === "sport") return value;
   return undefined;
+}
+
+function hasExternalActivity(verdict: MarketStatusVerdict | null): boolean {
+  const market = verdict?.market;
+  return market?.has_external_proposal === true || market?.has_external_dispute === true;
 }
 
 export default async function MarketDetailPage({
@@ -167,6 +174,17 @@ export default async function MarketDetailPage({
     };
   }
 
+  // Only fetched once we know there is something to decide: the view joins
+  // dpm-side proposal state, the operator's recorded call, and the cached
+  // Polymarket reference, and needs the backoffice manual_market id resolved
+  // above.
+  let externalProposal: ExternalProposalView | null = null;
+  if (hasExternalActivity(verdict) && resolvedManualMarketId !== undefined) {
+    externalProposal = await manual
+      .getExternalProposal(resolvedManualMarketId)
+      .catch(() => null);
+  }
+
   if (sportFindRes) {
     const eventId = extractParentEventId(sportFindRes);
     if (eventId !== undefined) {
@@ -213,6 +231,10 @@ export default async function MarketDetailPage({
       {/* Two-column layout on wide screens: info on the left, actions on the right. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {externalProposal ? (
+            <ExternalProposalCard view={externalProposal} />
+          ) : null}
+
           <Card>
             <CardHeader>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">
@@ -314,6 +336,7 @@ export default async function MarketDetailPage({
                   sportLocalStatus={sportMarket?.local_status}
                   manualMarketId={resolvedManualMarketId}
                   manualLocalStatus={manualMarket?.local_status}
+                  externalProposalDecision={externalProposal?.decision}
                   marketExternalId={external_id}
                 />
               )}

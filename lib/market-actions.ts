@@ -1,6 +1,7 @@
 import type {
   DeployPlanMarket,
   DpmMarket,
+  ExternalProposalDecision,
   ManualMarketLocalStatus,
   MarketStatus,
   SportMarketStatus,
@@ -32,6 +33,12 @@ export type MarketActionKey =
   // Manual-market-specific actions — wired through the backoffice's
   // /manual/backoffice-markets endpoint (requires a manual_market DB row).
   | "manual-watch-dispute"
+  // An outside party proposed a price on one of our markets. The operator's
+  // call is recorded in operator_logs and read by the running
+  // ManualMarketResolutionWorkflow's dispute-watch; staying silent past
+  // dispute_by makes the workflow dispute on its own.
+  | "uma-accept-external-proposal"
+  | "uma-dispute-external-proposal"
   // Recover stuck CTF funds after a first-dispute DVM reset. Visible when
   // settle_status === "settle_required" and a backoffice market ID is present
   // (sport or manual only — crypto markets have no backoffice row).
@@ -47,6 +54,9 @@ export type MarketActionCtx = {
   sportLocalStatus?: SportMarketStatus;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
+  // The operator's already-recorded call on the current external proposal.
+  // Present means the decision is made and the buttons must not offer it again.
+  externalProposalDecision?: ExternalProposalDecision;
 };
 
 // ---------------------------------------------------------------------------
@@ -121,6 +131,16 @@ function ctfIsTerminal(d?: DpmMarket): boolean {
   return !!(d?.closed || d?.archived);
 }
 
+// A decision is open only while the proposal is still live on-chain (PROPOSED
+// with the external flag set) and the operator hasn't recorded one. Mirrors the
+// guard in apps/backoffice/handlers/manual_external_proposal.go, so we never
+// offer a call the backoffice would reject.
+function awaitsExternalProposalDecision(ctx: MarketActionCtx): boolean {
+  if (ctx.externalProposalDecision) return false;
+  if (!ctx.dpmMarket?.has_external_proposal) return false;
+  return umaStatus(ctx.dpmMarket) === "PROPOSED";
+}
+
 // ---------------------------------------------------------------------------
 // Visibility
 // ---------------------------------------------------------------------------
@@ -139,6 +159,12 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   if (ctx.source === "manual" && ctx.manualMarketId !== undefined) {
     if (ctx.manualLocalStatus === "disputed") {
       actions.push("manual-watch-dispute");
+    }
+    if (awaitsExternalProposalDecision(ctx)) {
+      actions.push(
+        "uma-accept-external-proposal",
+        "uma-dispute-external-proposal",
+      );
     }
   }
 
@@ -293,6 +319,18 @@ export const ACTION_META: Record<
     label: "Watch dispute",
     tone: "secondary",
     title: "Start the DvmPollWorkflow to monitor the active dispute for this manual market.",
+  },
+  "uma-accept-external-proposal": {
+    label: "Accept proposal",
+    tone: "primary",
+    title:
+      "Let the outside proposal settle. Records the decision; the resolution workflow then waits out liveness and resolves the market.",
+  },
+  "uma-dispute-external-proposal": {
+    label: "Dispute proposal",
+    tone: "danger",
+    title:
+      "Challenge the outside proposal on-chain now, from the UMA_ADMIN wallet. The first dispute resets the question; the second sends it to the DVM.",
   },
   "uma-recover-funds": {
     label: "Recover funds",
