@@ -6,16 +6,16 @@ import type {
   CryptoEvent,
   CryptoMarket,
   DeployPlanMarket,
+  DpmMarket,
   MarketStatusVerdict,
   SportDecision,
   SportEvent,
   SportMarket,
-  SportMarketStatus,
   CryptoEventMarketStatus,
 } from "@/lib/types";
 import type { PlanSource } from "@/lib/source-from-plan";
 
-export type LifecycleStageKey = "created" | "proposed" | "resolved";
+export type LifecycleStageKey = "created" | "proposed" | "disputed" | "resolved";
 
 export type LifecycleStageStatus =
   | "pending"
@@ -27,6 +27,14 @@ export type LifecycleStageStatus =
 export type LifecycleStage = {
   key: LifecycleStageKey;
   status: LifecycleStageStatus;
+  // Set to "external" only when we can positively attribute this round to a
+  // non-operator party (the has_external_* flag is set). Left unset otherwise:
+  // absence does NOT mean "operator" — the system itself disputes bad external
+  // proposals, so a non-external round could be either. Best-effort: only the
+  // most recent round carries the flag, so earlier rounds are always unset.
+  origin?: "external";
+  // Short annotation shown under the dot, e.g. the proposed answer.
+  detail?: string;
 };
 
 export type Lifecycle = {
@@ -270,6 +278,86 @@ export function deriveManualResult(): Result {
   // uma_resolution_status but the operator already sees that in the lifecycle
   // stepper; emitting "na" keeps the result chip off the UI for these rows.
   return { kind: "na", label: "" };
+}
+
+// ---------------------------------------------------------------------------
+// UMA on-chain timeline
+// ---------------------------------------------------------------------------
+
+const UMA_RESOLVED_STATUSES = new Set(["RESOLVED", "MANUALLY_RESOLVED"]);
+
+// Builds the full UMA lifecycle from the append-only uma_resolution_statuses
+// history — dpm-api pushes PROPOSED on every proposal and DISPUTED on every
+// dispute (libs/txprocessor/handler_oracle.go), so a re-proposal after a
+// dispute shows every round rather than collapsing to a single "proposed" step.
+//
+// Known limits: the array carries no timestamps and no per-round attribution,
+// so only the most recent propose/dispute can be tagged external (from the
+// has_external_* flags, which reflect the current lingering activity). Full
+// fidelity would need a dedicated dpm-api endpoint over the on-chain event
+// tables.
+export function deriveUmaTimeline(market: DpmMarket): Lifecycle {
+  const history = market.uma_resolution_statuses ?? [];
+  const current = (market.uma_resolution_status ?? "").toUpperCase();
+
+  const lastProposedIdx = lastIndexOfStatus(history, "PROPOSED");
+  const lastDisputedIdx = lastIndexOfStatus(history, "DISPUTED");
+
+  const stages: LifecycleStage[] = [{ key: "created", status: "done" }];
+  history.forEach((raw, i) => {
+    const entry = raw.toUpperCase();
+    if (entry === "PROPOSED") {
+      stages.push(proposedStage(i === lastProposedIdx, current, market));
+    } else if (entry === "DISPUTED") {
+      stages.push(disputedStage(i === lastDisputedIdx, market));
+    }
+  });
+  stages.push(resolvedStage(current));
+
+  return { stages };
+}
+
+function proposedStage(isLast: boolean, current: string, market: DpmMarket): LifecycleStage {
+  const stillLive = isLast && current === "PROPOSED";
+  const stage: LifecycleStage = {
+    key: "proposed",
+    status: stillLive ? "active" : "done",
+  };
+  if (isLast && market.has_external_proposal) stage.origin = "external";
+  if (isLast) {
+    const answer = proposedPriceLabel(market.last_proposal_price);
+    if (answer) stage.detail = answer;
+  }
+  return stage;
+}
+
+function disputedStage(isLast: boolean, market: DpmMarket): LifecycleStage {
+  // A dispute is a completed on-chain event, not a process failure — mark it
+  // "done". The stepper renders the disputed key in a danger tone on its own,
+  // so it still reads as a red flag without labelling the round "failed".
+  const stage: LifecycleStage = { key: "disputed", status: "done" };
+  if (isLast && market.has_external_dispute) stage.origin = "external";
+  return stage;
+}
+
+function resolvedStage(current: string): LifecycleStage {
+  if (UMA_RESOLVED_STATUSES.has(current)) return { key: "resolved", status: "done" };
+  if (current === "RESOLVING") return { key: "resolved", status: "active" };
+  return { key: "resolved", status: "pending" };
+}
+
+function lastIndexOfStatus(history: string[], target: string): number {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].toUpperCase() === target) return i;
+  }
+  return -1;
+}
+
+function proposedPriceLabel(price?: string | null): string | undefined {
+  if (price === PRICE_YES) return "YES";
+  if (price === PRICE_NO) return "NO";
+  if (price === PRICE_5050) return "50/50";
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------

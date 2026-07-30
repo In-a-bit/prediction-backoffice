@@ -14,7 +14,7 @@ import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
 import { MarketOutcomeCard } from "@/components/market-outcome";
 import { manual, sports, crypto as cryptoApi } from "@/lib/api";
 import { formatDateTimeFull } from "@/lib/format";
-import { derive } from "@/lib/market-lifecycle";
+import { derive, deriveUmaTimeline } from "@/lib/market-lifecycle";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   CryptoEvent,
@@ -433,6 +433,15 @@ function LifecycleHeader({
         ? derive({ source: "crypto", cryptoMarket, cryptoEvent, verdict: verdict ?? undefined })
         : derive({ source: "manual", planMarket, verdict: verdict ?? undefined });
 
+  // Prefer the on-chain UMA history when present: it captures repeated propose
+  // rounds, disputes, and external activity that the source-specific 3-stage
+  // tables collapse into a single step. Falls back to the derived lifecycle.
+  const umaHistory = verdict?.market?.uma_resolution_statuses;
+  const lifecycle =
+    verdict?.market && umaHistory && umaHistory.length > 0
+      ? deriveUmaTimeline(verdict.market)
+      : derived.lifecycle;
+
   // For sport and manual markets, use local_status as the authoritative source;
   // for plain manual markets fall back to uma_resolution_status.
   const sportLocalStatus = sportMarket?.local_status;
@@ -530,7 +539,7 @@ function LifecycleHeader({
         )}
 
         <div className="mt-4">
-          <LifecycleStepper lifecycle={derived.lifecycle} variant="full" />
+          <LifecycleStepper lifecycle={lifecycle} variant="full" />
         </div>
       </div>
 

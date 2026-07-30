@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 
 import { Badge, ErrorMessage, buttonVariants } from "@/components/ui";
 import {
@@ -47,6 +47,10 @@ type Ctx = {
 export function MarketActionsPanel(props: Ctx) {
   const actions = getAvailableActions(props);
   const [openForm, setOpenForm] = useState<MarketActionKey | null>(null);
+  // A submit anywhere in the panel (an inline action or the open form) greys
+  // out every action button, so a slow accept can't be double-fired and the
+  // Accept/Dispute pair reads as a single busy control.
+  const [busy, setBusy] = useState(false);
 
   if (actions.length === 0) {
     return (
@@ -69,6 +73,7 @@ export function MarketActionsPanel(props: Ctx) {
                 key={key}
                 type="button"
                 onClick={() => setOpenForm(isOpen ? null : key)}
+                disabled={busy}
                 className={buttonClass}
                 title={meta.title}
               >
@@ -82,6 +87,8 @@ export function MarketActionsPanel(props: Ctx) {
               actionKey={key}
               ctx={props}
               buttonClass={buttonClass}
+              disabled={busy}
+              onBusyChange={setBusy}
             />
           );
         })}
@@ -92,6 +99,7 @@ export function MarketActionsPanel(props: Ctx) {
           actionKey={openForm}
           ctx={props}
           onClose={() => setOpenForm(null)}
+          onBusyChange={setBusy}
         />
       ) : null}
     </div>
@@ -123,16 +131,26 @@ function InlineAction({
   actionKey,
   ctx,
   buttonClass,
+  disabled,
+  onBusyChange,
 }: {
   actionKey: MarketActionKey;
   ctx: Ctx;
   buttonClass: string;
+  disabled?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const meta = ACTION_META[actionKey];
+
+  // isPending stays true until the router.refresh() started below finishes its
+  // server round-trip, so this reports "still updating" for the whole wait.
+  useEffect(() => {
+    onBusyChange?.(isPending);
+  }, [isPending, onBusyChange]);
 
   function fire() {
     setError(null);
@@ -165,7 +183,7 @@ function InlineAction({
       <button
         type="button"
         onClick={fire}
-        disabled={isPending}
+        disabled={isPending || disabled}
         className={buttonClass}
         title={meta.title}
       >
@@ -186,23 +204,60 @@ function ActionForm({
   actionKey,
   ctx,
   onClose,
+  onBusyChange,
 }: {
   actionKey: MarketActionKey;
   ctx: Ctx;
   onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   switch (actionKey) {
     case "uma-propose":
-      return <UmaProposeForm ctx={ctx} onClose={onClose} />;
+      return <UmaProposeForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
     case "uma-resolve-manually":
-      return <PayoutsForm ctx={ctx} onClose={onClose} kind="uma-manual" />;
+      return <PayoutsForm ctx={ctx} onClose={onClose} kind="uma-manual" onBusyChange={onBusyChange} />;
     case "ctf-oracle-report-payouts":
-      return <PayoutsForm ctx={ctx} onClose={onClose} kind="ctf-oracle" />;
+      return <PayoutsForm ctx={ctx} onClose={onClose} kind="ctf-oracle" onBusyChange={onBusyChange} />;
     case "uma-dispute-external-proposal":
-      return <DisputeExternalProposalForm ctx={ctx} onClose={onClose} />;
+      return <DisputeExternalProposalForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
     default:
       return null;
   }
+}
+
+// Shared "submitted, waiting for the server refresh" plumbing for the popover
+// forms. Once a POST succeeds the form stays mounted showing `busyLabel` while
+// router.refresh() re-runs the page's server fetches, then closes itself. This
+// is what turns a silent dispute into visible feedback: the button greys out
+// and the row updates in place instead of only after a manual reload.
+function useFormSubmit(onClose: () => void, onBusyChange?: (busy: boolean) => void) {
+  const [isPending, startTransition] = useTransition();
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onBusyChange?.(isPending);
+  }, [isPending, onBusyChange]);
+
+  // Close only after the refresh settles (submitted && !isPending), so the
+  // operator sees the "updating" state for the whole round-trip.
+  useEffect(() => {
+    if (submitted && !isPending) onClose();
+  }, [submitted, isPending, onClose]);
+
+  function run(request: () => Promise<void>) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await request();
+        setSubmitted(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    });
+  }
+
+  return { isPending, submitted, error, setError, run };
 }
 
 function FormCard({ title, tone, children }: { title: string; tone: "neutral" | "danger" | "success" | "warning"; children: ReactNode }) {
@@ -224,18 +279,24 @@ function FormCard({ title, tone, children }: { title: string; tone: "neutral" | 
   );
 }
 
-function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
+function UmaProposeForm({
+  ctx,
+  onClose,
+  onBusyChange,
+}: {
+  ctx: Ctx;
+  onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const router = useRouter();
   const isSport = ctx.sportMarketId !== undefined;
   const isManualWithBackofficeId = ctx.manualMarketId !== undefined;
   const usesWorkflow = isSport || isManualWithBackofficeId;
   const [proposer, setProposer] = useState("");
   const [price, setPrice] = useState("");
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { isPending, submitted, error, setError, run } = useFormSubmit(onClose, onBusyChange);
 
   function submit() {
-    setError(null);
     if (!price) {
       setError("price is required");
       return;
@@ -244,32 +305,27 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
       setError("proposer and price are both required");
       return;
     }
-    startTransition(async () => {
-      try {
-        // Sport / manual-with-backoffice-id: start the SportsMarketResolutionWorkflow
-        // which owns local_status transitions. Plain manual markets: call DPM directly.
-        const url = isSport
-          ? `/api/sports/markets/${ctx.sportMarketId}/trigger-resolution`
-          : isManualWithBackofficeId
-            ? `/api/manual/backoffice-markets/${ctx.manualMarketId}/trigger-resolution`
-            : `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/propose`;
-        const body = usesWorkflow
-          ? JSON.stringify({ proposed_price: price })
-          : JSON.stringify({ proposer_address: proposer, proposed_price: price });
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
-        }
-        router.refresh();
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+    run(async () => {
+      // Sport / manual-with-backoffice-id: start the SportsMarketResolutionWorkflow
+      // which owns local_status transitions. Plain manual markets: call DPM directly.
+      const url = isSport
+        ? `/api/sports/markets/${ctx.sportMarketId}/trigger-resolution`
+        : isManualWithBackofficeId
+          ? `/api/manual/backoffice-markets/${ctx.manualMarketId}/trigger-resolution`
+          : `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/propose`;
+      const body = usesWorkflow
+        ? JSON.stringify({ proposed_price: price })
+        : JSON.stringify({ proposer_address: proposer, proposed_price: price });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
       }
+      router.refresh();
     });
   }
 
@@ -307,54 +363,57 @@ function UmaProposeForm({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
         </select>
       </label>
       {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+      <UpdatingNote show={submitted}>Proposal submitted — updating…</UpdatingNote>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className={buttonVariants.ghost}>
+        <button type="button" onClick={onClose} disabled={isPending} className={buttonVariants.ghost}>
           Close
         </button>
         <button
           type="button"
           onClick={submit}
-          disabled={isPending || (!usesWorkflow && !proposer) || !price}
+          disabled={isPending || submitted || (!usesWorkflow && !proposer) || !price}
           className={buttonVariants.primary}
         >
-          {isPending ? "Submitting…" : "Submit"}
+          {submitted ? "Updating…" : isPending ? "Submitting…" : "Submit"}
         </button>
       </div>
     </FormCard>
   );
 }
 
+// The success line the popover forms show after a POST lands, while the page's
+// server components re-fetch. Kept mounted until useFormSubmit closes the form.
+function UpdatingNote({ show, children }: { show: boolean; children: ReactNode }) {
+  if (!show) return null;
+  return <p className="text-[11px] text-success">{children}</p>;
+}
+
 function DisputeExternalProposalForm({
   ctx,
   onClose,
+  onBusyChange,
 }: {
   ctx: Ctx;
   onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const router = useRouter();
   const [confirm, setConfirm] = useState("");
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { isPending, submitted, error, run } = useFormSubmit(onClose, onBusyChange);
 
   const ready = confirm.trim().toUpperCase() === "DISPUTE";
 
   function submit() {
-    setError(null);
-    startTransition(async () => {
-      try {
-        const res = await fetch(
-          `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/dispute-external-proposal`,
-          { method: "POST" },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
-        }
-        router.refresh();
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+    run(async () => {
+      const res = await fetch(
+        `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/dispute-external-proposal`,
+        { method: "POST" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
       }
+      router.refresh();
     });
   }
 
@@ -374,17 +433,18 @@ function DisputeExternalProposalForm({
         />
       </label>
       {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+      <UpdatingNote show={submitted}>Dispute sent — updating…</UpdatingNote>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className={buttonVariants.ghost}>
+        <button type="button" onClick={onClose} disabled={isPending} className={buttonVariants.ghost}>
           Close
         </button>
         <button
           type="button"
           onClick={submit}
-          disabled={!ready || isPending}
+          disabled={!ready || isPending || submitted}
           className={buttonVariants.danger}
         >
-          {isPending ? "Disputing…" : "Dispute"}
+          {submitted ? "Updating…" : isPending ? "Disputing…" : "Dispute"}
         </button>
       </div>
     </FormCard>
@@ -395,23 +455,23 @@ function PayoutsForm({
   ctx,
   onClose,
   kind,
+  onBusyChange,
 }: {
   ctx: Ctx;
   onClose: () => void;
   kind: "uma-manual" | "ctf-oracle";
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const router = useRouter();
   const [outcome, setOutcome] = useState<"yes" | "no" | "split">("yes");
   const [confirm, setConfirm] = useState("");
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { isPending, submitted, error, run } = useFormSubmit(onClose, onBusyChange);
 
   const needsConfirm = kind === "uma-manual";
   const ready =
     !!outcome && (!needsConfirm || confirm.trim().toUpperCase() === "RESOLVE");
 
   function submit() {
-    setError(null);
     // CTF reportPayouts uses a pure ratio: [1,0]=YES wins, [0,1]=NO wins, [1,1]=50/50.
     // The denominator is the sum, so each numerator/denominator = 100%, 0%, or 50%.
     // Absolute values don't matter — only the ratio does.
@@ -425,22 +485,17 @@ function PayoutsForm({
       kind === "uma-manual"
         ? `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/resolve-manually`
         : `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/ctf-oracle/report-payouts`;
-    startTransition(async () => {
-      try {
-        const res = await fetch(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payouts }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
-        }
-        router.refresh();
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+    run(async () => {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payouts }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
       }
+      router.refresh();
     });
   }
 
@@ -492,17 +547,18 @@ function PayoutsForm({
         </label>
       ) : null}
       {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+      <UpdatingNote show={submitted}>Payouts reported — updating…</UpdatingNote>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className={buttonVariants.ghost}>
+        <button type="button" onClick={onClose} disabled={isPending} className={buttonVariants.ghost}>
           Close
         </button>
         <button
           type="button"
           onClick={submit}
-          disabled={!ready || isPending}
+          disabled={!ready || isPending || submitted}
           className={kind === "uma-manual" ? buttonVariants.danger : buttonVariants.primary}
         >
-          {isPending ? "Submitting…" : "Submit"}
+          {submitted ? "Updating…" : isPending ? "Submitting…" : "Submit"}
         </button>
       </div>
     </FormCard>

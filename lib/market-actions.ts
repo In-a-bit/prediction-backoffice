@@ -124,6 +124,15 @@ function umaIsTerminal(u: UmaStatus | undefined): boolean {
   return u === "RESOLVED" || u === "MANUALLY_RESOLVED";
 }
 
+// dpm-api's UmaPropose validator rejects a proposal unless the question is back
+// at INITIALIZING. A market already PROPOSED/DISPUTED on chain must not offer
+// "Propose price" even when a stale local_status still reads created/reset, so
+// every propose gate is ANDed with this. Absent dpm data (undefined) is treated
+// as "cannot propose" — we never guess a proposable state we can't confirm.
+function canProposeOnChain(ctx: MarketActionCtx): boolean {
+  return umaStatus(ctx.dpmMarket) === "INITIALIZING";
+}
+
 // CTF_ORACLE markets don't carry a per-status enum; once they're resolved on
 // chain the dpm-api row is marked closed=true. Treat closed/archived as
 // terminal so we stop offering "Report payouts".
@@ -192,7 +201,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       ls === "cancelled" ||
       ls === "failed";
     if (!isTerminal) {
-      if (ls === "reset") {
+      if (ls === "reset" && canProposeOnChain(ctx)) {
         actions.push("uma-propose");
       }
       // uma-resolve is intentionally omitted for sport markets: the Temporal
@@ -209,7 +218,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       ls === "cancelled" ||
       ls === "failed";
     if (!isTerminal) {
-      if (ls === "created" || ls === "reset") {
+      if ((ls === "created" || ls === "reset") && canProposeOnChain(ctx)) {
         actions.push("uma-propose");
       }
       if (ls === "proposed" || ls === "disputed") {
@@ -220,7 +229,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     // UMA market (manual without a backoffice row): fall back to dpm-api status.
     const u = umaStatus(ctx.dpmMarket);
     if (!umaIsTerminal(u)) {
-      if (u === "INITIALIZING" || u === undefined) {
+      if (canProposeOnChain(ctx)) {
         actions.push("uma-propose");
       }
       if (u === "PROPOSED" || u === "DISPUTED") {

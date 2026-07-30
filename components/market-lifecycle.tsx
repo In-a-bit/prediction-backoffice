@@ -11,6 +11,7 @@ import type {
 const STAGE_LABELS: Record<LifecycleStage["key"], string> = {
   created: "Created",
   proposed: "Proposed",
+  disputed: "Disputed",
   resolved: "Resolved",
 };
 
@@ -31,6 +32,19 @@ const LINE_TONE: Record<LifecycleStageStatus, string> = {
   failed:   "bg-danger/60",
   skipped:  "bg-warning/40",
 };
+
+// A disputed round completes with status "done" (the dispute landed on chain),
+// but it's a red flag the operator should see — so its dot and connector render
+// in the danger tone regardless of the "done" progress state.
+function dotClass(s: LifecycleStage): string {
+  if (s.key === "disputed") return DOT_TONE.failed;
+  return DOT_TONE[s.status];
+}
+
+function lineClass(s: LifecycleStage): string {
+  if (s.key === "disputed") return LINE_TONE.failed;
+  return LINE_TONE[s.status];
+}
 
 const RESULT_STYLE: Record<
   Exclude<Result["kind"], "na">,
@@ -58,10 +72,10 @@ export function LifecycleStepper({
         aria-label={a11yLabel(stages)}
       >
         {stages.map((s, i) => (
-          <span key={s.key} className="inline-flex items-center">
-            <span className={`block w-2 h-2 rounded-full ${DOT_TONE[s.status]}`} />
+          <span key={`${s.key}-${i}`} className="inline-flex items-center">
+            <span className={`block w-2 h-2 rounded-full ${dotClass(s)}`} />
             {i < stages.length - 1 ? (
-              <span className={`block w-3 h-0.5 ${LINE_TONE[s.status]}`} />
+              <span className={`block w-3 h-0.5 ${lineClass(s)}`} />
             ) : null}
           </span>
         ))}
@@ -71,10 +85,10 @@ export function LifecycleStepper({
   return (
     <div className="flex items-start w-full" role="img" aria-label={a11yLabel(stages)}>
       {stages.map((s, i) => (
-        <div key={s.key} className="flex items-start flex-1 last:flex-initial">
+        <div key={`${s.key}-${i}`} className="flex items-start flex-1 last:flex-initial">
           <div className="flex flex-col items-center gap-1.5 shrink-0">
             <span
-              className={`block w-3.5 h-3.5 rounded-full ${DOT_TONE[s.status]}`}
+              className={`block w-3.5 h-3.5 rounded-full ${dotClass(s)}`}
             />
             <div className="text-center">
               <div className="text-[11px] font-medium text-foreground leading-tight">
@@ -83,12 +97,22 @@ export function LifecycleStepper({
               <div className="text-[10px] text-foreground-muted leading-tight">
                 {s.status}
               </div>
+              {s.origin === "external" ? (
+                <div className="text-[9px] font-medium text-warning leading-tight">
+                  external
+                </div>
+              ) : null}
+              {s.detail ? (
+                <div className="text-[9px] text-foreground-muted leading-tight">
+                  {s.detail}
+                </div>
+              ) : null}
             </div>
           </div>
           {i < stages.length - 1 ? (
             // mt-[7px] centers the 2px line against the 14px (h-3.5) dot above it
             <span
-              className={`mt-[7px] h-0.5 flex-1 mx-2 ${LINE_TONE[s.status]}`}
+              className={`mt-[7px] h-0.5 flex-1 mx-2 ${lineClass(s)}`}
             />
           ) : null}
         </div>

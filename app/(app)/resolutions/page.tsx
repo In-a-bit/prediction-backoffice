@@ -25,14 +25,14 @@ import type {
 } from "@/lib/types";
 import { deriveSportLifecycle } from "@/lib/market-lifecycle";
 import type { PlanSource } from "@/lib/source-from-plan";
-import { Pagination } from "./_pagination";
 import {
   EXTERNAL_TAB,
   EXTERNAL_TAB_LABEL,
-  ResolutionsTable,
   type ExternalKindCounts,
   type ExternalKindFilter,
-} from "./_table";
+} from "@/lib/resolution-tabs";
+import { Pagination } from "./_pagination";
+import { ResolutionsTable } from "./_table";
 
 export const dynamic = "force-dynamic";
 
