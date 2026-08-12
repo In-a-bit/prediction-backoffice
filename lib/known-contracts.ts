@@ -38,14 +38,14 @@ const CATALOG: {
   {
     name: "CTF Exchange",
     contract_type: "ctf_exchange",
-    testnet: "0xF740e33A790E31745CdCaC2e173E7B4585C172F9",
+    testnet: "0xc65147a8268f26e8C86E97589886F6b5048197Ac",
     envKey: "NEXT_PUBLIC_CONTRACT_CTF_EXCHANGE",
     override: process.env.NEXT_PUBLIC_CONTRACT_CTF_EXCHANGE,
   },
   {
     name: "Fee Module",
     contract_type: "fee_module",
-    testnet: "0xE34B1b9f36e8779546cE212f968e36916b9E1576",
+    testnet: "0xd67441Cc8EFed95219236dd92fF0ec5F5b07582D",
     envKey: "NEXT_PUBLIC_CONTRACT_FEE_MODULE",
     override: process.env.NEXT_PUBLIC_CONTRACT_FEE_MODULE,
   },
@@ -59,7 +59,7 @@ const CATALOG: {
   {
     name: "Managed Oracle",
     contract_type: "managed_oracle",
-    testnet: "0xd4A98869e9711338535AfE76EB736a1127cbA60f",
+    testnet: "0x38fAc33bD20D4c4Cce085C0f347153C06CbA2968",
     envKey: "NEXT_PUBLIC_CONTRACT_MANAGED_ORACLE",
     override: process.env.NEXT_PUBLIC_CONTRACT_MANAGED_ORACLE,
   },
