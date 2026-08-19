@@ -12,6 +12,7 @@ import {
   LOCAL_BUCKET_LABEL,
   type LocalBucket,
 } from "@/lib/aggregations";
+import { titleCase } from "@/lib/format";
 import type { MarketRow } from "@/lib/market-rows";
 import {
   EXTERNAL_TAB,
@@ -220,7 +221,7 @@ export function ResolutionsTable({
             value={initialSource}
             onChange={handleSource}
             ariaLabel="Source filter"
-            triggerLabel={initialSource ? `Source: ${capitalize(initialSource)}` : "Source: all"}
+            triggerLabel={initialSource ? `Source: ${titleCase(initialSource)}` : "Source: all"}
             clearable
           />
           {tab === EXTERNAL_TAB ? (
@@ -339,9 +340,11 @@ function LocalStatusChip({
             ? "warning"
             : "neutral";
 
+  // Not every raw local_status has a dedicated label (e.g. crypto "verified"
+  // isn't a LocalBucket key) — title-case it instead of showing the raw
+  // lowercase DB value.
   const label =
-    LOCAL_BUCKET_LABEL[display as LocalBucket] ??
-    display.replace(/_/g, " ");
+    LOCAL_BUCKET_LABEL[display as LocalBucket] ?? titleCase(display);
 
   return <Badge tone={tone}>{label}</Badge>;
 }
@@ -448,12 +451,7 @@ function formatDate(iso: string): string {
   }
 }
 
-function capitalize(s: string): string {
-  if (!s) return s;
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 function tabLabel(tab: string): string {
   if (tab === EXTERNAL_TAB) return EXTERNAL_TAB_LABEL;
-  return LOCAL_BUCKET_LABEL[tab as LocalBucket] ?? tab;
+  return LOCAL_BUCKET_LABEL[tab as LocalBucket] ?? titleCase(tab);
 }

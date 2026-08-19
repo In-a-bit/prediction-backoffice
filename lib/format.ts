@@ -82,6 +82,26 @@ export function shortId(uuid: string | null | undefined): string {
   return uuid.slice(0, 8);
 }
 
+// Words that should render as their all-caps form rather than plain title
+// case when they show up in a raw DB value, e.g. a future "uma_*" local_status
+// not yet covered by a display-label lookup table.
+const TITLE_CASE_ACRONYMS = new Set(["uma"]);
+
+// titleCase renders a raw snake_case/lowercase DB value (e.g. a local_status
+// not covered by a display-label lookup table) as operator-facing text, e.g.
+// "verified" -> "Verified", "manually_resolved" -> "Manually Resolved",
+// "uma_proposed" -> "UMA Proposed".
+export function titleCase(value: string): string {
+  return value
+    .split("_")
+    .map((word) =>
+      TITLE_CASE_ACRONYMS.has(word.toLowerCase())
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+    )
+    .join(" ");
+}
+
 // formatFootballSeason renders an api-football "start year" integer as the
 // operator-facing "YYYY/YYYY+1" label. The integer remains the wire format
 // (and the DB representation); only the UI swaps in the prettier form.

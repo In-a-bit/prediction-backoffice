@@ -1,6 +1,6 @@
 import "server-only";
 
-import { dpm, manual, sports } from "./api";
+import { BackofficeApiError, manual, resolutions, sports } from "./api";
 import type { Lifecycle, LifecycleStageStatus } from "./market-lifecycle";
 import type { MarketRow } from "./market-rows";
 import type { PlanSource } from "./source-from-plan";
@@ -10,9 +10,9 @@ import type { DpmMarket } from "./types";
 // markets.has_external_proposal / has_external_dispute on the dpm side, so
 // dpm-api is the only authoritative source — the /resolutions row loader
 // hydrates at most a window of rows and would silently miss flagged markets
-// outside it. This loader asks dpm-api directly instead, then resolves each
-// market back to its backoffice row so the operator lands on a page with the
-// accept/dispute actions wired up.
+// outside it. This loader asks the Go backoffice (which proxies dpm-api) for
+// that list, then resolves each market back to its backoffice row so the
+// operator lands on a page with the accept/dispute actions wired up.
 
 export type ExternalMarketRow = MarketRow & {
   has_external_proposal: boolean;
@@ -43,19 +43,10 @@ export async function loadExternalMarketRows(): Promise<{
   }
 }
 
-// The two flags are separate columns and a market can carry either or both, so
-// "any external activity" needs two queries deduplicated by external_id.
+// The Go backoffice merges/dedupes the two underlying dpm-api flag queries
+// (a market can carry either or both) server-side; this just fetches the result.
 async function fetchFlaggedMarkets(): Promise<DpmMarket[]> {
-  const [proposed, disputed] = await Promise.all([
-    dpm.listMarkets({ has_external_proposal: true }),
-    dpm.listMarkets({ has_external_dispute: true }),
-  ]);
-
-  const byExternalId = new Map<string, DpmMarket>();
-  for (const market of [...proposed, ...disputed]) {
-    byExternalId.set(market.external_id, market);
-  }
-  return [...byExternalId.values()];
+  return resolutions.listExternal();
 }
 
 async function toExternalRow(market: DpmMarket): Promise<ExternalMarketRow> {
@@ -130,8 +121,8 @@ async function findBackofficeMarket(
   externalId: string,
 ): Promise<BackofficeMarketRef> {
   const [manualRef, sportRef] = await Promise.all([
-    manual.findManualMarketByExternalId(externalId).catch(() => null),
-    sports.findMarketByExternalId(externalId).catch(() => null),
+    findOrNull(manual.findManualMarketByExternalId(externalId)),
+    findOrNull(sports.findMarketByExternalId(externalId)),
   ]);
   if (manualRef) {
     return {
@@ -147,5 +138,29 @@ async function findBackofficeMarket(
       sportMarketId: sportRef.id,
     };
   }
+  // Both lookups came back a genuine 404 (see findOrNull — anything else
+  // propagates instead of landing here). has_external_proposal /
+  // has_external_dispute are UMA-only flags that crypto markets never set
+  // (they resolve via CTF_ORACLE and never run the UMA propose/dispute flow
+  // that sets them), so a market carrying one is always sport or manual —
+  // "crypto" here is not a real answer, just the least-wrong label the
+  // PlanSource type has for "neither backoffice row exists", e.g. because the
+  // backoffice-local mirror row hasn't caught up with dpm-api yet.
   return { source: "crypto", localStatus: null };
+}
+
+// findOrNull turns a genuine "no such row" (404) into null so the caller can
+// fall through to the next source, while letting any other failure (5xx,
+// timeout, network) propagate to loadExternalMarketRows's try/catch. Without
+// this, a transient failure on the manual lookup for a market that *is*
+// manual would silently mislabel it "crypto" — with no manual_market_id, the
+// accept/dispute controls on that market's detail page never render, and
+// nothing tells the operator why.
+async function findOrNull<T>(promise: Promise<T>): Promise<T | null> {
+  try {
+    return await promise;
+  } catch (err) {
+    if (err instanceof BackofficeApiError && err.status === 404) return null;
+    throw err;
+  }
 }

@@ -40,13 +40,6 @@ export type Paginated<T> = {
 };
 
 const baseUrl = process.env.BACKOFFICE_API_URL ?? "http://localhost:8092";
-const dpmUrl = process.env.DPM_API_URL ?? "http://localhost:8082";
-// Admin key for dpm-api privileged writes (admin route group).
-// Shared with other users of the dpm-api; do not rename.
-const dpmApiKey = process.env.DPM_API_KEY ?? "";
-// App key for dpm-api protected reads (standard route group): relayer-wallet
-// listing, mnemonic status, wallet balances. Distinct secret from the admin key.
-const dpmAppApiKey = process.env.DPM_APP_API_KEY ?? "";
 
 type FetchOpts = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -399,6 +392,25 @@ function alertFiltersToQuery(filters: AlertFilters): string {
   return qs ? `?${qs}` : "";
 }
 
+// ---------------------------------------------------------------------------
+// Resolutions — cross-source. dpm-api's has_external_proposal /
+// has_external_dispute flags aren't scoped to a source, so this list can
+// return sport or manual markets (never crypto, which resolves via
+// CTF_ORACLE and never goes through the UMA propose/dispute flow these flags
+// track); it isn't a /manual/* or /sports/* concern. Backs the /resolutions
+// page's External tab.
+// ---------------------------------------------------------------------------
+
+export const resolutions = {
+  // dpm-api owns has_external_proposal / has_external_dispute (the monitor
+  // sets them), so this is the authoritative list of markets with
+  // non-operator UMA activity across every source — unlike the per-row
+  // hydration in lib/market-rows.ts, it isn't capped (the Go side pages
+  // through the full dpm-api result set). Proxied through the Go backoffice
+  // like every other dpm-api access (see lib/external-proposals.ts).
+  listExternal: () => request<DpmMarket[]>("/resolutions/external"),
+};
+
 export const alerts = {
   record: (alert: OperatorAlert) =>
     request<OperatorAlert>("/operations/alerts", {
@@ -622,121 +634,6 @@ export const crypto = {
       body: audit,
       authed: true,
     }),
-};
-
-// ---------------------------------------------------------------------------
-// dpm-api — direct passthrough for on-chain market lifecycle actions. The Go
-// backoffice doesn't proxy these, so we hit dpm-api straight from the route
-// handlers. Mirrors the contract-tester repo (prediction-onchain-actions).
-// ---------------------------------------------------------------------------
-
-async function dpmRequest<T>(
-  path: string,
-  opts: { method?: "GET" | "POST"; body?: unknown; auth: "admin" | "app" },
-): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
-  const apiKey = opts.auth === "app" ? dpmAppApiKey : dpmApiKey;
-  if (apiKey) headers["X-API-Key"] = apiKey;
-  const res = await fetch(`${dpmUrl}${path}`, {
-    method: opts.method ?? "GET",
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new BackofficeApiError(res.status, text);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
-export type DpmActionResult = { workflow_id?: string; status?: string };
-
-/** Query params for dpm-api GET /markets. All filters are AND-combined. */
-export type DpmListMarketsFilter = {
-  has_external_proposal?: boolean;
-  has_external_dispute?: boolean;
-  uma_resolution_status?: string;
-  limit?: number;
-  offset?: number;
-};
-
-function dpmMarketsQuery(filter: DpmListMarketsFilter): string {
-  const q = new URLSearchParams();
-  for (const [key, value] of Object.entries(filter)) {
-    if (value === undefined || value === null || value === "") continue;
-    q.set(key, String(value));
-  }
-  const qs = q.toString();
-  return qs ? `?${qs}` : "";
-}
-
-export const dpm = {
-  // --- Reads ---
-  // dpm-api owns the external-proposal flags (the monitor sets them), so this
-  // is the authoritative list of markets with non-operator UMA activity —
-  // unlike the per-row hydration in lib/market-rows.ts, it isn't capped.
-  listMarkets: (filter: DpmListMarketsFilter = {}) =>
-    dpmRequest<DpmMarket[]>(`/markets${dpmMarketsQuery(filter)}`, { auth: "app" }),
-
-  // --- Resolution actions ---
-  // Submit a UMA price proposal. proposed_price is a wei-encoded integer string;
-  // typical values are "0" (NO), "1000000000000000000" (YES), or
-  // "57896044618658097711785492504343953926634992332820282019728792003956564819968" (UNKNOWN).
-  umaPropose: (market_external_id: string, proposer_address: string, proposed_price: string) =>
-    dpmRequest<DpmActionResult>(`/markets/uma/propose`, {
-      method: "POST",
-      auth: "admin",
-      body: { market_id: market_external_id, proposer_address, proposed_price },
-    }),
-  umaResolve: (market_external_id: string) =>
-    dpmRequest<DpmActionResult>(`/markets/uma/resolve`, {
-      method: "POST",
-      auth: "admin",
-      body: { market_id: market_external_id },
-    }),
-  umaReset: (market_external_id: string) =>
-    dpmRequest<DpmActionResult>(`/markets/uma/reset`, {
-      method: "POST",
-      auth: "admin",
-      body: { market_id: market_external_id },
-    }),
-  umaResolveManually: (market_external_id: string, payouts: string[]) =>
-    dpmRequest<DpmActionResult>(`/markets/uma/resolve-manually`, {
-      method: "POST",
-      auth: "admin",
-      body: { market_id: market_external_id, payouts },
-    }),
-  ctfOracleReportPayouts: (market_external_id: string, payouts: string[]) =>
-    dpmRequest<DpmActionResult>(`/markets/ctf-oracle/report-payouts`, {
-      method: "POST",
-      auth: "admin",
-      body: { market_id: market_external_id, payouts },
-    }),
-
-  // --- Lifecycle (event & market pause/unpause/activate) ---
-  // Event pause/unpause take the dpm numeric id. Activate is keyed by external_id.
-  pauseEvent: (event_id: number) =>
-    dpmRequest<DpmActionResult>(`/events/${event_id}/pause`, { method: "POST", auth: "admin" }),
-  unpauseEvent: (event_id: number) =>
-    dpmRequest<DpmActionResult>(`/events/${event_id}/unpause`, { method: "POST", auth: "admin" }),
-  activateEvent: (event_external_id: string) =>
-    dpmRequest<DpmActionResult>(
-      `/events/by-external-id/${encodeURIComponent(event_external_id)}/activate`,
-      { method: "POST", auth: "admin" },
-    ),
-  deactivateEvent: (event_external_id: string) =>
-    dpmRequest<DpmActionResult>(
-      `/events/by-external-id/${encodeURIComponent(event_external_id)}/deactivate`,
-      { method: "POST", auth: "admin" },
-    ),
-  // Market unpause/activate take the dpm numeric id.
-  unpauseMarket: (market_id: number) =>
-    dpmRequest<DpmActionResult>(`/markets/${market_id}/unpause`, { method: "POST", auth: "admin" }),
-  activateMarket: (market_id: number) =>
-    dpmRequest<DpmActionResult>(`/markets/${market_id}/activate`, { method: "POST", auth: "admin" }),
 };
 
 // ---------------------------------------------------------------------------
@@ -1084,8 +981,10 @@ export const audit = {
       offset: number;
     }>(`/audit${qs ? `?${qs}` : ""}`);
   },
-  // record() is used by route handlers to log wallet/treasury actions that
-  // bypass Go (Next → dpm-api direct). The actor is taken from the session.
+  // record() lets a route handler log an action under its own shape instead
+  // of Go's AuditMiddleware default (path + method); e.g. wallet/treasury
+  // actions where the interesting detail is the resource, not the URL. The
+  // actor is taken from the session.
   record: (entry: {
     action: string;
     resource_type?: string;
