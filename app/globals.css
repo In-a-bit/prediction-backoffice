@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 :root {
+  /* Tells the browser which palette native controls (select popups,
+     scrollbars, checkboxes) should use. Without this, a select box can end
+     up with an author-styled dark background but a browser-default light
+     options popup (or vice versa) — same-color text-on-background,
+     effectively invisible. */
+  color-scheme: light;
   --background: #f7f7f8;
   --surface: #ffffff;
   --surface-muted: #fafafa;
@@ -38,6 +44,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --background: #0a0a0c;
     --surface: #111114;
     --surface-muted: #16161a;
@@ -97,6 +104,19 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Higher-contrast scrollbar for small, content-dense scroll boxes (e.g. the
+   league picker) where the default subtle --border-strong thumb blends into
+   the border and is easy to miss. */
+.scroll-strong {
+  scrollbar-color: var(--foreground-muted) transparent;
+}
+.scroll-strong::-webkit-scrollbar-thumb {
+  background-color: var(--foreground-muted);
+}
+.scroll-strong::-webkit-scrollbar-thumb:hover {
+  background-color: var(--foreground);
 }
 
 /* Respect users who request less motion: cut animations and transitions

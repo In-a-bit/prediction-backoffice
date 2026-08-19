@@ -11,6 +11,8 @@ import {
   ErrorMessage,
   Field,
   buttonVariants,
+  inputClass,
+  selectClass,
 } from "@/components/ui";
 import {
   TagChipsEditor,
@@ -77,6 +79,7 @@ export function NewSportTaskForm() {
   const [loadingLeagues, setLoadingLeagues] = useState(true);
   const [leagueError, setLeagueError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
   const [countryFilter, setCountryFilter] = useState<string>("");
 
   const [selectedLeagueId, setSelectedLeagueId] = useState<number | null>(null);
@@ -171,9 +174,20 @@ export function NewSportTaskForm() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [allLeagues]);
 
+  // Distinct competition types (api-football uses "League" / "Cup") — lets
+  // operators narrow to e.g. cup competitions before drilling into a country,
+  // since a country's domestic cup and league share the country filter.
+  const types: string[] = useMemo(() => {
+    const set = new Set<string>();
+    for (const lg of allLeagues) {
+      if (lg.type) set.add(lg.type);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allLeagues]);
+
   // Build the dropdown universe: every league for this season, with
   // already-configured ones flagged disabled. Sorted by country, then name.
-  // Country filter is an exact match (so "England" doesn't surface
+  // Country and type filters are exact matches (so "England" doesn't surface
   // "Northern Ireland" etc.); text filter is a substring across name+id.
   const options: LeagueOption[] = useMemo(() => {
     const existingForSeason = new Map<number, SportTask>();
@@ -191,6 +205,9 @@ export function NewSportTaskForm() {
         existingConfigId: existing?.id,
       };
     });
+    if (typeFilter) {
+      rows = rows.filter((r) => r.type === typeFilter);
+    }
     if (countryFilter) {
       rows = rows.filter((r) => (r.country ?? "") === countryFilter);
     }
@@ -207,7 +224,7 @@ export function NewSportTaskForm() {
         (r.country ?? "").toLowerCase().includes(needle) ||
         String(r.id).includes(needle),
     );
-  }, [allLeagues, existingConfigs, filter, countryFilter, season]);
+  }, [allLeagues, existingConfigs, filter, typeFilter, countryFilter, season]);
 
   const selectedLeague = useMemo(
     () => allLeagues.find((l) => l.id === selectedLeagueId) ?? null,
@@ -314,58 +331,88 @@ export function NewSportTaskForm() {
           <span className="font-semibold">1. Pick a league</span>
         </CardHeader>
         <CardBody className="space-y-3">
-          <div className="flex items-end gap-3 flex-wrap">
-            <Field
-              label="Season"
-              hint={`Default ${defaultSeason} (current year). api-football uses a single year as the season identifier.`}
-            >
-              <select
-                className="border rounded px-3 py-2 w-40"
-                value={season}
-                onChange={(e) => {
-                  const n = parseInt(e.target.value, 10);
-                  if (!Number.isFinite(n)) return;
-                  setSeason(n);
-                  setSelectedLeagueId(null);
-                  setCountryFilter("");
-                }}
+          <div className="flex items-start gap-3 flex-wrap">
+            <div className="w-36">
+              <Field
+                label="Season"
+                hint={`Default ${defaultSeason} (current year). api-football uses a single year as the season identifier.`}
               >
-                {availableSeasons().map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                    {y === defaultSeason ? " (current)" : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Country" hint="Exact match — narrows the dropdown to one country.">
-              <select
-                className="border rounded px-3 py-2 w-56"
-                value={countryFilter}
-                onChange={(e) => setCountryFilter(e.target.value)}
-              >
-                <option value="">All countries ({countries.length})</option>
-                {countries.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="flex-1 min-w-48">
-            <Field label="Filter (name, id)">
-              <input
-                className="border rounded px-3 py-2 w-full"
-                placeholder="premier, 39…"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-            </Field>
+                <select
+                  className={selectClass}
+                  value={season}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (!Number.isFinite(n)) return;
+                    setSeason(n);
+                    setSelectedLeagueId(null);
+                    setTypeFilter("");
+                    setCountryFilter("");
+                  }}
+                >
+                  {availableSeasons().map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                      {y === defaultSeason ? " (current)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </div>
-            <div className="text-xs text-foreground-muted pb-2">
-              {loadingLeagues
-                ? "loading…"
-                : `${options.length} of ${allLeagues.length} leagues`}
+            <div className="w-40">
+              <Field label="Type" hint="League, Cup, etc.">
+                <select
+                  className={selectClass}
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                >
+                  <option value="">All types</option>
+                  {types.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="w-56">
+              <Field label="Country" hint="Exact match — narrows the dropdown to one country.">
+                <select
+                  className={selectClass}
+                  value={countryFilter}
+                  onChange={(e) => setCountryFilter(e.target.value)}
+                >
+                  <option value="">All countries ({countries.length})</option>
+                  {countries.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="flex-1 min-w-48">
+              <Field label="Filter (name, id)">
+                <input
+                  className={inputClass}
+                  placeholder="premier, 39…"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                />
+              </Field>
+            </div>
+            {/* Invisible label spacer keeps this text vertically level with
+                the dropdowns/input above, which all start with a label of
+                the same height — a plain top-aligned span would sit flush
+                with the labels instead of the controls next to it. */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium invisible" aria-hidden>
+                &nbsp;
+              </span>
+              <span className="text-xs text-foreground-muted whitespace-nowrap py-2">
+                {loadingLeagues
+                  ? "loading…"
+                  : `${options.length} of ${allLeagues.length} leagues`}
+              </span>
             </div>
           </div>
 
@@ -381,10 +428,10 @@ export function NewSportTaskForm() {
             </div>
           )}
 
-          <div className="border rounded max-h-96 overflow-y-auto">
+          <div className="border rounded max-h-96 overflow-y-auto scroll-strong">
             {options.length === 0 && !loadingLeagues && allLeagues.length > 0 && (
               <div className="px-3 py-4 text-sm text-foreground-muted">
-                No leagues match. Clear the filter or change the country.
+                No leagues match. Clear the filter, or change the type/country.
               </div>
             )}
             <ul className="divide-y">
