@@ -53,7 +53,7 @@ export function ExternalProposalCard({ view }: { view: ExternalProposalView }) {
           />
           <Fact
             label="decide by"
-            value={view.dispute_by ? formatDateTimeFull(view.dispute_by) : undefined}
+            value={view.auto_dispute_at ? formatDateTimeFull(view.auto_dispute_at) : undefined}
           />
           <Fact label="uma_resolution_status" value={view.uma_resolution_status} />
           <Fact label="local_status" value={view.local_status} />
@@ -98,8 +98,10 @@ function DecisionBanner({ view }: { view: ExternalProposalView }) {
     <Banner tone="warning" title="Awaiting an operator decision">
       Accept to let the proposed answer settle, or dispute to challenge it. If
       nobody decides by{" "}
-      {view.dispute_by ? formatDateTimeFull(view.dispute_by) : "the deadline"},
-      the resolution workflow disputes automatically — an unverified answer is
+      {view.auto_dispute_at
+        ? formatDateTimeFull(view.auto_dispute_at)
+        : "the deadline"}
+      , the resolution workflow disputes automatically — an unverified answer is
       never allowed to settle.
     </Banner>
   );

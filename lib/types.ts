@@ -840,9 +840,10 @@ export type ExternalProposalView = {
   expires_at?: string;
   /**
    * The operator's real deadline: past this the automated dispute-watch acts
-   * on its own (disputing, since silence is treated as "unverified").
+   * on its own (disputing, since silence is treated as "unverified"). Mirrors
+   * the Go response's auto_dispute_at field name exactly.
    */
-  dispute_by?: string;
+  auto_dispute_at?: string;
 
   decision?: ExternalProposalDecision;
   decided_at?: string;
