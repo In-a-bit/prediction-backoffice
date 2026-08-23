@@ -213,8 +213,19 @@ export default async function MarketDetailPage({
 
       {fetchError ? <ErrorMessage>{fetchError}</ErrorMessage> : null}
 
+      {/* sportMarket.error is written by two different stages that share the
+          same column: SyncSportMarket (deploy) sets it together with
+          local_status="failed", while MarkProposeFailedActivity (propose)
+          sets it together with local_status="created" (and a successful
+          deploy always clears it, so "created" + a live error can only come
+          from the propose path). local_status is therefore an accurate
+          discriminator for which stage actually failed — a single hardcoded
+          prefix would mislabel whichever stage it wasn't written for. */}
       {sportMarket?.error ? (
-        <ErrorMessage>Propose failed: {sportMarket.error}</ErrorMessage>
+        <ErrorMessage>
+          {sportMarket.local_status === "failed" ? "Deploy failed: " : "Propose failed: "}
+          {sportMarket.error}
+        </ErrorMessage>
       ) : null}
 
       <LifecycleHeader
