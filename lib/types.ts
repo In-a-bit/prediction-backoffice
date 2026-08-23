@@ -68,6 +68,7 @@ export type CreatedMarketStatus = "PENDING" | "CREATED" | "FAILED" | "VERIFIED" 
 
 export type CreatedMarket = {
   id: number;
+  crypto_event_id: number;
   created_at: string;
   updated_at: string;
   slot_start: string;

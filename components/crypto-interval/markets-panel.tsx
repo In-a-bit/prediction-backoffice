@@ -369,7 +369,7 @@ function MarketDrawer({
             <div className="flex flex-wrap gap-2">
               {market.market_external_id && (
                 <Link
-                  href={`/markets/${market.market_external_id}`}
+                  href={`/markets/${market.market_external_id}?source=crypto&crypto_event_id=${market.crypto_event_id}`}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-foreground/5 text-foreground hover:bg-foreground/10 border border-border"
                 >
                   Market page →
