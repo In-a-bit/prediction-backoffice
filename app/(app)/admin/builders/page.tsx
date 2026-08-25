@@ -69,6 +69,9 @@ export default function BuildersPage() {
     setError("");
     try {
       const sp = new URLSearchParams();
+      // Custody builders hold none of the wallet-provider credentials this page
+      // shows, and are managed on their own page.
+      sp.set("builder_type", "embedded");
       if (debouncedSearch) sp.set("search", debouncedSearch);
       sp.set("limit", String(perPage));
       sp.set("offset", String(offset));
@@ -118,6 +121,7 @@ export default function BuildersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: createName.trim(),
+          builder_type: "embedded",
           wallet_public_key: createPublicKey.trim(),
           wallet_secret_key: createSecretKey.trim(),
           wallet_verification_key: createVerificationKey.trim() || undefined,
@@ -178,12 +182,12 @@ export default function BuildersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Builders"
-        description="Onboard builders and issue their API keys."
+        description="Onboard embedded builders — whose users hold browser wallets — and issue their publishable API keys. Custody builders have their own page."
       />
 
       {canManage && (
         <Card>
-          <CardHeader>Onboard builder</CardHeader>
+          <CardHeader>Onboard embedded builder</CardHeader>
           <CardBody className="space-y-4">
             <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-2">
               <Field label="Name">
@@ -279,7 +283,7 @@ export default function BuildersPage() {
       )}
 
       <Card>
-        <CardHeader>Builders</CardHeader>
+        <CardHeader>Embedded builders</CardHeader>
         <CardBody className="space-y-4">
           <div className="flex flex-wrap gap-3">
             <Field label="Search name">
