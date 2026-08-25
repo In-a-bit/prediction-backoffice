@@ -945,6 +945,10 @@ export type BuilderRow = {
   // Active secret key (bld_sk_…); "" for an embedded builder, and for a custody
   // builder whose key was revoked and not yet replaced.
   api_private_key: string;
+  // When the active secret key was issued — a rotation moves this independently
+  // of created_at, which stays fixed at onboarding. null when there is no active
+  // key.
+  api_private_key_created_at: string | null;
   created_at: string;
   updated_at: string;
 };

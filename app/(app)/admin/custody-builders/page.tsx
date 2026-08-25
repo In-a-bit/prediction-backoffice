@@ -298,7 +298,7 @@ export default function CustodyBuildersPage() {
                 <tr className="border-b border-border text-left text-foreground-muted">
                   <th className="py-2 pr-3">Name</th>
                   <th className="py-2 pr-3">API private key</th>
-                  <th className="py-2 pr-3">Created</th>
+                  <th className="py-2 pr-3">Key issued</th>
                   {canManage && <th className="py-2 pr-3">Actions</th>}
                 </tr>
               </thead>
@@ -349,7 +349,11 @@ export default function CustodyBuildersPage() {
                         )}
                       </td>
                       <td className="py-3 pr-3 tabular-nums">
-                        {new Date(row.created_at).toLocaleString()}
+                        {row.api_private_key_created_at ? (
+                          new Date(row.api_private_key_created_at).toLocaleString()
+                        ) : (
+                          <span className="text-foreground-muted">No active key</span>
+                        )}
                       </td>
                       {canManage && (
                         <td className="py-3 pr-3">
