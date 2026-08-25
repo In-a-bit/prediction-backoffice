@@ -52,6 +52,12 @@ export type MarketActionCtx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
+  // Whether the sports dispatcher's one-shot automatic propose pass for this
+  // market's decision has already run (propose_dispatched_at set — see
+  // apps/backoffice/internal/scheduler/sports/dispatcher.go's RunOnce doc).
+  // Only then does a "reset" sport market actually need an operator; before
+  // that the 10s dispatcher tick still re-proposes it on its own.
+  sportProposeExhausted?: boolean;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
   // The operator's already-recorded call on the current external proposal.
@@ -194,6 +200,10 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     // Sport markets: gate UMA actions on local_status which is the authoritative
     // source of truth. Only "reset" allows operator proposal — "created" means
     // the automated flow hasn't triggered yet, not that a re-proposal is needed.
+    // "reset" additionally requires sportProposeExhausted: while the
+    // decision's propose_dispatched_at is still unset, the sports dispatcher's
+    // 10s tick auto re-proposes this market on its own, so offering a manual
+    // "Propose price" button would just race it.
     const ls = ctx.sportLocalStatus;
     const isTerminal =
       ls === "resolved" ||
@@ -201,7 +211,7 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       ls === "cancelled" ||
       ls === "failed";
     if (!isTerminal) {
-      if (ls === "reset" && canProposeOnChain(ctx)) {
+      if (ls === "reset" && ctx.sportProposeExhausted && canProposeOnChain(ctx)) {
         actions.push("uma-propose");
       }
       // uma-resolve is intentionally omitted for sport markets: the Temporal

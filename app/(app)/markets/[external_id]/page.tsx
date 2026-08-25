@@ -202,6 +202,19 @@ export default async function MarketDetailPage({
   const eventExternalId = plan?.event_external_id;
   const m = verdict?.market;
 
+  // Whether the sports dispatcher (apps/backoffice/internal/scheduler/sports/
+  // dispatcher.go) has already used this decision's one automatic propose
+  // pass. propose_dispatched_at, once set, is never cleared again, so a sport
+  // market currently local_status="reset" needs an operator only when its
+  // decision's propose_dispatched_at is set — otherwise the 10s dispatcher
+  // tick will auto re-propose it on its own shortly.
+  const sportDecisionForMarket = sportMarket
+    ? sportEvent?.decisions?.find(
+        (d) => d.sport_market_type_id === sportMarket?.sport_market_type_id,
+      )
+    : undefined;
+  const sportProposeExhausted = !!sportDecisionForMarket?.propose_dispatched_at;
+
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
       <Breadcrumbs source={source} planId={planId} eventExternalId={eventExternalId} />
@@ -234,6 +247,7 @@ export default async function MarketDetailPage({
         planMarket={planMarket}
         sportMarket={sportMarket}
         sportEvent={sportEvent}
+        sportProposeExhausted={sportProposeExhausted}
         manualMarket={manualMarket}
         cryptoMarket={cryptoMarketRecord}
         cryptoEvent={cryptoEvent}
@@ -345,6 +359,7 @@ export default async function MarketDetailPage({
                   planExternalId={plan?.external_id}
                   sportMarketId={resolvedSportMarketId}
                   sportLocalStatus={sportMarket?.local_status}
+                  sportProposeExhausted={sportProposeExhausted}
                   manualMarketId={resolvedManualMarketId}
                   manualLocalStatus={manualMarket?.local_status}
                   externalProposalDecision={externalProposal?.decision}
@@ -411,6 +426,7 @@ function LifecycleHeader({
   planMarket,
   sportMarket,
   sportEvent,
+  sportProposeExhausted,
   manualMarket,
   cryptoMarket,
   cryptoEvent,
@@ -420,6 +436,7 @@ function LifecycleHeader({
   planMarket?: DeployPlanMarket;
   sportMarket?: SportMarket;
   sportEvent?: SportEvent;
+  sportProposeExhausted?: boolean;
   manualMarket?: ManualMarket;
   cryptoMarket?: CryptoMarket;
   cryptoEvent?: CryptoEvent;
@@ -463,6 +480,15 @@ function LifecycleHeader({
     displayLocalStatus === "disputed" ||
     (displayLocalStatus === undefined && verdict?.market?.uma_resolution_status?.toUpperCase() === "DISPUTED");
   const isReset = displayLocalStatus === "reset";
+  // For sport markets, "reset" alone isn't a signal an operator needs to act
+  // on: the sports dispatcher's 10s tick will auto re-propose it unless it
+  // already used this decision's one automatic propose pass (see
+  // apps/backoffice/internal/scheduler/sports/dispatcher.go's RunOnce doc —
+  // propose_dispatched_at, once set, is never cleared again). Gate the
+  // warning on that instead of raising it for a state that self-heals within
+  // seconds. Manual markets have no such dispatcher, so their reset warning
+  // is unconditional as before.
+  const showResetWarning = source === "sport" ? isReset && sportProposeExhausted : isReset;
 
   return (
     <div className="space-y-4">
@@ -492,7 +518,7 @@ function LifecycleHeader({
           <ResultChip result={derived.result} showReason />
         </div>
 
-        {isReset && (
+        {showResetWarning && (
           <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
             <svg
               viewBox="0 0 20 20"

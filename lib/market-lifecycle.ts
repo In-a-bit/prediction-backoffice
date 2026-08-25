@@ -15,7 +15,12 @@ import type {
 } from "@/lib/types";
 import type { PlanSource } from "@/lib/source-from-plan";
 
-export type LifecycleStageKey = "created" | "proposed" | "disputed" | "resolved";
+export type LifecycleStageKey =
+  | "created"
+  | "proposed"
+  | "disputed"
+  | "reset"
+  | "resolved";
 
 export type LifecycleStageStatus =
   | "pending"
@@ -302,6 +307,7 @@ export function deriveUmaTimeline(market: DpmMarket): Lifecycle {
 
   const lastProposedIdx = lastIndexOfStatus(history, "PROPOSED");
   const lastDisputedIdx = lastIndexOfStatus(history, "DISPUTED");
+  const disputeCount = history.filter((s) => s.toUpperCase() === "DISPUTED").length;
 
   const stages: LifecycleStage[] = [{ key: "created", status: "done" }];
   history.forEach((raw, i) => {
@@ -312,6 +318,18 @@ export function deriveUmaTimeline(market: DpmMarket): Lifecycle {
       stages.push(disputedStage(i === lastDisputedIdx, market));
     }
   });
+  // The very first dispute always resets the question unconditionally (the
+  // adapter gives the proposer one automatic do-over before ever involving
+  // the DVM), so landing on INITIALIZING after it is guaranteed and carries
+  // no information — not worth a stage of its own. From the second dispute
+  // on, the question only reaches INITIALIZING because the DVM voted "price
+  // too early" instead of giving a real answer, which is a distinct, secondary
+  // outcome the operator needs to notice (a fresh proposal is required) —
+  // surface it explicitly rather than letting it look identical to "still
+  // awaiting the DVM".
+  if (current === "INITIALIZING" && disputeCount >= 2) {
+    stages.push({ key: "reset", status: "active" });
+  }
   stages.push(resolvedStage(current));
 
   return { stages };

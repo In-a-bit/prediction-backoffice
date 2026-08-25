@@ -12,6 +12,7 @@ const STAGE_LABELS: Record<LifecycleStage["key"], string> = {
   created: "Created",
   proposed: "Proposed",
   disputed: "Disputed",
+  reset: "Reset",
   resolved: "Resolved",
 };
 
@@ -35,14 +36,18 @@ const LINE_TONE: Record<LifecycleStageStatus, string> = {
 
 // A disputed round completes with status "done" (the dispute landed on chain),
 // but it's a red flag the operator should see — so its dot and connector render
-// in the danger tone regardless of the "done" progress state.
+// in the danger tone regardless of the "done" progress state. A "reset" stage
+// is always the current, live state (see deriveUmaTimeline) — render it in the
+// same warning tone as the "needs re-proposal" banner above the stepper.
 function dotClass(s: LifecycleStage): string {
   if (s.key === "disputed") return DOT_TONE.failed;
+  if (s.key === "reset") return DOT_TONE.skipped;
   return DOT_TONE[s.status];
 }
 
 function lineClass(s: LifecycleStage): string {
   if (s.key === "disputed") return LINE_TONE.failed;
+  if (s.key === "reset") return LINE_TONE.skipped;
   return LINE_TONE[s.status];
 }
 
@@ -110,9 +115,9 @@ export function LifecycleStepper({
             </div>
           </div>
           {i < stages.length - 1 ? (
-            // mt-[7px] centers the 2px line against the 14px (h-3.5) dot above it
+            // mt-1.75 (7px) centers the 2px line against the 14px (h-3.5) dot above it
             <span
-              className={`mt-[7px] h-0.5 flex-1 mx-2 ${lineClass(s)}`}
+              className={`mt-1.75 h-0.5 flex-1 mx-2 ${lineClass(s)}`}
             />
           ) : null}
         </div>

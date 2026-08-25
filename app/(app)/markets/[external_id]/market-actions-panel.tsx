@@ -35,6 +35,7 @@ type Ctx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
+  sportProposeExhausted?: boolean;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
   externalProposalDecision?: ExternalProposalDecision;
