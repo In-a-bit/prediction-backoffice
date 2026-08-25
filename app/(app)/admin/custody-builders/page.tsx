@@ -18,6 +18,7 @@ import type { BuilderRow } from "@/lib/api";
 
 const DEFAULT_PER_PAGE = 25;
 const SEARCH_DEBOUNCE_MS = 300;
+const PRIVATE_KEY_PREFIX = "bld_sk_";
 
 type ListResponse = {
   data: BuilderRow[];
@@ -26,7 +27,17 @@ type ListResponse = {
   offset: number;
 };
 
-export default function BuildersPage() {
+// Mask everything after the "bld_sk_" prefix. Unlike the publishable key on the
+// builders page this one is a bearer secret: it lets a builder's backend act for
+// every address it onboarded, so it stays hidden until deliberately revealed.
+function maskPrivateKey(key: string) {
+  if (key.startsWith(PRIVATE_KEY_PREFIX)) {
+    return `${PRIVATE_KEY_PREFIX}${"•".repeat(12)}`;
+  }
+  return "•".repeat(16);
+}
+
+export default function CustodyBuildersPage() {
   const canManage = useCan("builders.manage");
 
   const [rows, setRows] = useState<BuilderRow[]>([]);
@@ -39,18 +50,19 @@ export default function BuildersPage() {
   const [error, setError] = useState("");
 
   const [createName, setCreateName] = useState("");
-  const [createPublicKey, setCreatePublicKey] = useState("");
-  const [createSecretKey, setCreateSecretKey] = useState("");
-  const [createVerificationKey, setCreateVerificationKey] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [createdKey, setCreatedKey] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [created, setCreated] = useState(false);
 
-  // Per-row reveal state for the builders table's API key column. Keys are
-  // publishable but hidden by default so the operator reveals them deliberately.
+  // Row-level state: which key operation is in flight, what it failed with, and
+  // the key a just-issued row returned so it can be copied without revealing it.
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [rowError, setRowError] = useState("");
+  const [newKey, setNewKey] = useState("");
+
   const [revealedKeys, setRevealedKeys] = useState<Set<number>>(new Set());
   const [copiedRowId, setCopiedRowId] = useState<number | null>(null);
+  const [copiedNewKey, setCopiedNewKey] = useState(false);
 
   const offset = (page - 1) * perPage;
 
@@ -59,9 +71,7 @@ export default function BuildersPage() {
     setError("");
     try {
       const sp = new URLSearchParams();
-      // Custody builders hold none of the wallet-provider credentials this page
-      // shows, and are managed on their own page.
-      sp.set("builder_type", "embedded");
+      sp.set("builder_type", "custody");
       if (debouncedSearch) sp.set("search", debouncedSearch);
       sp.set("limit", String(perPage));
       sp.set("offset", String(offset));
@@ -103,27 +113,21 @@ export default function BuildersPage() {
     if (!canManage) return;
     setCreating(true);
     setCreateError("");
-    setCreatedKey("");
-    setCopied(false);
+    setCreated(false);
+    setNewKey("");
     try {
       const res = await fetch("/api/admin/builders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: createName.trim(),
-          builder_type: "embedded",
-          wallet_public_key: createPublicKey.trim(),
-          wallet_secret_key: createSecretKey.trim(),
-          wallet_verification_key: createVerificationKey.trim() || undefined,
+          builder_type: "custody",
         }),
       });
-      const data = (await res.json()) as { api_public_key?: string; error?: string };
+      const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? `Status ${res.status}`);
-      setCreatedKey(data.api_public_key ?? "");
+      setCreated(true);
       setCreateName("");
-      setCreatePublicKey("");
-      setCreateSecretKey("");
-      setCreateVerificationKey("");
       setPage(1);
       await load();
     } catch (err) {
@@ -133,10 +137,60 @@ export default function BuildersPage() {
     }
   }
 
-  async function copyKey(key: string) {
-    await navigator.clipboard.writeText(key);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  async function createKey(row: BuilderRow) {
+    if (!canManage) return;
+    if (!window.confirm(`Issue an API private key for "${row.name}"?`)) return;
+    setSavingId(row.id);
+    setRowError("");
+    setNewKey("");
+    setCopiedNewKey(false);
+    try {
+      const res = await fetch(`/api/admin/builders/${row.id}/api-private-key`, {
+        method: "POST",
+      });
+      const data = (await res.json()) as {
+        api_private_key?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? `Status ${res.status}`);
+      setNewKey(data.api_private_key ?? "");
+      await load();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function revokeKey(row: BuilderRow) {
+    if (!canManage) return;
+    if (
+      !window.confirm(
+        `Revoke the API private key for "${row.name}"? Its DPM Wallet will be unable to authenticate until a new key is issued.`,
+      )
+    )
+      return;
+    setSavingId(row.id);
+    setRowError("");
+    setNewKey("");
+    try {
+      const res = await fetch(
+        `/api/admin/builders/${row.id}/api-private-key/revoke`,
+        { method: "POST" },
+      );
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Status ${res.status}`);
+      setRevealedKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
+      await load();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingId(null);
+    }
   }
 
   function toggleReveal(id: number) {
@@ -154,26 +208,24 @@ export default function BuildersPage() {
     setTimeout(() => setCopiedRowId((cur) => (cur === id ? null : cur)), 1500);
   }
 
-  // Mask everything after the "pk_builder_" prefix so a hidden key reveals no
-  // usable material at a glance.
-  function maskKey(key: string) {
-    const prefix = "pk_builder_";
-    if (key.startsWith(prefix)) return `${prefix}${"•".repeat(12)}`;
-    return "•".repeat(16);
+  async function copyNewKey() {
+    await navigator.clipboard.writeText(newKey);
+    setCopiedNewKey(true);
+    setTimeout(() => setCopiedNewKey(false), 1500);
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Builders"
-        description="Onboard embedded builders — whose users hold browser wallets — and issue their publishable API keys. Custody builders have their own page."
+        title="Custody builders"
+        description="Builders that run their own DPM Wallet and authenticate with a secret API key."
       />
 
       {canManage && (
         <Card>
-          <CardHeader>Onboard embedded builder</CardHeader>
+          <CardHeader>Onboard custody builder</CardHeader>
           <CardBody className="space-y-4">
-            <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-2">
+            <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-4">
               <Field label="Name">
                 <input
                   className={inputClass}
@@ -183,56 +235,19 @@ export default function BuildersPage() {
                   required
                 />
               </Field>
-              <Field label="Wallet public key (Privy app id)">
-                <input
-                  className={inputClass}
-                  data-lpignore="true"
-                  value={createPublicKey}
-                  onChange={(e) => setCreatePublicKey(e.target.value)}
-                  required
-                />
-              </Field>
-              <Field label="Wallet secret key (Privy app secret)">
-                <input
-                  className={inputClass}
-                  data-lpignore="true"
-                  type="password"
-                  value={createSecretKey}
-                  onChange={(e) => setCreateSecretKey(e.target.value)}
-                  required
-                />
-              </Field>
-              <Field label="Wallet verification key (PEM, optional)">
-                <textarea
-                  className={`${inputClass} min-h-[80px] font-mono text-xs`}
-                  value={createVerificationKey}
-                  onChange={(e) => setCreateVerificationKey(e.target.value)}
-                />
-              </Field>
-              <div className="flex items-end md:col-span-2">
-                <button type="submit" className={buttonVariants.primary} disabled={creating}>
-                  {creating ? "Creating…" : "Create builder"}
-                </button>
-              </div>
+              <button type="submit" className={buttonVariants.primary} disabled={creating}>
+                {creating ? "Creating…" : "Create custody builder"}
+              </button>
             </form>
+            <p className="text-xs text-foreground-muted">
+              A custody builder signs its users out of its own DPM Wallet, so it needs no
+              wallet-provider credentials. Issue its API private key from the table below.
+            </p>
             {createError && <ErrorMessage>{createError}</ErrorMessage>}
-            {createdKey && (
+            {created && (
               <InfoMessage>
-                <div className="space-y-2">
-                  <div className="font-medium">
-                    Builder onboarded. Give this API key to the builder — it is shown only once.
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <code className="text-xs break-all">{createdKey}</code>
-                    <button
-                      type="button"
-                      className={buttonVariants.secondary}
-                      onClick={() => copyKey(createdKey)}
-                    >
-                      {copied ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                </div>
+                Custody builder created. Use “New key” in the table to issue the API private
+                key its DPM Wallet authenticates with.
               </InfoMessage>
             )}
           </CardBody>
@@ -240,7 +255,7 @@ export default function BuildersPage() {
       )}
 
       <Card>
-        <CardHeader>Embedded builders</CardHeader>
+        <CardHeader>Custody builders</CardHeader>
         <CardBody className="space-y-4">
           <div className="flex flex-wrap gap-3">
             <Field label="Search name">
@@ -255,46 +270,62 @@ export default function BuildersPage() {
           </div>
 
           {error && <ErrorMessage>{error}</ErrorMessage>}
+          {rowError && <ErrorMessage>{rowError}</ErrorMessage>}
+          {newKey && (
+            <InfoMessage>
+              <div className="space-y-2">
+                <div className="font-medium">
+                  API private key issued. Give it to the builder for its DPM Wallet’s
+                  RELAYER_BUILDER_API_KEY.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="text-xs break-all">{newKey}</code>
+                  <button
+                    type="button"
+                    className={buttonVariants.secondary}
+                    onClick={copyNewKey}
+                  >
+                    {copiedNewKey ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+            </InfoMessage>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-foreground-muted">
                   <th className="py-2 pr-3">Name</th>
-                  <th className="py-2 pr-3">Wallet type</th>
-                  <th className="py-2 pr-3">Wallet public key</th>
-                  <th className="py-2 pr-3">API key</th>
+                  <th className="py-2 pr-3">API private key</th>
                   <th className="py-2 pr-3">Created</th>
+                  {canManage && <th className="py-2 pr-3">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="py-6 text-foreground-muted">
+                    <td colSpan={canManage ? 4 : 3} className="py-6 text-foreground-muted">
                       Loading…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-6 text-foreground-muted">
-                      No builders found.
+                    <td colSpan={canManage ? 4 : 3} className="py-6 text-foreground-muted">
+                      No custody builders found.
                     </td>
                   </tr>
                 ) : (
                   rows.map((row) => (
                     <tr key={row.id} className="border-b border-border/60 align-top">
                       <td className="py-3 pr-3">{row.name}</td>
-                      <td className="py-3 pr-3">{row.wallet_type}</td>
                       <td className="py-3 pr-3">
-                        <code className="text-xs break-all">{row.wallet_public_key}</code>
-                      </td>
-                      <td className="py-3 pr-3">
-                        {row.api_public_key ? (
+                        {row.api_private_key ? (
                           <div className="flex flex-wrap items-center gap-2">
                             <code className="text-xs break-all">
                               {revealedKeys.has(row.id)
-                                ? row.api_public_key
-                                : maskKey(row.api_public_key)}
+                                ? row.api_private_key
+                                : maskPrivateKey(row.api_private_key)}
                             </code>
                             <button
                               type="button"
@@ -307,19 +338,44 @@ export default function BuildersPage() {
                               <button
                                 type="button"
                                 className={buttonVariants.secondary}
-                                onClick={() => copyRowKey(row.id, row.api_public_key)}
+                                onClick={() => copyRowKey(row.id, row.api_private_key)}
                               >
                                 {copiedRowId === row.id ? "Copied" : "Copy"}
                               </button>
                             )}
                           </div>
                         ) : (
-                          <span className="text-foreground-muted">—</span>
+                          <span className="text-foreground-muted">No active key</span>
                         )}
                       </td>
                       <td className="py-3 pr-3 tabular-nums">
                         {new Date(row.created_at).toLocaleString()}
                       </td>
+                      {canManage && (
+                        <td className="py-3 pr-3">
+                          <div className="flex flex-wrap gap-2">
+                            {row.api_private_key ? (
+                              <button
+                                type="button"
+                                className={buttonVariants.danger}
+                                disabled={savingId === row.id}
+                                onClick={() => revokeKey(row)}
+                              >
+                                {savingId === row.id ? "Working…" : "Revoke key"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className={buttonVariants.secondary}
+                                disabled={savingId === row.id}
+                                onClick={() => createKey(row)}
+                              >
+                                {savingId === row.id ? "Working…" : "New key"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

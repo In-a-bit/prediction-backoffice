@@ -928,27 +928,50 @@ export const liquidityProviders = {
     ),
 };
 
+// A custody builder runs its own DPM Wallet and authenticates with a secret key;
+// an embedded builder's users hold browser wallets and it gets the publishable one.
+// The two are managed on separate pages, each listing only its own type.
+export type BuilderType = "custody" | "embedded";
+
 export type BuilderRow = {
   id: number;
   name: string;
+  builder_type: BuilderType;
   wallet_type: string;
+  // The builder's own wallet-provider app id; "" for a custody builder, which has none.
   wallet_public_key: string;
   // Active publishable API key (pk_builder_…); "" when the builder has no active key.
   api_public_key: string;
+  // Active secret key (bld_sk_…); "" for an embedded builder, and for a custody
+  // builder whose key was revoked and not yet replaced.
+  api_private_key: string;
   created_at: string;
   updated_at: string;
 };
 
+// A custody builder takes the name alone: dpm-api rejects any wallet-provider
+// field for one, since it has no provider to validate logins against.
 export type CreateBuilderInput = {
   name: string;
-  wallet_public_key: string;
-  wallet_secret_key: string;
+  builder_type: BuilderType;
+  wallet_type?: string;
+  wallet_public_key?: string;
+  wallet_secret_key?: string;
   wallet_verification_key?: string;
 };
 
 export type CreateBuilderResult = { api_public_key: string };
 
-function builderQuery(params: { search?: string; limit?: number; offset?: number }) {
+export type CreateBuilderPrivateKeyResult = { api_private_key: string };
+
+type BuilderListParams = {
+  search?: string;
+  builder_type?: BuilderType;
+  limit?: number;
+  offset?: number;
+};
+
+function builderQuery(params: BuilderListParams) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
@@ -958,14 +981,23 @@ function builderQuery(params: { search?: string; limit?: number; offset?: number
 }
 
 export const builders = {
-  list: (params: { search?: string; limit?: number; offset?: number } = {}) =>
+  list: (params: BuilderListParams = {}) =>
     request<Paginated<BuilderRow>>(`/proxy/dpm/builders${builderQuery(params)}`),
   create: (input: CreateBuilderInput) =>
     request<CreateBuilderResult>("/proxy/dpm/builders", {
       method: "POST",
-      // wallet_type is fixed for now; the dpm-api accepts it in the body.
-      body: { ...input, wallet_type: "privy_proxy" },
+      body: input,
     }),
+  createPrivateKey: (id: number) =>
+    request<CreateBuilderPrivateKeyResult>(
+      `/proxy/dpm/builders/${id}/api-private-key`,
+      { method: "POST" },
+    ),
+  revokePrivateKey: (id: number) =>
+    request<{ revoked: boolean }>(
+      `/proxy/dpm/builders/${id}/api-private-key/revoke`,
+      { method: "POST" },
+    ),
 };
 
 // ---------------------------------------------------------------------------
