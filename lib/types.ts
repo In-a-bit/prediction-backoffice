@@ -451,6 +451,27 @@ export type MarketOutcome = {
   tokens: TokenOutcome[];
 };
 
+// UmaQuestionData mirrors dpm-api's GET
+// /markets/by-external-id/:external_id/uma/question — a live on-chain read
+// of UmaCtfAdapter.getQuestion(question_id), the same data a Polygonscan
+// "Read Contract" call against the adapter would show.
+export type UmaQuestionData = {
+  question_id: string;
+  request_timestamp: string;
+  reward: string;
+  proposal_bond: string;
+  liveness: string;
+  manual_resolution_timestamp: string;
+  resolved: boolean;
+  paused: boolean;
+  reset: boolean;
+  refund: boolean;
+  reward_token: string;
+  creator: string;
+  ancillary_data: string;
+  ancillary_data_text?: string;
+};
+
 export type OperatorLogEntry = {
   id: number;
   external_id: string;

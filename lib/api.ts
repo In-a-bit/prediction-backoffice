@@ -27,6 +27,7 @@ import type {
   SupportedPair,
   TagResponse,
   Task,
+  UmaQuestionData,
   UpdateAssetRequest,
   UpdateTaskRequest,
 } from "./types";
@@ -169,6 +170,14 @@ export const manual = {
   getMarketOutcome: (externalId: string) =>
     request<MarketOutcome>(
       `/manual/markets/${encodeURIComponent(externalId)}/outcome`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/question — a live
+  // on-chain UmaCtfAdapter.getQuestion read (not a DB snapshot). UMA-only;
+  // covers both manual and sport markets since both share the same dpm
+  // external_id.
+  getUmaQuestion: (externalId: string) =>
+    request<UmaQuestionData>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/question`,
     ),
   unpauseMarket: (externalId: string) =>
     request<void>(

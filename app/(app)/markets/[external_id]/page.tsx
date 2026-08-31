@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import {
   Badge,
@@ -32,6 +33,7 @@ import type {
 
 import { ExternalProposalCard } from "./external-proposal-card";
 import { MarketActionsPanel } from "./market-actions-panel";
+import { UmaQuestionLink } from "./uma-question-link";
 
 export const dynamic = "force-dynamic";
 
@@ -263,7 +265,7 @@ export default async function MarketDetailPage({
           <Card>
             <CardHeader>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground-muted">
-                Key facts
+                Market details (DPM)
               </h2>
             </CardHeader>
             <CardBody>
@@ -272,6 +274,7 @@ export default async function MarketDetailPage({
                 m={m}
                 planMarket={planMarket}
                 planExternalId={plan?.external_id}
+                isUmaMarket={marketOutcome?.resolution_type === "UMA"}
               />
             </CardBody>
           </Card>
@@ -595,23 +598,28 @@ function KeyFactsGrid({
   m,
   planMarket,
   planExternalId,
+  isUmaMarket,
 }: {
   external_id: string;
   m?: import("@/lib/types").DpmMarket;
   planMarket?: DeployPlanMarket;
   planExternalId?: string;
+  isUmaMarket?: boolean;
 }) {
   // Three field groups, ordered the way an operator scans a market: identity
   // → trading config → UMA → timestamps. Empty/null fields are filtered out
-  // so the grid stays readable on partially-hydrated markets.
+  // so the grid stays readable on partially-hydrated markets. question_id
+  // sits right after external_id (rather than further down, alongside
+  // condition_id) since it's the identifier operators need most for UMA
+  // markets — see its clickable rendering below.
   const identity = [
     row("external_id", external_id, true),
+    questionIdRow(external_id, m?.question_id, isUmaMarket),
     row("dpm_id", m?.id != null ? String(m.id) : undefined),
     row("event_id", m?.event_id != null ? String(m.event_id) : undefined),
     row("slug", m?.slug),
     row("ticker", undefined),
     row("condition_id", m?.condition_id, true),
-    row("question_id", m?.question_id, true),
     row("resolution_source", m?.resolution_source),
     row("neg_risk_market_id", m?.neg_risk_market_id, true),
     row("neg_risk_request_id", m?.neg_risk_request_id, true),
@@ -752,10 +760,34 @@ function KeyFactsGrid({
   );
 }
 
-type GridRow = { label: string; value?: string; mono?: boolean };
+type GridRow = {
+  label: string;
+  value?: string;
+  mono?: boolean;
+  node?: ReactNode;
+};
 
 function row(label: string, value?: string | null, mono?: boolean): GridRow {
   return { label, value: value ?? undefined, mono };
+}
+
+// question_id, for UMA markets, renders as a clickable link that pops up a
+// live UmaCtfAdapter.getQuestion read (see UmaQuestionLink) instead of plain
+// text — manual and sport markets are both UMA-resolved by default (crypto
+// markets are always CTF_ORACLE, so isUmaMarket is false for them and this
+// falls back to the plain mono row).
+function questionIdRow(
+  externalId: string,
+  questionId: string | null | undefined,
+  isUmaMarket: boolean | undefined,
+): GridRow {
+  if (!questionId) return row("question_id", undefined, true);
+  if (!isUmaMarket) return row("question_id", questionId, true);
+  return {
+    label: "question_id",
+    mono: true,
+    node: <UmaQuestionLink externalId={externalId} questionId={questionId} />,
+  };
 }
 
 function hasNonEmptyString(v: unknown): v is string {
@@ -768,7 +800,9 @@ function hasNonEmptyMetadata(v: unknown): v is Record<string, unknown> {
 }
 
 function FieldGroup({ title, rows }: { title: string; rows: GridRow[] }) {
-  const visible = rows.filter((r) => r.value !== undefined && r.value !== "");
+  const visible = rows.filter(
+    (r) => r.node !== undefined || (r.value !== undefined && r.value !== ""),
+  );
   if (visible.length === 0) return null;
   return (
     <div className="space-y-1.5">
@@ -782,7 +816,7 @@ function FieldGroup({ title, rows }: { title: string; rows: GridRow[] }) {
               {r.label}
             </dt>
             <dd className={`text-foreground ${r.mono ? "font-mono break-all" : ""}`}>
-              {r.value}
+              {r.node ?? r.value}
             </dd>
           </div>
         ))}
