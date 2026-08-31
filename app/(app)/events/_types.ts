@@ -20,6 +20,7 @@ export type ManualEventRow = {
 
 export type CryptoEventRow = {
   event_external_id: string;
+  event_slug: string;
   asset: string;
   interval: string;
   slot_start: string;

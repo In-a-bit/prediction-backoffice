@@ -264,6 +264,7 @@ async function loadCrypto(q?: string): Promise<CryptoPayload> {
         if (!ev.event_external_id) continue;
         rows.push({
           event_external_id: ev.event_external_id,
+          event_slug: ev.event_slug,
           asset: meta?.asset ?? "—",
           interval: meta?.interval ?? "—",
           slot_start: ev.slot_start,

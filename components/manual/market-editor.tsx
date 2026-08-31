@@ -75,8 +75,16 @@ export function marketEditorStateFromPayload(
     slug: p.slug ?? "",
     description: p.description ?? "",
     resolution_source: p.resolution_source ?? "",
-    neg_risk_market_id: p.neg_risk_market_id ?? "",
-    neg_risk_request_id: p.neg_risk_request_id ?? "",
+    // We don't support neg-risk (no linking/adapter logic exists for it), so
+    // never carry these over from a Polymarket-sourced draft — same intent as
+    // eventEditorStateFromPayload's neg_risk_market_id blank. Unlike events,
+    // MarketPayload *can* send these at creation time, so leaving them
+    // populated here actually persists them (see the "where is neg_risk
+    // populated" investigation).
+    neg_risk: undefined,
+    neg_risk_market_id: "",
+    neg_risk_request_id: "",
+    neg_risk_other: undefined,
     order_price_min_tick_size: p.order_price_min_tick_size ?? "",
     uma_bond: p.uma_bond ?? "",
     uma_reward: p.uma_reward ?? "",

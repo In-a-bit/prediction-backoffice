@@ -65,6 +65,7 @@ export function CryptoEventsTab({
     return data.rows.filter((row) => {
       if (q) {
         const matches =
+          row.event_slug?.toLowerCase().includes(q) ||
           row.asset?.toLowerCase().includes(q) ||
           row.interval?.toLowerCase().includes(q) ||
           row.event_external_id?.toLowerCase().includes(q);
@@ -82,6 +83,20 @@ export function CryptoEventsTab({
 
   const columns = useMemo<ColumnDef<CryptoEventRow>[]>(
     () => [
+      {
+        id: "event_slug",
+        accessorKey: "event_slug",
+        header: "Name",
+        cell: ({ row }) => (
+          <Link
+            href={`/events/${encodeURIComponent(row.original.event_external_id)}?from=events`}
+            className="text-foreground hover:text-accent transition-colors font-medium truncate block max-w-[16rem] font-mono text-xs"
+            title={row.original.event_slug}
+          >
+            {row.original.event_slug}
+          </Link>
+        ),
+      },
       {
         id: "asset",
         accessorKey: "asset",
@@ -228,7 +243,7 @@ function SearchBox({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Search asset / external_id…"
+        placeholder="Search name / asset / external_id…"
         className="w-full h-9 pl-8 pr-3 rounded-md border border-border bg-surface text-sm placeholder:text-foreground-muted/70 focus:outline-none focus:border-accent transition-colors"
       />
       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground-muted">
