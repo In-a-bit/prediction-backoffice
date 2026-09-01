@@ -27,6 +27,9 @@ import type {
   SupportedPair,
   TagResponse,
   Task,
+  UmaOracleHasPriceData,
+  UmaOracleRequestData,
+  UmaOracleStateData,
   UmaQuestionData,
   UpdateAssetRequest,
   UpdateTaskRequest,
@@ -178,6 +181,25 @@ export const manual = {
   getUmaQuestion: (externalId: string) =>
     request<UmaQuestionData>(
       `/manual/markets/${encodeURIComponent(externalId)}/uma/question`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/request — a live
+  // on-chain ManagedOptimisticOracleV2.getRequest read. Sibling to
+  // getUmaQuestion above (adapter-level vs. oracle-level reads).
+  getUmaOracleRequest: (externalId: string) =>
+    request<UmaOracleRequestData>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/oracle/request`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/state — a live
+  // on-chain ManagedOptimisticOracleV2.getState read.
+  getUmaOracleState: (externalId: string) =>
+    request<UmaOracleStateData>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/oracle/state`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/has-price — a
+  // live on-chain ManagedOptimisticOracleV2.hasPrice read.
+  getUmaOracleHasPrice: (externalId: string) =>
+    request<UmaOracleHasPriceData>(
+      `/manual/markets/${encodeURIComponent(externalId)}/uma/oracle/has-price`,
     ),
   unpauseMarket: (externalId: string) =>
     request<void>(

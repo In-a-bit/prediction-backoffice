@@ -472,6 +472,60 @@ export type UmaQuestionData = {
   ancillary_data_text?: string;
 };
 
+// Classification of a raw OptimisticOracleV2 price, mirroring
+// ProposedAnswer["label"] above plus two cases only a live oracle read can
+// surface: "too_early" (UMA's ignore-price sentinel) and "none" (no
+// proposal/settlement yet, so the raw price field is still its zero
+// default).
+export type UmaOraclePriceLabel =
+  | "first_outcome_yes"
+  | "second_outcome_yes"
+  | "fifty_fifty"
+  | "too_early"
+  | "none"
+  | "unknown";
+
+// UmaOracleRequestData mirrors dpm-api's GET
+// /markets/by-external-id/:external_id/uma/oracle/request — a live on-chain
+// read of ManagedOptimisticOracleV2.getRequest for the market's UMA
+// question, the same data a Polygonscan "Read Contract" call against the
+// oracle would show.
+export type UmaOracleRequestData = {
+  proposer: string;
+  disputer: string;
+  currency: string;
+  settled: boolean;
+  event_based: boolean;
+  refund_on_dispute: boolean;
+  callback_on_price_proposed: boolean;
+  callback_on_price_disputed: boolean;
+  callback_on_price_settled: boolean;
+  bond: string;
+  custom_liveness: string;
+  proposed_price: string;
+  proposed_price_label: UmaOraclePriceLabel;
+  resolved_price: string;
+  resolved_price_label: UmaOraclePriceLabel;
+  expiration_time: string;
+  reward: string;
+  final_fee: string;
+};
+
+// UmaOracleStateData mirrors dpm-api's GET
+// /markets/by-external-id/:external_id/uma/oracle/state — a live on-chain
+// read of ManagedOptimisticOracleV2.getState.
+export type UmaOracleStateData = {
+  value: number;
+  name: string;
+};
+
+// UmaOracleHasPriceData mirrors dpm-api's GET
+// /markets/by-external-id/:external_id/uma/oracle/has-price — a live
+// on-chain read of ManagedOptimisticOracleV2.hasPrice.
+export type UmaOracleHasPriceData = {
+  has_price: boolean;
+};
+
 export type OperatorLogEntry = {
   id: number;
   external_id: string;

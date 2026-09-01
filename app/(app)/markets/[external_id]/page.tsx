@@ -275,6 +275,7 @@ export default async function MarketDetailPage({
                 planMarket={planMarket}
                 planExternalId={plan?.external_id}
                 isUmaMarket={marketOutcome?.resolution_type === "UMA"}
+                tokens={marketOutcome?.tokens ?? []}
               />
             </CardBody>
           </Card>
@@ -599,12 +600,14 @@ function KeyFactsGrid({
   planMarket,
   planExternalId,
   isUmaMarket,
+  tokens,
 }: {
   external_id: string;
   m?: import("@/lib/types").DpmMarket;
   planMarket?: DeployPlanMarket;
   planExternalId?: string;
   isUmaMarket?: boolean;
+  tokens: import("@/lib/types").TokenOutcome[];
 }) {
   // Three field groups, ordered the way an operator scans a market: identity
   // → trading config → UMA → timestamps. Empty/null fields are filtered out
@@ -614,7 +617,7 @@ function KeyFactsGrid({
   // markets — see its clickable rendering below.
   const identity = [
     row("external_id", external_id, true),
-    questionIdRow(external_id, m?.question_id, isUmaMarket),
+    questionIdRow(external_id, m?.question_id, isUmaMarket, tokens),
     row("dpm_id", m?.id != null ? String(m.id) : undefined),
     row("event_id", m?.event_id != null ? String(m.event_id) : undefined),
     row("slug", m?.slug),
@@ -780,13 +783,20 @@ function questionIdRow(
   externalId: string,
   questionId: string | null | undefined,
   isUmaMarket: boolean | undefined,
+  tokens: import("@/lib/types").TokenOutcome[],
 ): GridRow {
   if (!questionId) return row("question_id", undefined, true);
   if (!isUmaMarket) return row("question_id", questionId, true);
   return {
     label: "question_id",
     mono: true,
-    node: <UmaQuestionLink externalId={externalId} questionId={questionId} />,
+    node: (
+      <UmaQuestionLink
+        externalId={externalId}
+        questionId={questionId}
+        tokens={tokens}
+      />
+    ),
   };
 }
 
