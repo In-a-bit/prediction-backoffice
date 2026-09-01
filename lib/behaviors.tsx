@@ -111,12 +111,14 @@ export const behaviors: Record<BehaviorKey, Behavior> = {
     key: "sports",
     name: "Sports Fixtures",
     short: "Sports",
-    tagline: "Generate UMA markets from upcoming fixtures",
+    tagline: "Generate UMA markets from upcoming games",
     description:
-      "Subscribe to a league + season. As fixtures appear in the feed, the backoffice spins up the configured market behaviors per match (moneyline, halftime, …) inside a sequential DeployPlan, then auto-proposes resolution to UMA when the fixture finishes. Soccer launches first; basketball and others slot in without schema changes.",
+      "Subscribe to a league + season. As games appear in the feed, the backoffice spins up the configured market behaviors per contest (moneyline, halftime, …) inside a sequential DeployPlan, then auto-proposes resolution to UMA when the game finishes. Soccer and hockey are wired; further sports slot in without schema changes.",
     status: "available",
     href: "/automations/sports",
-    newHref: "/automations/sports/soccer/new",
+    // Points at the hub rather than one sport's form: which sport comes
+    // first is now a choice, not a default.
+    newHref: "/automations/sports",
     accent: "#10b981",
     accentSoft: "rgba(16, 185, 129, 0.12)",
     icon: sportsIcon,
@@ -124,7 +126,7 @@ export const behaviors: Record<BehaviorKey, Behavior> = {
       "Per-league config — pick league, season, market behaviors, lead-time",
       "Sequential market creation via the existing DeployPlan UI",
       "Auto-propose to UMA + resolve after liveness; manual override always available",
-      "Soccer/moneyline + halftime today; corners / over-under / player-props next",
+      "Soccer moneyline + halftime and hockey moneyline today; over-under / player-props next",
     ],
   },
 };

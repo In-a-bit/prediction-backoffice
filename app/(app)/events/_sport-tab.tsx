@@ -8,6 +8,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ComboSearch } from "@/components/combo-search";
 import { DataTable } from "@/components/data-table";
 import { Badge } from "@/components/ui";
+import { statusToneFor } from "@/lib/sports/registry";
 
 import type { SportEventRow, SportPayload } from "./_types";
 
@@ -142,7 +143,7 @@ export function SportEventsTab({
         accessorKey: "fixture_status_short",
         header: "Status",
         cell: ({ row }) => (
-          <Badge tone={statusTone(row.original.fixture_status_short)}>
+          <Badge tone={statusToneFor(row.original.sport, row.original.fixture_status_short)}>
             {row.original.fixture_status_short || "—"}
           </Badge>
         ),
@@ -222,18 +223,6 @@ function uniqueOptions(values: string[]): { value: string; label: string }[] {
     .map((v) => ({ value: v, label: v }));
 }
 
-function statusTone(
-  status: string,
-): "neutral" | "success" | "warning" | "danger" | "info" {
-  const s = status.toUpperCase();
-  // Match api-football fixture status short codes.
-  if (s === "FT" || s === "AET" || s === "PEN" || s === "AWD") return "success";
-  if (s === "1H" || s === "2H" || s === "ET" || s === "BT" || s === "P" || s === "LIVE") return "info";
-  if (s === "HT") return "info";
-  if (s === "PST" || s === "CANC" || s === "ABD") return "danger";
-  if (s === "SUSP" || s === "INT") return "warning";
-  return "neutral";
-}
 
 function SearchBox({
   value,

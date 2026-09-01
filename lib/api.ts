@@ -504,7 +504,7 @@ import type {
   SportResolutionList,
   CreateSportTaskInput,
   UpdateSportTaskInput,
-  ApiFootballLeagueSearchResult,
+  SportsLeague,
 } from "./types";
 
 export const sports = {
@@ -616,24 +616,25 @@ export const sports = {
   listResolutionMarketCounts: () =>
     request<Record<string, number>>("/sports/resolutions/counts"),
 
-  // League search (proxies api-football /leagues?search=)
-  searchLeagues: (q: string, season?: number) => {
-    const params = new URLSearchParams({ q });
+  // League search — the backoffice proxies whichever provider owns the
+  // sport and normalizes the result into SportsLeague.
+  searchLeagues: (sportKey: string, q: string, season?: number) => {
+    const params = new URLSearchParams({ sport: sportKey, q });
     if (season) params.set("season", String(season));
-    return request<ApiFootballLeagueSearchResult[]>(
-      `/sports/leagues/search?${params.toString()}`,
-    );
+    return request<SportsLeague[]>(`/sports/leagues/search?${params.toString()}`);
   },
 
   // Eager list of every league for a season — backs the new-config dropdown.
   // Optional country/type filters. Cached server-side for an hour per param set.
-  listAllLeagues: (season: number, filters: { country?: string; type?: string } = {}) => {
-    const params = new URLSearchParams({ season: String(season) });
+  listAllLeagues: (
+    sportKey: string,
+    season: number,
+    filters: { country?: string; type?: string } = {},
+  ) => {
+    const params = new URLSearchParams({ sport: sportKey, season: String(season) });
     if (filters.country) params.set("country", filters.country);
     if (filters.type) params.set("type", filters.type);
-    return request<ApiFootballLeagueSearchResult[]>(
-      `/sports/leagues/all?${params.toString()}`,
-    );
+    return request<SportsLeague[]>(`/sports/leagues/all?${params.toString()}`);
   },
 };
 

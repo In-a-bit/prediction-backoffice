@@ -8,6 +8,7 @@ import {
   type Tab,
 } from "@/components/ui";
 import { crypto, manual, sports } from "@/lib/api";
+import { parseContestFor } from "@/lib/sports/registry";
 import type {
   Asset,
   CryptoEvent,
@@ -322,25 +323,14 @@ async function loadSport(q?: string): Promise<SportPayload> {
       const task = taskById.get(t.id);
       for (const ev of events[idx]) {
         if (!ev.event_external_id) continue;
-        const fp = (ev.fixture_payload ?? {}) as Record<string, unknown>;
-        const teams = (fp.teams ?? {}) as Record<string, unknown>;
-        const home = (teams.home ?? {}) as Record<string, unknown>;
-        const away = (teams.away ?? {}) as Record<string, unknown>;
-        const league = (fp.league ?? {}) as Record<string, unknown>;
+        const sportKey = ev.sport_key ?? task?.sport_key;
+        const contest = parseContestFor(sportKey, ev.fixture_payload);
         rows.push({
           event_external_id: ev.event_external_id,
-          sport: task?.sport_key ?? "—",
-          country:
-            (typeof league.country === "string" ? league.country : "") ||
-            "—",
-          league:
-            (typeof league.name === "string" ? league.name : "") ||
-            task?.league_slug ||
-            "—",
-          match:
-            home.name && away.name
-              ? `${home.name} vs ${away.name}`
-              : ev.event_slug,
+          sport: sportKey ?? "—",
+          country: contest?.country || "—",
+          league: contest?.leagueName || task?.league_slug || "—",
+          match: contest ? `${contest.homeName} vs ${contest.awayName}` : ev.event_slug,
           kickoff_at: ev.kickoff_at,
           fixture_status_short: ev.fixture_status_short,
           market_count: ev.markets?.length ?? 0,
