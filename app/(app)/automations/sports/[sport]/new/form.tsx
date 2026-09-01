@@ -14,64 +14,34 @@ import {
   inputClass,
   selectClass,
 } from "@/components/ui";
-import {
-  TagChipsEditor,
-  slugify,
-  suggestSoccerTags,
-} from "@/components/sports/tag-chips";
+import { TagChipsEditor } from "@/components/sports/tag-chips";
 import { isLivenessValidationError, readFetchErrorMessage } from "@/lib/api-error";
-import type {
-  ApiFootballLeagueSearchResult,
-  SportTask,
-  SportsTagSpec,
-} from "@/lib/types";
-
-const MARKET_TYPES = [
-  {
-    key: "moneyline",
-    label: "Moneyline (regulation)",
-    note:
-      "3 Yes/No markets per fixture (home wins, draw, away wins). Resolved on score.fulltime — extra time and penalty shootouts count as a draw.",
-  },
-  {
-    key: "halftime",
-    label: "Halftime",
-    note:
-      "3 Yes/No markets per fixture for the halftime score. Resolves as soon as the fixture reaches HT (status >= HT).",
-  },
-] as const;
-
-const currentYear = new Date().getUTCFullYear();
-// api-football uses a single calendar year as the season identifier.
-// Default to the current calendar year.
-const defaultSeason = currentYear;
-
-// availableSeasons returns a sensible list of seasons for the dropdown:
-// 3 years back through 1 year forward from the current calendar year.
-function availableSeasons(): number[] {
-  const years: number[] = [];
-  for (let y = currentYear + 1; y >= currentYear - 3; y--) {
-    years.push(y);
-  }
-  return years;
-}
+import { sportPath, sportUi } from "@/lib/sports/registry";
+import { slugify } from "@/lib/sports/tags";
+import type { SportTask, SportsLeague, SportsTagSpec } from "@/lib/types";
 
 // LeagueOption is the per-row payload the dropdown renders. `disabled` is set
 // for (api_league_id, api_season) combinations that already have a config —
 // we still show them so operators see what's been configured, but they can't
 // be re-selected.
-type LeagueOption = ApiFootballLeagueSearchResult & {
+type LeagueOption = SportsLeague & {
   disabled: boolean;
   disabledReason?: string;
   existingConfigId?: number;
 };
 
-export function NewSportTaskForm() {
+export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  // The page 404s on an unknown sport before rendering the form, so the
+  // lookup here always hits.
+  const ui = sportUi(sportKey)!;
+  const seasonChoices = ui.seasonOptions();
+  const defaultSeason = ui.defaultSeason();
+
   const [season, setSeason] = useState<number>(defaultSeason);
-  const [allLeagues, setAllLeagues] = useState<ApiFootballLeagueSearchResult[]>([]);
+  const [allLeagues, setAllLeagues] = useState<SportsLeague[]>([]);
   const [existingConfigs, setExistingConfigs] = useState<SportTask[]>([]);
   // Default to true so the "0 leagues" warning doesn't flash before the
   // first fetch starts (initial render → useEffect fires → setLoadingLeagues(true)
@@ -93,7 +63,7 @@ export function NewSportTaskForm() {
   const [tagsEdited, setTagsEdited] = useState(false);
   const [category, setCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
-  const [marketTypes, setMarketTypes] = useState<string[]>(["moneyline"]);
+  const [marketTypes, setMarketTypes] = useState<string[]>([ui.marketTypes[0].key]);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [livenessError, setLivenessError] = useState<string | null>(null);
@@ -111,11 +81,11 @@ export function NewSportTaskForm() {
       setLeagueError(null);
       try {
         const [leaguesRes, configsRes] = await Promise.all([
-          fetch(`/api/sports/leagues/all?season=${season}`, {
+          fetch(`/api/sports/leagues/all?sport=${sportKey}&season=${season}`, {
             cache: "no-store",
             signal: controller.signal,
           }),
-          fetch(`/api/sports/tasks?sport_key=soccer`, {
+          fetch(`/api/sports/tasks?sport_key=${sportKey}`, {
             cache: "no-store",
             signal: controller.signal,
           }),
@@ -124,12 +94,12 @@ export function NewSportTaskForm() {
         if (!leaguesRes.ok) {
           // Surface the actual upstream error body so 500/502/etc. don't look
           // like an empty success. Common causes: Go backoffice not restarted
-          // (route 404), api-football key invalid (403), rate-limit (429).
+          // (route 404), the sport's API key invalid (403), rate-limit (429).
           const text = await leaguesRes.text().catch(() => "");
           setLeagueError(`leagues fetch failed — status ${leaguesRes.status}: ${text || "(empty body)"}`);
           setAllLeagues([]);
         } else {
-          const data = (await leaguesRes.json()) as ApiFootballLeagueSearchResult[] | null;
+          const data = (await leaguesRes.json()) as SportsLeague[] | null;
           // Defensive: a misbehaving upstream could return null.
           setAllLeagues(Array.isArray(data) ? data : []);
         }
@@ -162,7 +132,7 @@ export function NewSportTaskForm() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [season]);
+  }, [season, sportKey]);
 
   // Distinct list of countries in the loaded leagues — used to populate the
   // country dropdown. Sorted alphabetically; "" represents "all countries".
@@ -174,7 +144,7 @@ export function NewSportTaskForm() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [allLeagues]);
 
-  // Distinct competition types (api-football uses "League" / "Cup") — lets
+  // Distinct competition types (api-sports uses "League" / "Cup") — lets
   // operators narrow to e.g. cup competitions before drilling into a country,
   // since a country's domestic cup and league share the country filter.
   const types: string[] = useMemo(() => {
@@ -240,7 +210,7 @@ export function NewSportTaskForm() {
   // season changes, unless the operator has manually edited the slug. We
   // append the year only if the base slug doesn't already include it — per
   // the rule "if the api returns a slug use it; if it's missing the year,
-  // concat it" (api-football doesn't currently return a slug, but the rule
+  // concat it" (api-sports doesn't currently return a slug, but the rule
   // covers a future where it might).
   useEffect(() => {
     if (slugEdited) return;
@@ -263,13 +233,13 @@ export function NewSportTaskForm() {
       return;
     }
     setTags(
-      suggestSoccerTags({
+      ui.suggestTags({
         leagueName: selectedLeague.name,
         country: selectedLeague.country,
         season,
       }),
     );
-  }, [selectedLeague, season, tagsEdited]);
+  }, [selectedLeague, season, tagsEdited, ui]);
 
   const toggleMarketType = (key: string) => {
     setMarketTypes((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -291,7 +261,7 @@ export function NewSportTaskForm() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            sport_key: "soccer",
+            sport_key: sportKey,
             api_league_id: selectedLeague.id,
             api_season: season,
             league_slug: leagueSlug,
@@ -316,7 +286,7 @@ export function NewSportTaskForm() {
           return;
         }
         const created = (await res.json()) as { id: number };
-        router.push(`/automations/sports/soccer/${created.id}`);
+        router.push(sportPath(sportKey, created.id));
       } catch (err) {
         setSubmitError(err instanceof Error ? err.message : String(err));
       }
@@ -335,7 +305,7 @@ export function NewSportTaskForm() {
             <div className="w-36">
               <Field
                 label="Season"
-                hint={`Default ${defaultSeason} (current year). api-football uses a single year as the season identifier.`}
+                hint={`Default ${defaultSeason} — ${ui.formatSeason(defaultSeason)}.`}
               >
                 <select
                   className={selectClass}
@@ -349,9 +319,9 @@ export function NewSportTaskForm() {
                     setCountryFilter("");
                   }}
                 >
-                  {availableSeasons().map((y) => (
+                  {seasonChoices.map((y) => (
                     <option key={y} value={y}>
-                      {y}
+                      {ui.formatSeason(y)}
                       {y === defaultSeason ? " (current)" : ""}
                     </option>
                   ))}
@@ -420,11 +390,12 @@ export function NewSportTaskForm() {
 
           {!loadingLeagues && allLeagues.length === 0 && !leagueError && (
             <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-              api-football returned 0 leagues for season <strong>{season}</strong>.
-              That season probably isn't populated yet — try{" "}
-              <strong>{defaultSeason}</strong> instead. (If you don't see {" "}
-              <code>APIFOOTBALL_API_KEY</code> errors in the backoffice logs, this is the most
-              likely cause.)
+              The upstream returned 0 leagues for season{" "}
+              <strong>{ui.formatSeason(season)}</strong>. That season probably isn&apos;t populated
+              yet — try <strong>{ui.formatSeason(defaultSeason)}</strong> instead. (If you
+              don&apos;t see{" "}
+              <code>SPORTS_{sportKey.toUpperCase()}_API_KEY</code> errors in the backoffice logs,
+              this is the most likely cause.)
             </div>
           )}
 
@@ -480,7 +451,7 @@ export function NewSportTaskForm() {
           <span className="font-semibold">2. Market behaviors</span>
         </CardHeader>
         <CardBody className="space-y-3">
-          {MARKET_TYPES.map((mt) => (
+          {ui.marketTypes.map((mt) => (
             <label key={mt.key} className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -532,7 +503,7 @@ export function NewSportTaskForm() {
 
           <Field
             label="Time ahead (hours)"
-            hint="How far in advance of kickoff to create fixture events + markets."
+            hint={`How far in advance of ${ui.contest.startLabel.toLowerCase()} to create ${ui.contest.singular} events + markets.`}
           >
             <input
               type="number"
@@ -588,7 +559,7 @@ export function NewSportTaskForm() {
 
           <Field
             label="Tags"
-            hint={`Auto-seeded from the selected league: name, season, country, plus Soccer + Football${tagsEdited ? " — manually edited" : ""}. Unknown slugs are created in dpm-api on submit.`}
+            hint={`Auto-seeded from the selected league: name, season, country, plus the sport's own tags${tagsEdited ? " — manually edited" : ""}. Unknown slugs are created in dpm-api on submit.`}
           >
             <div className="space-y-2">
               <TagChipsEditor

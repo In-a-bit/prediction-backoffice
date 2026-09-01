@@ -6,6 +6,7 @@
 // dedicated aggregation endpoints. Costs are bounded by the existing list
 // sizes (deploy plans / sport tasks / crypto tasks), so this is OK.
 
+import { isLiveStatusFor } from "./sports/registry";
 import type {
   CryptoEvent,
   DeployPlan,
@@ -144,22 +145,12 @@ export function countDeployPlansBySource(plans: DeployPlan[]): SourceCounts {
 }
 
 // ---------------------------------------------------------------------------
-// Sport-event helpers — running fixtures (in-play according to fixture status
-// short codes from api-football: 1H, HT, 2H, ET, P, BT, LIVE).
+// Sport-event helpers — in-play according to the event's own sport. Status
+// codes are per-vendor and collide across sports, so the sport decides.
 // ---------------------------------------------------------------------------
 
-const LIVE_FIXTURE_STATUSES = new Set([
-  "1H",
-  "HT",
-  "2H",
-  "ET",
-  "P",
-  "BT",
-  "LIVE",
-]);
-
 export function isSportEventLive(event: SportEvent): boolean {
-  return LIVE_FIXTURE_STATUSES.has(event.fixture_status_short);
+  return isLiveStatusFor(event.sport_key, event.fixture_status_short);
 }
 
 // ---------------------------------------------------------------------------

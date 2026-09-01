@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { behaviorList } from "@/lib/behaviors";
 import { useMe } from "@/components/auth/permission-context";
 import { can, type Permission } from "@/lib/auth";
+import { hubCards, sportPath } from "@/lib/sports/registry";
 
 type Item = {
   href: string;
@@ -192,10 +193,11 @@ const sections: Section[] = [
           );
           return [
             head,
-            { href: "/automations/sports/soccer", label: "Soccer", accent: b.accent, requires: "tasks.read", icon: <span />, child: true } satisfies Item,
-            { key: "soon-basketball", href: "/automations/sports", label: "Basketball (soon)", accent: b.accent, requires: "tasks.read", icon: <span />, child: true, trailing: soonChip } satisfies Item,
-            { key: "soon-nba", href: "/automations/sports", label: "NBA (soon)", accent: b.accent, requires: "tasks.read", icon: <span />, child: true, trailing: soonChip } satisfies Item,
-            { key: "soon-mma", href: "/automations/sports", label: "MMA (soon)", accent: b.accent, requires: "tasks.read", icon: <span />, child: true, trailing: soonChip } satisfies Item,
+            ...hubCards().map((sport) =>
+              sport.available
+                ? ({ href: sportPath(sport.key), label: sport.label, accent: b.accent, requires: "tasks.read", icon: <span />, child: true } satisfies Item)
+                : ({ key: `soon-${sport.key}`, href: "/automations/sports", label: `${sport.label} (soon)`, accent: b.accent, requires: "tasks.read", icon: <span />, child: true, trailing: soonChip } satisfies Item),
+            ),
           ];
         }
         return [head];

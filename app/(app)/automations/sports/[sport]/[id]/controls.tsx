@@ -4,22 +4,20 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Badge, Card, CardBody, CardHeader, ErrorMessage, buttonVariants } from "@/components/ui";
+import { sportUi } from "@/lib/sports/registry";
 import type { SportTask } from "@/lib/types";
 
-const AVAILABLE_MARKET_TYPES = [
-  { key: "moneyline", label: "Moneyline" },
-  { key: "halftime", label: "Halftime" },
-] as const;
-
-export function SportTaskControls({ config }: { config: SportTask }) {
+export function SportTaskControls({ sportKey, config }: { sportKey: string; config: SportTask }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  const ui = sportUi(sportKey);
+  const availableMarketTypes = ui?.marketTypes ?? [];
   const activeMarketKeys = new Set(
     config.market_types.filter((mt) => !mt.deactivated_at).map((mt) => mt.key),
   );
-  const addableKeys = AVAILABLE_MARKET_TYPES.filter((mt) => !activeMarketKeys.has(mt.key));
+  const addableKeys = availableMarketTypes.filter((mt) => !activeMarketKeys.has(mt.key));
 
   const post = (path: string, body: unknown) => {
     setError(null);
