@@ -7,11 +7,11 @@ import { ErrorMessage, buttonVariants } from "@/components/ui";
 
 export function SportEventActions({
   eventId,
-  sportTaskId,
+  contestNoun,
   hasCreationPlan,
 }: {
   eventId: number;
-  sportTaskId: number;
+  contestNoun: string;
   hasCreationPlan: boolean;
 }) {
   const router = useRouter();
@@ -42,7 +42,7 @@ export function SportEventActions({
         type="button"
         className={buttonVariants.primary}
         disabled={pending || hasCreationPlan}
-        title="Idempotently re-runs the per-event Creator logic: ensures the dpm-api event exists, then spawns/re-spawns the DeployPlan if missing. Use this to retry after the upcoming-ticker hit an error, or to force a fixture in early before the time_ahead_hours window."
+        title={`Idempotently re-runs the per-event Creator logic: ensures the dpm-api event exists, then spawns/re-spawns the DeployPlan if missing. Use this to retry after the upcoming-ticker hit an error, or to force a ${contestNoun} in early before the time_ahead_hours window.`}
         onClick={() =>
           post(
             `/api/sports/events/${eventId}/force-create`,
@@ -54,8 +54,6 @@ export function SportEventActions({
       </button>
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
-      {/* sportTaskId is reserved for future per-league overrides on this page */}
-      <input type="hidden" value={sportTaskId} readOnly />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { Badge, buttonVariants } from "@/components/ui";
+import { slugify } from "@/lib/sports/tags";
 import type { SportsTagSpec } from "@/lib/types";
 
 // TagChipsEditor renders an auditable list of slug+label tag chips with
@@ -106,38 +107,3 @@ export function TagChipsEditor({
   );
 }
 
-// slugify mirrors what the backend would do: lowercase, kebab-case,
-// trim leading/trailing dashes. Used purely client-side to derive the
-// upsert key from a human-typed label.
-export function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-// suggestSoccerTags builds the auto-seeded tag set for a league config:
-// league name, season label, country, plus the constants "soccer" and
-// "football". Skips empty / duplicate entries.
-export function suggestSoccerTags(opts: {
-  leagueName?: string;
-  country?: string;
-  season: number;
-}): SportsTagSpec[] {
-  const out: SportsTagSpec[] = [];
-  const push = (label: string) => {
-    const trimmed = label.trim();
-    if (!trimmed) return;
-    const slug = slugify(trimmed);
-    if (!slug) return;
-    if (out.some((t) => t.slug === slug)) return;
-    out.push({ slug, label: trimmed });
-  };
-  if (opts.leagueName) push(opts.leagueName);
-  push(`${opts.season}`);
-  if (opts.country) push(opts.country);
-  push("Soccer");
-  push("Football");
-  return out;
-}

@@ -1,68 +1,41 @@
 // Factual outcome block — shows the real-world fact a market resolves
-// against. Sport: team names + final/halftime score. Crypto: open→close
-// price + direction. Defensive against api-football payload shape drift.
+// against. Sport: team names + final/partial score. Crypto: open→close
+// price + direction.
 
 import type { CryptoEvent, SportEvent } from "@/lib/types";
 import { formatDateTimeFull } from "@/lib/format";
+import { parseContestFor } from "@/lib/sports/registry";
+import type { SportContest } from "@/lib/sports/types";
 
 // ---------------------------------------------------------------------------
 // Sport
 // ---------------------------------------------------------------------------
 
-type SportScore = {
-  homeName: string;
-  awayName: string;
-  fullHome: number | null;
-  fullAway: number | null;
-  halfHome: number | null;
-  halfAway: number | null;
-  statusShort: string;
-};
-
-export function extractSportScore(event: SportEvent | undefined): SportScore | null {
+// extractSportScore projects the stored payload through the parser belonging
+// to the event's own sport. Vendors disagree on shape — soccer nests the
+// match under `fixture` and splits scores into `goals`/`score.fulltime`,
+// hockey is flat — so the sport key decides, not the payload.
+export function extractSportScore(event: SportEvent | undefined): SportContest | null {
   if (!event?.fixture_payload) return null;
-  try {
-    const payload = event.fixture_payload as Record<string, unknown>;
-    const teams = (payload.teams ?? {}) as Record<string, unknown>;
-    const home = (teams.home ?? {}) as Record<string, unknown>;
-    const away = (teams.away ?? {}) as Record<string, unknown>;
-    const score = (payload.score ?? {}) as Record<string, unknown>;
-    const goals = (payload.goals ?? {}) as Record<string, unknown>;
-    const fulltime = (score.fulltime ?? {}) as Record<string, unknown>;
-    const halftime = (score.halftime ?? {}) as Record<string, unknown>;
-    const fixture = (payload.fixture ?? {}) as Record<string, unknown>;
-    const status = (fixture.status ?? {}) as Record<string, unknown>;
-
-    return {
-      homeName: typeof home.name === "string" ? home.name : "Home",
-      awayName: typeof away.name === "string" ? away.name : "Away",
-      fullHome: toNum(fulltime.home) ?? toNum(goals.home),
-      fullAway: toNum(fulltime.away) ?? toNum(goals.away),
-      halfHome: toNum(halftime.home),
-      halfAway: toNum(halftime.away),
-      statusShort:
-        typeof status.short === "string"
-          ? status.short
-          : typeof event.fixture_status_short === "string"
-            ? event.fixture_status_short
-            : "",
-    };
-  } catch {
-    return null;
-  }
+  const contest = parseContestFor(event.sport_key, event.fixture_payload);
+  if (!contest) return null;
+  return {
+    ...contest,
+    statusShort: contest.statusShort || event.fixture_status_short || "",
+  };
 }
 
 export function SportOutcomeBlock({ event }: { event: SportEvent | undefined }) {
   const s = extractSportScore(event);
   if (!s) return null;
-  const finalKnown = s.fullHome !== null && s.fullAway !== null;
-  const halfKnown = s.halfHome !== null && s.halfAway !== null;
+  const finalKnown = s.scoreHome !== null && s.scoreAway !== null;
+  const partialKnown = s.partialHome != null && s.partialAway != null;
 
   return (
     <div className="rounded-lg border border-border bg-surface px-4 py-3 space-y-2">
       {event?.kickoff_at ? (
         <div className="text-center text-[11px] text-foreground-muted">
-          <span className="uppercase tracking-wider">Kickoff</span>{" "}
+          <span className="uppercase tracking-wider">Start</span>{" "}
           <span className="font-mono">{formatDateTimeFull(event.kickoff_at)}</span>
         </div>
       ) : null}
@@ -71,9 +44,9 @@ export function SportOutcomeBlock({ event }: { event: SportEvent | undefined }) 
           {s.homeName}
         </span>
         <span className="text-2xl font-mono tabular-nums text-foreground">
-          {finalKnown ? s.fullHome : "—"}
+          {finalKnown ? s.scoreHome : "—"}
           <span className="mx-2 text-foreground-muted" aria-hidden="true">:</span>
-          {finalKnown ? s.fullAway : "—"}
+          {finalKnown ? s.scoreAway : "—"}
         </span>
         <span className="flex-1 text-left text-sm font-medium truncate">
           {s.awayName}
@@ -82,17 +55,17 @@ export function SportOutcomeBlock({ event }: { event: SportEvent | undefined }) 
           {s.statusShort || "—"}
         </span>
       </div>
-      {halfKnown ? (
+      {partialKnown ? (
         <div className="mt-1.5 text-center text-[11px] text-foreground-muted">
-          Halftime{" "}
+          {s.partialLabel}{" "}
           <span className="font-mono tabular-nums">
-            {s.halfHome} : {s.halfAway}
+            {s.partialHome} : {s.partialAway}
           </span>
         </div>
       ) : null}
       {!finalKnown ? (
         <div className="mt-1.5 text-center text-[11px] text-foreground-muted">
-          Match not finished
+          Not finished
         </div>
       ) : null}
     </div>
@@ -102,11 +75,11 @@ export function SportOutcomeBlock({ event }: { event: SportEvent | undefined }) 
 export function inlineSportOutcome(event: SportEvent | undefined): string | undefined {
   const s = extractSportScore(event);
   if (!s) return undefined;
-  if (s.fullHome !== null && s.fullAway !== null) {
-    return `${s.homeName} ${s.fullHome}-${s.fullAway} ${s.awayName} (${s.statusShort || "FT"})`;
+  if (s.scoreHome !== null && s.scoreAway !== null) {
+    return `${s.homeName} ${s.scoreHome}-${s.scoreAway} ${s.awayName} (${s.statusShort || "FT"})`;
   }
-  if (s.halfHome !== null && s.halfAway !== null) {
-    return `${s.homeName} ${s.halfHome}-${s.halfAway} ${s.awayName} (HT)`;
+  if (s.partialHome != null && s.partialAway != null) {
+    return `${s.homeName} ${s.partialHome}-${s.partialAway} ${s.awayName} (${s.partialLabel})`;
   }
   return `${s.homeName} vs ${s.awayName} (${s.statusShort || "NS"})`;
 }
@@ -209,15 +182,6 @@ export function inlineCryptoOutcome(
 // ---------------------------------------------------------------------------
 // Local helpers
 // ---------------------------------------------------------------------------
-
-function toNum(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const n = Number.parseFloat(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
 
 function parseDecimal(v: string | undefined | null): number | null {
   if (!v) return null;

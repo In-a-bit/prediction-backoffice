@@ -1,25 +1,30 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { Badge, Card, CardBody, CardHeader, PageHeader, buttonVariants } from "@/components/ui";
 import { behaviors } from "@/lib/behaviors";
 import { sports } from "@/lib/api";
-import { formatFootballSeason } from "@/lib/format";
+import { sportPath, sportUi } from "@/lib/sports/registry";
 
 export const dynamic = "force-dynamic";
 
-export default async function SoccerHubPage() {
-  const configs = await sports.listTasks("soccer").catch(() => []);
+export default async function SportHubPage({ params }: { params: Promise<{ sport: string }> }) {
+  const { sport: sportKey } = await params;
+  const ui = sportUi(sportKey);
+  if (!ui || !ui.available) notFound();
+
+  const configs = await sports.listTasks(sportKey).catch(() => []);
   const accent = behaviors.sports.accent;
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto">
       <PageHeader
-        title="Soccer leagues"
-        description="One config per league + season. Each defines time-ahead window, which market behaviors to spawn per fixture, and toggles for create / resolve / metadata-update."
+        title={`${ui.shortLabel} leagues`}
+        description={`One config per league + season. Each defines time-ahead window, which market behaviors to spawn per ${ui.contest.singular}, and toggles for create / resolve / metadata-update.`}
       />
 
       <div className="mb-6 flex items-center gap-3">
-        <Link href="/automations/sports/soccer/new" className={buttonVariants.primary}>
+        <Link href={sportPath(sportKey, "new")} className={buttonVariants.primary}>
           + Add league
         </Link>
         <Link
@@ -41,7 +46,7 @@ export default async function SoccerHubPage() {
           {configs.map((cfg) => (
             <Link
               key={cfg.id}
-              href={`/automations/sports/soccer/${cfg.id}`}
+              href={sportPath(sportKey, cfg.id)}
               className="block"
             >
               <Card className="h-full transition-shadow hover:shadow-md">
@@ -54,7 +59,7 @@ export default async function SoccerHubPage() {
                   <div className="flex-1">
                     <div className="font-semibold">
                       {String(cfg.league_metadata?.name ?? cfg.league_slug)} —{" "}
-                      {formatFootballSeason(cfg.api_season)}
+                      {ui.formatSeason(cfg.api_season)}
                     </div>
                     <div className="text-xs text-foreground-muted">
                       Series <code className="font-mono">{cfg.series_slug}</code>
@@ -74,7 +79,7 @@ export default async function SoccerHubPage() {
                   <div className="flex items-center gap-3 text-xs">
                     <span>time ahead: {cfg.time_ahead_hours}h</span>
                     <span>•</span>
-                    <span>fixtures ingested: {cfg.event_count}</span>
+                    <span>{ui.contest.plural} ingested: {cfg.event_count}</span>
                   </div>
                 </CardBody>
               </Card>

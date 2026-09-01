@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Badge, Card, CardBody, CardHeader, PageHeader, buttonVariants } from "@/components/ui";
 import { DeployPlanDriver } from "@/components/manual/deploy-plan-driver";
 import { sports } from "@/lib/api";
+import { sportPath, sportUi } from "@/lib/sports/registry";
 import { SportEventActions } from "./actions";
 import { SportEventAutoRefresh } from "./auto-refresh";
 
@@ -12,43 +13,68 @@ export const dynamic = "force-dynamic";
 export default async function SportEventDetailPage({
   params,
 }: {
-  params: Promise<{ id: string; event_id: string }>;
+  params: Promise<{ sport: string; id: string; event_id: string }>;
 }) {
-  const { id: idStr, event_id: eventStr } = await params;
+  const { sport: sportKey, id: idStr, event_id: eventStr } = await params;
+  const ui = sportUi(sportKey);
+  if (!ui || !ui.available) notFound();
+
   const sportTaskId = Number.parseInt(idStr, 10);
   const eventId = Number.parseInt(eventStr, 10);
   if (!Number.isFinite(sportTaskId) || !Number.isFinite(eventId)) notFound();
 
-  const fixture = await sports.getEvent(eventId).catch(() => null);
-  if (!fixture) notFound();
+  const contest = await sports.getEvent(eventId).catch(() => null);
+  if (!contest) notFound();
 
-  const payload = (fixture.fixture_payload ?? {}) as Record<string, unknown>;
-  const teams = (payload.teams ?? {}) as { home?: { name?: string }; away?: { name?: string } };
-  const homeName = teams.home?.name ?? "?";
-  const awayName = teams.away?.name ?? "?";
+  const parsed = ui.parseContest(contest.fixture_payload);
+  const title = parsed ? `${parsed.homeName} vs ${parsed.awayName}` : `${ui.contest.singular} ${contest.api_fixture_id}`;
+  const startedAt = new Date(contest.kickoff_at).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 
   return (
     <div className="px-6 py-8 max-w-5xl mx-auto">
       <SportEventAutoRefresh
-        creationPlanId={fixture.creation_plan_external_id}
+        creationPlanId={contest.creation_plan_external_id}
         intervalMs={2000}
       />
       <PageHeader
-        title={`${homeName} vs ${awayName}`}
-        description={`api-football fixture ${fixture.api_fixture_id} · kickoff ${new Date(fixture.kickoff_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · status ${fixture.fixture_status_short}`}
+        title={title}
+        description={`${ui.shortLabel} ${ui.contest.singular} ${contest.api_fixture_id} · ${ui.contest.startLabel.toLowerCase()} ${startedAt} · status ${contest.fixture_status_short}`}
       />
 
+      {parsed && (
+        <div className="mb-6 flex items-center gap-4 text-sm">
+          <Badge tone={ui.statusTone(contest.fixture_status_short)}>
+            {contest.fixture_status_short}
+          </Badge>
+          <span className="font-mono text-lg">
+            {parsed.scoreHome ?? "–"} : {parsed.scoreAway ?? "–"}
+          </span>
+          {parsed.partialLabel && parsed.partialHome != null && (
+            <span className="text-xs text-foreground-muted">
+              {parsed.partialLabel} {parsed.partialHome}–{parsed.partialAway}
+            </span>
+          )}
+          <span className="text-xs text-foreground-muted">
+            {parsed.leagueName}
+            {parsed.country ? ` · ${parsed.country}` : ""}
+          </span>
+        </div>
+      )}
+
       <SportEventActions
-        eventId={fixture.id}
-        sportTaskId={sportTaskId}
-        hasCreationPlan={Boolean(fixture.creation_plan_external_id)}
+        eventId={contest.id}
+        contestNoun={ui.contest.singular}
+        hasCreationPlan={Boolean(contest.creation_plan_external_id)}
       />
 
       {/* Creation plan — uses the existing DeployPlanDriver verbatim. */}
-      {fixture.creation_plan_external_id ? (
+      {contest.creation_plan_external_id ? (
         <div className="mt-8">
           <h2 className="mb-3 text-lg font-semibold">Creation plan</h2>
-          <DeployPlanDriver planExternalId={fixture.creation_plan_external_id} />
+          <DeployPlanDriver planExternalId={contest.creation_plan_external_id} />
         </div>
       ) : (
         <Card className="mt-8">
@@ -60,11 +86,11 @@ export default async function SportEventDetailPage({
       )}
 
       {/* Backfill plans — one DeployPlanDriver per plan. */}
-      {fixture.backfill_plan_external_ids && fixture.backfill_plan_external_ids.length > 0 && (
+      {contest.backfill_plan_external_ids && contest.backfill_plan_external_ids.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 text-lg font-semibold">Backfill plans</h2>
           <div className="space-y-4">
-            {fixture.backfill_plan_external_ids.map((pid) => (
+            {contest.backfill_plan_external_ids.map((pid) => (
               <DeployPlanDriver key={pid} planExternalId={pid} />
             ))}
           </div>
@@ -72,11 +98,11 @@ export default async function SportEventDetailPage({
       )}
 
       {/* Decisions */}
-      {fixture.decisions && fixture.decisions.length > 0 && (
+      {contest.decisions && contest.decisions.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 text-lg font-semibold">Resolution decisions</h2>
           <div className="space-y-3">
-            {fixture.decisions.map((d) => (
+            {contest.decisions.map((d) => (
               <Card key={d.id}>
                 <CardHeader className="flex items-center gap-3">
                   <span className="font-medium text-sm">Market type {d.sport_market_type_id}</span>
@@ -111,7 +137,7 @@ export default async function SportEventDetailPage({
       )}
 
       {/* Markets table */}
-      {fixture.markets && fixture.markets.length > 0 && (
+      {contest.markets && contest.markets.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 text-lg font-semibold">Markets</h2>
           <div className="border rounded overflow-x-auto">
@@ -126,7 +152,7 @@ export default async function SportEventDetailPage({
                 </tr>
               </thead>
               <tbody>
-                {fixture.markets.map((m) => (
+                {contest.markets.map((m) => (
                   <tr key={m.id} className="border-t">
                     <td className="px-3 py-2">{m.market_type_key}</td>
                     <td className="px-3 py-2">{m.outcome_key}</td>
@@ -148,7 +174,7 @@ export default async function SportEventDetailPage({
       )}
 
       <div className="mt-10">
-        <Link href={`/automations/sports/soccer/${sportTaskId}`} className={buttonVariants.ghost}>
+        <Link href={sportPath(sportKey, sportTaskId)} className={buttonVariants.ghost}>
           ← Back to league
         </Link>
       </div>

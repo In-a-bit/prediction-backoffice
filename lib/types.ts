@@ -674,6 +674,10 @@ export type SportMarketTypeSummary = {
 export type SportEvent = {
   id: number;
   api_fixture_id: number;
+  // sport_key names the payload shape of fixture_payload, so the UI picks a
+  // parser instead of guessing one. Optional for rows served by a backoffice
+  // that predates the field.
+  sport_key?: string;
   sport_task_id: number;
   kickoff_at: string;
   event_external_id?: string;
@@ -768,7 +772,10 @@ export type SportDecision = {
   correlation_id: string;
 };
 
-export type ApiFootballLeagueSearchResult = {
+// SportsLeague is the sport-neutral league projection every provider maps
+// into — the backoffice normalizes api-football's `{league, country}`
+// nesting and api-hockey's flat shape into this before returning it.
+export type SportsLeague = {
   id: number;
   name: string;
   country: string;

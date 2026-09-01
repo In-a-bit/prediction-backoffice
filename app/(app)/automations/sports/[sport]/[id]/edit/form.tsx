@@ -11,26 +11,36 @@ import {
   Field,
   buttonVariants,
 } from "@/components/ui";
-import { TagChipsEditor, suggestSoccerTags } from "@/components/sports/tag-chips";
+import { TagChipsEditor } from "@/components/sports/tag-chips";
 import { isLivenessValidationError, readFetchErrorMessage } from "@/lib/api-error";
+import { sportPath, sportUi } from "@/lib/sports/registry";
 import type { SportTask, SportsTagSpec } from "@/lib/types";
 
 // EditSportTaskForm edits the mutable parts of a league config:
 // time_ahead_hours, tags, category, sub-category, and the four toggles.
 // Sport, api_league_id, api_season, league_slug, series_id are immutable
 // after creation — they define the config's identity.
-export function EditSportTaskForm({ config }: { config: SportTask }) {
+export function EditSportTaskForm({
+  config,
+  sportKey,
+}: {
+  config: SportTask;
+  sportKey: string;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [livenessError, setLivenessError] = useState<string | null>(null);
 
+  // The page 404s on an unknown sport before rendering the form.
+  const ui = sportUi(sportKey)!;
+
   // Initial tag state: we only have numeric tag_ids from the existing
   // config — slugs/labels aren't stored locally. We seed the chip editor
-  // with the soccer suggestion set (operator can clear) and operators can
+  // with the sport's suggestion set (operator can clear) and operators can
   // add more by typing labels. On submit, the backend upserts each chip's
   // slug and replaces tag_ids with the merged result.
-  const initialTags = suggestSoccerTags({
+  const initialTags = ui.suggestTags({
     leagueName: String(config.league_metadata?.name ?? config.league_slug),
     country: String(config.league_metadata?.country ?? ""),
     season: config.api_season,
@@ -89,7 +99,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
           }
           return;
         }
-        router.push(`/automations/sports/soccer/${config.id}`);
+        router.push(sportPath(sportKey, config.id));
         router.refresh();
       } catch (err) {
         setSubmitError(err instanceof Error ? err.message : String(err));
@@ -106,7 +116,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
         <CardBody className="space-y-3">
           <Field
             label="Time ahead (hours)"
-            hint="How far in advance of kickoff to create fixture events + markets."
+            hint={`How far in advance of ${ui.contest.startLabel.toLowerCase()} to create ${ui.contest.singular} events + markets.`}
           >
             <input
               type="number"
@@ -193,7 +203,7 @@ export function EditSportTaskForm({ config }: { config: SportTask }) {
         <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <ToggleRow
             label="Create active"
-            note="When off, no new fixture_events are ingested. In-flight markets continue."
+            note={`When off, no new ${ui.contest.plural} are ingested. In-flight markets continue.`}
             value={isCreateActive}
             onChange={setIsCreateActive}
           />
