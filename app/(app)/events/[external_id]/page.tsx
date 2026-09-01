@@ -13,7 +13,7 @@ import {
 import { manual, sports, crypto as cryptoApi } from "@/lib/api";
 import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcome";
 import { MarketOutcomeInline } from "@/components/market-outcome";
-import { formatDateTimeFull, formatRelative } from "@/lib/format";
+import { formatDateTimeFull, formatRelative, formatUsdc } from "@/lib/format";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   CryptoEvent,
@@ -538,8 +538,8 @@ function MarketCard({
                 {dpm?.condition_id ? <KV k="condition_id" v={dpm.condition_id} /> : null}
                 {dpm?.question_id ? <KV k="question_id" v={dpm.question_id} /> : null}
                 {dpm?.slug ? <KV k="slug" v={dpm.slug} /> : null}
-                {dpm?.uma_bond ? <KV k="uma_bond" v={dpm.uma_bond} /> : null}
-                {dpm?.uma_reward ? <KV k="uma_reward" v={dpm.uma_reward} /> : null}
+                {dpm?.uma_bond ? <KV k="uma_bond" v={formatUsdc(dpm.uma_bond)} /> : null}
+                {dpm?.uma_reward ? <KV k="uma_reward" v={formatUsdc(dpm.uma_reward)} /> : null}
                 {verdict?.workflow_id ? <KV k="workflow_id" v={verdict.workflow_id} /> : null}
                 {verdict?.workflow?.status ? (
                   <KV k="workflow_status" v={verdict.workflow.status} />

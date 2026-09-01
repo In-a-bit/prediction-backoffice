@@ -102,6 +102,34 @@ export function titleCase(value: string): string {
     .join(" ");
 }
 
+// USDC uses 6 decimals on Polygon — dpm-api's uma_bond/uma_reward and the
+// on-chain adapter/oracle bond/reward/finalFee fields are all raw integers
+// in this unit, so a stored "500" is actually 0.0005 USDC. BigInt-based
+// (not floating point) to stay exact for arbitrarily large raw amounts,
+// mirroring normalizeBigIntToHuman in
+// components/admin/relayer-wallet-withdraw.tsx.
+const USDC_DECIMALS = 6;
+
+export function formatUsdc(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined || raw === "") return "—";
+  try {
+    const value = BigInt(raw);
+    const negative = value < BigInt(0);
+    const abs = negative ? -value : value;
+    const base = BigInt(10) ** BigInt(USDC_DECIMALS);
+    const whole = abs / base;
+    const frac = abs % base;
+    const fracStr = frac
+      .toString()
+      .padStart(USDC_DECIMALS, "0")
+      .replace(/0+$/, "");
+    const amount = fracStr ? `${whole}.${fracStr}` : whole.toString();
+    return `${negative ? "-" : ""}${amount} USDC`;
+  } catch {
+    return raw;
+  }
+}
+
 // formatFootballSeason renders an api-football "start year" integer as the
 // operator-facing "YYYY/YYYY+1" label. The integer remains the wire format
 // (and the DB representation); only the UI swaps in the prettier form.

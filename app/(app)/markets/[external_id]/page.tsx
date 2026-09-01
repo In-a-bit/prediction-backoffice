@@ -14,7 +14,7 @@ import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcom
 import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
 import { MarketOutcomeCard } from "@/components/market-outcome";
 import { manual, sports, crypto as cryptoApi } from "@/lib/api";
-import { formatDateTimeFull } from "@/lib/format";
+import { formatDateTimeFull, formatUsdc } from "@/lib/format";
 import { derive, deriveUmaTimeline } from "@/lib/market-lifecycle";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
@@ -643,8 +643,8 @@ function KeyFactsGrid({
 
   const uma = [
     row("uma_resolution_status", m?.uma_resolution_status),
-    row("uma_bond", m?.uma_bond, true),
-    row("uma_reward", m?.uma_reward, true),
+    row("uma_bond", m?.uma_bond != null ? formatUsdc(m.uma_bond) : undefined, true),
+    row("uma_reward", m?.uma_reward != null ? formatUsdc(m.uma_reward) : undefined, true),
     row("liveness", m ? `${m.liveness ?? "7200"}s${m.liveness ? "" : " (default)"}` : undefined, true),
   ];
 

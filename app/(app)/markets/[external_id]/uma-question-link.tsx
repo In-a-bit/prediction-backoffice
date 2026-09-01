@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Badge, ErrorMessage } from "@/components/ui";
-import { formatDateTimeFull, formatRelative } from "@/lib/format";
+import { formatDateTimeFull, formatRelative, formatUsdc } from "@/lib/format";
 import type {
   TokenOutcome,
   UmaOracleHasPriceData,
@@ -410,8 +410,8 @@ function AdapterTabContent({
           </Section>
 
           <Section title="Amounts">
-            <KV label="Reward" value={data.reward} mono />
-            <KV label="Proposal bond" value={data.proposal_bond} mono />
+            <KV label="Reward" value={formatUsdc(data.reward)} mono />
+            <KV label="Proposal bond" value={formatUsdc(data.proposal_bond)} mono />
           </Section>
 
           <Section title="Flags">
@@ -484,13 +484,13 @@ function OracleRequestTabContent({
             <span className="text-foreground-muted text-xs">Settled</span>
             <Badge tone={data.settled ? "success" : "neutral"}>{String(data.settled)}</Badge>
           </div>
-          <KV label="Bond" value={data.bond} mono />
+          <KV label="Bond" value={formatUsdc(data.bond)} mono />
           <KV label="Custom liveness" value={`${data.custom_liveness}s`} mono />
           <PriceRow label="Proposed price" priceLabel={data.proposed_price_label} tokens={tokens} />
           <PriceRow label="Resolved price" priceLabel={data.resolved_price_label} tokens={tokens} />
           <TimeRow label="Expiration time" value={unixSecondsToDate(data.expiration_time)} />
-          <KV label="Reward" value={data.reward} mono />
-          <KV label="Final fee" value={data.final_fee} mono />
+          <KV label="Reward" value={formatUsdc(data.reward)} mono />
+          <KV label="Final fee" value={formatUsdc(data.final_fee)} mono />
         </Section>
       )}
     </>
