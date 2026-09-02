@@ -27,6 +27,7 @@ import type {
   SupportedPair,
   TagResponse,
   Task,
+  UmaHistory,
   UmaOracleHasPriceData,
   UmaOracleRequestData,
   UmaOracleStateData,
@@ -173,33 +174,6 @@ export const manual = {
   getMarketOutcome: (externalId: string) =>
     request<MarketOutcome>(
       `/manual/markets/${encodeURIComponent(externalId)}/outcome`,
-    ),
-  // Proxies dpm-api's /markets/by-external-id/:id/uma/question — a live
-  // on-chain UmaCtfAdapter.getQuestion read (not a DB snapshot). UMA-only;
-  // covers both manual and sport markets since both share the same dpm
-  // external_id.
-  getUmaQuestion: (externalId: string) =>
-    request<UmaQuestionData>(
-      `/manual/markets/${encodeURIComponent(externalId)}/uma/question`,
-    ),
-  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/request — a live
-  // on-chain ManagedOptimisticOracleV2.getRequest read. Sibling to
-  // getUmaQuestion above (adapter-level vs. oracle-level reads).
-  getUmaOracleRequest: (externalId: string) =>
-    request<UmaOracleRequestData>(
-      `/manual/markets/${encodeURIComponent(externalId)}/uma/oracle/request`,
-    ),
-  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/state — a live
-  // on-chain ManagedOptimisticOracleV2.getState read.
-  getUmaOracleState: (externalId: string) =>
-    request<UmaOracleStateData>(
-      `/manual/markets/${encodeURIComponent(externalId)}/uma/oracle/state`,
-    ),
-  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/has-price — a
-  // live on-chain ManagedOptimisticOracleV2.hasPrice read.
-  getUmaOracleHasPrice: (externalId: string) =>
-    request<UmaOracleHasPriceData>(
-      `/manual/markets/${encodeURIComponent(externalId)}/uma/oracle/has-price`,
     ),
   unpauseMarket: (externalId: string) =>
     request<void>(
@@ -381,6 +355,50 @@ export const manual = {
     request<{ workflow_id: string; run_id: string }>(
       `/manual/backoffice-markets/${manualMarketId}/recover-funds`,
       { method: "POST", body: audit ?? {}, authed: true },
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// UMA reads — live on-chain UmaCtfAdapter/ManagedOptimisticOracleV2 reads
+// plus the indexed on-chain lifecycle history. Shared across every
+// UMA-resolved market regardless of creation source (manual or sport, which
+// share the same dpm external_id), so these live on their own namespace
+// instead of manual.* even though they're proxied through the same Go
+// backoffice service.
+// ---------------------------------------------------------------------------
+
+export const uma = {
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/question — a live
+  // on-chain UmaCtfAdapter.getQuestion read (not a DB snapshot).
+  getQuestion: (externalId: string) =>
+    request<UmaQuestionData>(
+      `/uma/markets/${encodeURIComponent(externalId)}/question`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/request — a live
+  // on-chain ManagedOptimisticOracleV2.getRequest read. Sibling to
+  // getQuestion above (adapter-level vs. oracle-level reads).
+  getOracleRequest: (externalId: string) =>
+    request<UmaOracleRequestData>(
+      `/uma/markets/${encodeURIComponent(externalId)}/oracle/request`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/state — a live
+  // on-chain ManagedOptimisticOracleV2.getState read.
+  getOracleState: (externalId: string) =>
+    request<UmaOracleStateData>(
+      `/uma/markets/${encodeURIComponent(externalId)}/oracle/state`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/oracle/has-price — a
+  // live on-chain ManagedOptimisticOracleV2.hasPrice read.
+  getOracleHasPrice: (externalId: string) =>
+    request<UmaOracleHasPriceData>(
+      `/uma/markets/${encodeURIComponent(externalId)}/oracle/has-price`,
+    ),
+  // Proxies dpm-api's /markets/by-external-id/:id/uma/history — the market's
+  // UMA lifecycle rebuilt from the indexed on-chain events (a DB read, unlike
+  // the live contract reads above), one entry per timeline dot.
+  getHistory: (externalId: string) =>
+    request<UmaHistory>(
+      `/uma/markets/${encodeURIComponent(externalId)}/history`,
     ),
 };
 

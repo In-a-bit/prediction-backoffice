@@ -1,9 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  CopyRow,
+  KV,
+  RawDataToggle,
+  RawFieldList,
+  Section,
+  SideDrawer,
+  TimeRow,
+  shortHex,
+  unixSecondsToDate,
+  type RawField,
+} from "@/components/side-drawer";
 import { Badge, ErrorMessage } from "@/components/ui";
-import { formatDateTimeFull, formatRelative, formatUsdc } from "@/lib/format";
+import { formatUsdc } from "@/lib/format";
+import { umaPriceLabelTone } from "@/lib/market-lifecycle";
 import type {
   TokenOutcome,
   UmaOracleHasPriceData,
@@ -80,7 +93,6 @@ function QuestionDrawer({
 }) {
   const [tab, setTab] = useState<TopTab>("adapter");
   const [oracleMethod, setOracleMethod] = useState<OracleMethod>("request");
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // UmaCtfAdapter.getQuestion — unchanged from before the OO tabs existed.
   const adapter = useOracleSection<UmaQuestionData>({ initialLoading: true });
@@ -94,20 +106,6 @@ function QuestionDrawer({
   const [requestRaw, setRequestRaw] = useState(false);
   const oracleState = useOracleSection<UmaOracleStateData>();
   const hasPrice = useOracleSection<UmaOracleHasPriceData>();
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
 
   // Drawer opens straight into the adapter tab, so fetch it immediately —
   // the oracle tab's data only loads once the operator actually clicks into
@@ -145,92 +143,61 @@ function QuestionDrawer({
     fetchOracleMethod(next);
   }
 
+  const header = (
+    <>
+      <div className="flex items-center gap-2">
+        <QuestionStatusBadge data={adapter.data} />
+        <span className="text-xs text-foreground-muted font-mono">
+          #{shortHex(questionId)}
+        </span>
+      </div>
+      <h3 className="mt-1.5 text-sm font-semibold">
+        {drawerTitle(tab, oracleMethod)}
+      </h3>
+    </>
+  );
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex"
-      role="dialog"
-      aria-modal="true"
-      aria-label="UMA question data"
-    >
-      <div
-        className="flex-1 bg-foreground/30 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-      <aside className="w-full sm:w-[28rem] h-full bg-background border-l border-border shadow-xl overflow-y-auto animate-in slide-in-from-right">
-        <header className="sticky top-0 z-10 bg-background/95 backdrop-blur px-5 py-4 border-b border-border flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <QuestionStatusBadge data={adapter.data} />
-              <span className="text-xs text-foreground-muted font-mono">
-                #{shortHex(questionId)}
-              </span>
-            </div>
-            <h3 className="mt-1.5 text-sm font-semibold">
-              {drawerTitle(tab, oracleMethod)}
-            </h3>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-foreground-muted hover:text-foreground p-1 rounded-md hover:bg-foreground/5 cursor-pointer"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </header>
+    <SideDrawer ariaLabel="UMA question data" header={header} onClose={onClose}>
+      <TopTabBar tab={tab} onSelect={selectTopTab} />
 
-        <TopTabBar tab={tab} onSelect={selectTopTab} />
+      {tab === "oracle" ? (
+        <OracleMethodTabBar method={oracleMethod} onSelect={selectOracleMethod} />
+      ) : null}
 
-        {tab === "oracle" ? (
-          <OracleMethodTabBar method={oracleMethod} onSelect={selectOracleMethod} />
-        ) : null}
-
-        <div className="px-5 py-4 space-y-5 text-sm">
-          {tab === "adapter" ? (
-            <AdapterTabContent
-              loading={adapter.loading}
-              error={adapter.error}
-              data={adapter.data}
-              raw={adapterRaw}
-              onToggleRaw={() => setAdapterRaw((r) => !r)}
-            />
-          ) : oracleMethod === "request" ? (
-            <OracleRequestTabContent
-              loading={request.loading}
-              error={request.error}
-              data={request.data}
-              raw={requestRaw}
-              onToggleRaw={() => setRequestRaw((r) => !r)}
-              tokens={tokens}
-            />
-          ) : oracleMethod === "state" ? (
-            <OracleStateTabContent
-              loading={oracleState.loading}
-              error={oracleState.error}
-              data={oracleState.data}
-            />
-          ) : (
-            <OracleHasPriceTabContent
-              loading={hasPrice.loading}
-              error={hasPrice.error}
-              data={hasPrice.data}
-            />
-          )}
-        </div>
-      </aside>
-    </div>
+      <div className="px-5 py-4 space-y-5 text-sm">
+        {tab === "adapter" ? (
+          <AdapterTabContent
+            loading={adapter.loading}
+            error={adapter.error}
+            data={adapter.data}
+            raw={adapterRaw}
+            onToggleRaw={() => setAdapterRaw((r) => !r)}
+          />
+        ) : oracleMethod === "request" ? (
+          <OracleRequestTabContent
+            loading={request.loading}
+            error={request.error}
+            data={request.data}
+            raw={requestRaw}
+            onToggleRaw={() => setRequestRaw((r) => !r)}
+            tokens={tokens}
+          />
+        ) : oracleMethod === "state" ? (
+          <OracleStateTabContent
+            loading={oracleState.loading}
+            error={oracleState.error}
+            data={oracleState.data}
+          />
+        ) : (
+          <OracleHasPriceTabContent
+            loading={hasPrice.loading}
+            error={hasPrice.error}
+            data={hasPrice.data}
+          />
+        )}
+      </div>
+    </SideDrawer>
   );
 }
 
@@ -516,21 +483,6 @@ function resolveOraclePriceLabel(label: UmaOraclePriceLabel, tokens: TokenOutcom
   }
 }
 
-type PriceBadgeTone = "neutral" | "success" | "warning";
-
-function priceLabelTone(label: UmaOraclePriceLabel): PriceBadgeTone {
-  switch (label) {
-    case "first_outcome_yes":
-    case "second_outcome_yes":
-      return "success";
-    case "fifty_fifty":
-    case "too_early":
-      return "warning";
-    default:
-      return "neutral";
-  }
-}
-
 function PriceRow({
   label,
   priceLabel,
@@ -551,19 +503,27 @@ function PriceRow({
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-foreground-muted text-xs">{label}</span>
-      <Badge tone={priceLabelTone(priceLabel)}>{resolveOraclePriceLabel(priceLabel, tokens)}</Badge>
+      <Badge tone={umaPriceLabelTone(priceLabel)}>{resolveOraclePriceLabel(priceLabel, tokens)}</Badge>
     </div>
   );
+}
+
+// A raw field before it is bound to a response: the on-chain name, its
+// Solidity type, and how to read the value out of the fetched data.
+type RawFieldDescriptor<T> = {
+  name: string;
+  type: string;
+  read: (d: T) => string;
+};
+
+function toRawFields<T>(descriptors: RawFieldDescriptor<T>[], data: T): RawField[] {
+  return descriptors.map((d) => ({ name: d.name, type: d.type, value: d.read(data) }));
 }
 
 // getRequest(...) → structOptimisticOracleV2Interface.Request field
 // names/types, in ABI order (libs/contracts/managedoraclev2's Request /
 // RequestSettings structs).
-const ORACLE_REQUEST_RAW_FIELDS: Array<{
-  name: string;
-  type: string;
-  read: (d: UmaOracleRequestData) => string;
-}> = [
+const ORACLE_REQUEST_RAW_FIELDS: RawFieldDescriptor<UmaOracleRequestData>[] = [
   { name: "proposer", type: "address", read: (d) => d.proposer },
   { name: "disputer", type: "address", read: (d) => d.disputer },
   { name: "currency", type: "address", read: (d) => d.currency },
@@ -596,21 +556,10 @@ const ORACLE_REQUEST_RAW_FIELDS: Array<{
 
 function OracleRequestRawView({ data }: { data: UmaOracleRequestData }) {
   return (
-    <div className="space-y-3">
-      <p className="text-[11px] uppercase tracking-wider text-foreground-muted">
-        getRequest(...) → structOptimisticOracleV2Interface.Request
-      </p>
-      <div className="space-y-2.5">
-        {ORACLE_REQUEST_RAW_FIELDS.map((field) => (
-          <div key={field.name} className="border-b border-border/60 pb-2 last:border-0">
-            <div className="text-[10px] text-foreground-muted">
-              {field.name} <span className="text-foreground-muted/60">({field.type})</span>
-            </div>
-            <div className="text-xs font-mono break-all mt-0.5">{field.read(data)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <RawFieldList
+      signature="getRequest(...) → structOptimisticOracleV2Interface.Request"
+      fields={toRawFields(ORACLE_REQUEST_RAW_FIELDS, data)}
+    />
   );
 }
 
@@ -668,46 +617,9 @@ function OracleHasPriceTabContent({
   );
 }
 
-// Off by default: shows the formatted sections below. On: shows the raw
-// getQuestion(bytes32) tuple exactly as UmaCtfAdapter returns it on-chain —
-// same field names/order/units a Polygonscan "Read Contract" call would show.
-function RawDataToggle({
-  raw,
-  onToggle,
-}: {
-  raw: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={raw}
-      title="Toggle raw on-chain output"
-      className={
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors " +
-        (raw
-          ? "bg-accent/10 text-accent border-accent/20 dark:bg-accent/20"
-          : "bg-foreground/5 text-foreground-muted border-border hover:text-foreground")
-      }
-    >
-      <span
-        className={
-          "w-1.5 h-1.5 rounded-full " + (raw ? "bg-accent" : "bg-foreground-muted/40")
-        }
-      />
-      RAW DATA
-    </button>
-  );
-}
-
 // getQuestion(bytes32) → structQuestionData field names/types, in ABI order
 // (libs/contracts/umactfadapter's QuestionData / the UmaCtfAdapter ABI).
-const RAW_FIELDS: Array<{
-  name: string;
-  type: string;
-  read: (d: UmaQuestionData) => string;
-}> = [
+const RAW_FIELDS: RawFieldDescriptor<UmaQuestionData>[] = [
   { name: "requestTimestamp", type: "uint256", read: (d) => d.request_timestamp },
   { name: "reward", type: "uint256", read: (d) => d.reward },
   { name: "proposalBond", type: "uint256", read: (d) => d.proposal_bond },
@@ -724,21 +636,10 @@ const RAW_FIELDS: Array<{
 
 function RawView({ data }: { data: UmaQuestionData }) {
   return (
-    <div className="space-y-3">
-      <p className="text-[11px] uppercase tracking-wider text-foreground-muted">
-        getQuestion(bytes32) → structQuestionData
-      </p>
-      <div className="space-y-2.5">
-        {RAW_FIELDS.map((field) => (
-          <div key={field.name} className="border-b border-border/60 pb-2 last:border-0">
-            <div className="text-[10px] text-foreground-muted">
-              {field.name} <span className="text-foreground-muted/60">({field.type})</span>
-            </div>
-            <div className="text-xs font-mono break-all mt-0.5">{field.read(data)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <RawFieldList
+      signature="getQuestion(bytes32) → structQuestionData"
+      fields={toRawFields(RAW_FIELDS, data)}
+    />
   );
 }
 
@@ -749,124 +650,4 @@ function QuestionStatusBadge({ data }: { data: UmaQuestionData | null }) {
   if (data.paused) return <Badge tone="warning">PAUSED</Badge>;
   if (data.refund) return <Badge tone="warning">REFUND</Badge>;
   return <Badge tone="info">INITIALIZED</Badge>;
-}
-
-function shortHex(value: string): string {
-  const v = value.startsWith("0x") ? value.slice(2) : value;
-  return v.length > 10 ? `${v.slice(0, 10)}…` : v;
-}
-
-// on-chain timestamps are unix seconds as base-10 strings; "0" means unset
-// (e.g. manual_resolution_timestamp before a manual resolution window opens).
-function unixSecondsToDate(value: string): Date | null {
-  const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0) return null;
-  return new Date(seconds * 1000);
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <h4 className="text-[11px] uppercase tracking-wider text-foreground-muted mb-2">
-        {title}
-      </h4>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  );
-}
-
-function KV({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-foreground-muted text-xs">{label}</span>
-      <span
-        className={
-          "text-right break-all " + (mono ? "font-mono text-xs" : "text-sm")
-        }
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function TimeRow({ label, value }: { label: string; value: Date | null }) {
-  if (!value) {
-    return (
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-foreground-muted text-xs">{label}</span>
-        <span className="text-xs text-foreground-muted">—</span>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-foreground-muted text-xs">{label}</span>
-      <span className="text-right">
-        <div className="text-xs font-mono">{formatDateTimeFull(value)}</div>
-        <div className="text-[10px] text-foreground-muted">
-          {formatRelative(value)}
-        </div>
-      </span>
-    </div>
-  );
-}
-
-function CopyRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | null | undefined;
-}) {
-  const [copied, setCopied] = useState(false);
-  if (!value) {
-    return (
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-foreground-muted text-xs">{label}</span>
-        <span className="text-xs text-foreground-muted">—</span>
-      </div>
-    );
-  }
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // clipboard blocked — silent
-    }
-  };
-  return (
-    <div className="space-y-0.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-foreground-muted text-xs">{label}</span>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="text-[10px] text-foreground-muted hover:text-foreground cursor-pointer"
-          aria-label={`Copy ${label}`}
-        >
-          {copied ? "copied" : "copy"}
-        </button>
-      </div>
-      <code className="block text-xs font-mono break-all bg-foreground/[0.03] border border-border rounded px-2 py-1">
-        {value}
-      </code>
-    </div>
-  );
 }

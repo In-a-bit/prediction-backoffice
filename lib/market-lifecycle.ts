@@ -12,6 +12,8 @@ import type {
   SportEvent,
   SportMarket,
   CryptoEventMarketStatus,
+  UmaHistoryEvent,
+  UmaOraclePriceLabel,
 } from "@/lib/types";
 import type { PlanSource } from "@/lib/source-from-plan";
 
@@ -40,6 +42,11 @@ export type LifecycleStage = {
   origin?: "external";
   // Short annotation shown under the dot, e.g. the proposed answer.
   detail?: string;
+  // The on-chain event this stage was built from, when the market's UMA
+  // history was available. Set only on the history-driven path, which is what
+  // makes the dot clickable — stages derived from the status strings alone
+  // have no transaction to show.
+  event?: UmaHistoryEvent;
 };
 
 export type Lifecycle = {
@@ -291,17 +298,169 @@ export function deriveManualResult(): Result {
 
 const UMA_RESOLVED_STATUSES = new Set(["RESOLVED", "MANUALLY_RESOLVED"]);
 
-// Builds the full UMA lifecycle from the append-only uma_resolution_statuses
-// history — dpm-api pushes PROPOSED on every proposal and DISPUTED on every
-// dispute (libs/txprocessor/handler_oracle.go), so a re-proposal after a
-// dispute shows every round rather than collapsing to a single "proposed" step.
+// Builds the full UMA lifecycle, preferring the on-chain event history from
+// dpm-api's /uma/history when it is available: those events carry the
+// transaction, block and parameters behind every step, which is what lets the
+// UI make each dot clickable.
+//
+// Markets indexed before that endpoint existed (or whose event rows predate
+// the market_id backfill) return an empty history — they fall back to the
+// status-string derivation below, which still renders every round but without
+// per-step provenance.
+export function deriveUmaTimeline(
+  market: DpmMarket,
+  events?: UmaHistoryEvent[],
+): Lifecycle {
+  if (events && events.length > 0) return umaTimelineFromEvents(market, events);
+  return umaTimelineFromStatuses(market);
+}
+
+// The events arrive in chain order and already have dispute-triggered resets
+// folded into the dispute that caused them, so each one maps to exactly one
+// dot. A trailing Resolved dot is appended while the market has yet to
+// resolve, so the timeline keeps showing where it is heading.
+function umaTimelineFromEvents(
+  market: DpmMarket,
+  events: UmaHistoryEvent[],
+): Lifecycle {
+  const current = (market.uma_resolution_status ?? "").toUpperCase();
+  const lastProposedIdx = lastIndexOfEvent(events, "proposed");
+  const lastDisputedIdx = lastIndexOfEvent(events, "disputed");
+
+  const stages = events.map((event, i) =>
+    stageForEvent(event, {
+      isLastOfKind:
+        (event.type === "proposed" && i === lastProposedIdx) ||
+        (event.type === "disputed" && i === lastDisputedIdx),
+      isLastEvent: i === events.length - 1,
+      current,
+      market,
+    }),
+  );
+
+  // question_initialized_events predates the market_id backfill on a
+  // different schedule than the other four event tables, so a market can
+  // have backfilled propose/dispute rows but no matching created row. Don't
+  // let the timeline silently start at "Proposed" — add a non-clickable
+  // created dot (we know the market was created; we just can't point at the
+  // transaction) rather than dropping the step.
+  if (events[0]?.type !== "created") {
+    stages.unshift({ key: "created", status: "done" });
+  }
+
+  if (!events.some((e) => e.type === "resolved")) {
+    stages.push(resolvedStage(current));
+  }
+  return { stages };
+}
+
+type StageContext = {
+  isLastOfKind: boolean;
+  isLastEvent: boolean;
+  current: string;
+  market: DpmMarket;
+};
+
+function stageForEvent(event: UmaHistoryEvent, ctx: StageContext): LifecycleStage {
+  switch (event.type) {
+    case "created":
+      return { key: "created", status: "done", event };
+    case "proposed":
+      return proposedEventStage(event, ctx);
+    case "disputed":
+      return disputedEventStage(event, ctx);
+    case "reset":
+      return resetEventStage(event, ctx);
+    default:
+      return { key: "resolved", status: "done", event };
+  }
+}
+
+function proposedEventStage(event: UmaHistoryEvent, ctx: StageContext): LifecycleStage {
+  const stillLive = ctx.isLastOfKind && ctx.current === "PROPOSED";
+  const stage: LifecycleStage = {
+    key: "proposed",
+    status: stillLive ? "active" : "done",
+    event,
+  };
+  if (ctx.isLastOfKind && ctx.market.has_external_proposal) stage.origin = "external";
+  const answer = event.proposed_price_label
+    ? umaPriceLabelName(event.proposed_price_label)
+    : undefined;
+  if (answer) stage.detail = answer;
+  return stage;
+}
+
+function disputedEventStage(event: UmaHistoryEvent, ctx: StageContext): LifecycleStage {
+  // A dispute is a completed on-chain event, not a process failure — mark it
+  // "done". The stepper renders the disputed key in a danger tone on its own,
+  // so it still reads as a red flag without labelling the round "failed".
+  const stage: LifecycleStage = { key: "disputed", status: "done", event };
+  if (ctx.isLastOfKind && ctx.market.has_external_dispute) stage.origin = "external";
+  return stage;
+}
+
+// A standalone reset is only "active" while it is still the market's latest
+// word — once a fresh proposal follows it, it is just another completed round.
+function resetEventStage(event: UmaHistoryEvent, ctx: StageContext): LifecycleStage {
+  const stillLive = ctx.isLastEvent && ctx.current === "INITIALIZING";
+  return { key: "reset", status: stillLive ? "active" : "done", event };
+}
+
+function lastIndexOfEvent(
+  events: UmaHistoryEvent[],
+  type: UmaHistoryEvent["type"],
+): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === type) return i;
+  }
+  return -1;
+}
+
+// Display names for dpm-api's classified on-chain price. The classification
+// is market-agnostic (see labelForOraclePrice in apps/dpm-api), so these are
+// the generic answer names rather than the market's own outcome titles.
+const UMA_PRICE_LABEL_NAMES: Record<UmaOraclePriceLabel, string> = {
+  first_outcome_yes: "YES",
+  second_outcome_yes: "NO",
+  fifty_fifty: "50 / 50",
+  too_early: "Too early",
+  none: "—",
+  unknown: "Unknown",
+};
+
+export function umaPriceLabelName(label: UmaOraclePriceLabel): string {
+  return UMA_PRICE_LABEL_NAMES[label] ?? UMA_PRICE_LABEL_NAMES.unknown;
+}
+
+export type UmaPriceBadgeTone = "neutral" | "success" | "warning";
+
+// Maps a classified on-chain price label to the badge tone it should render
+// in — shared by the question_id/getRequest drawer and the lifecycle-history
+// drawer so the same price always reads the same tone wherever it is shown.
+export function umaPriceLabelTone(label: UmaOraclePriceLabel): UmaPriceBadgeTone {
+  switch (label) {
+    case "first_outcome_yes":
+    case "second_outcome_yes":
+      return "success";
+    case "fifty_fifty":
+    case "too_early":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+// Fallback path: builds the lifecycle from the append-only
+// uma_resolution_statuses array — dpm-api pushes PROPOSED on every proposal
+// and DISPUTED on every dispute (libs/txprocessor/handler_oracle.go), so a
+// re-proposal after a dispute shows every round rather than collapsing to a
+// single "proposed" step.
 //
 // Known limits: the array carries no timestamps and no per-round attribution,
 // so only the most recent propose/dispute can be tagged external (from the
-// has_external_* flags, which reflect the current lingering activity). Full
-// fidelity would need a dedicated dpm-api endpoint over the on-chain event
-// tables.
-export function deriveUmaTimeline(market: DpmMarket): Lifecycle {
+// has_external_* flags, which reflect the current lingering activity).
+function umaTimelineFromStatuses(market: DpmMarket): Lifecycle {
   const history = market.uma_resolution_statuses ?? [];
   const current = (market.uma_resolution_status ?? "").toUpperCase();
 

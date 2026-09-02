@@ -526,6 +526,61 @@ export type UmaOracleHasPriceData = {
   has_price: boolean;
 };
 
+export type UmaHistoryEventType =
+  | "created"
+  | "proposed"
+  | "disputed"
+  | "reset"
+  | "resolved";
+
+// UmaHistoryEvent mirrors one event of dpm-api's GET
+// /markets/by-external-id/:external_id/uma/history — the market's UMA
+// lifecycle rebuilt from the indexed on-chain events, in chain order. Unlike
+// the reads above this is a DB read, so every step carries the transaction
+// that produced it. `type` discriminates which of the optional fields are
+// present; tx_hash/block_number/timestamp are always set.
+//
+// A dispute that also reset the question in the same transaction (every
+// market's first dispute does) carries triggered_reset instead of appearing
+// as a separate reset event — so a "reset" event is always the other kind: a
+// resolve() the DVM answered "too early", which the adapter turned into a
+// reset. resolve_attempt_status/error come from the uma_requests row behind
+// that call and are best-effort (absent when no row could be matched).
+export type UmaHistoryEvent = {
+  type: UmaHistoryEventType;
+  tx_hash: string;
+  block_number: number;
+  timestamp: string;
+
+  creator_address?: string;
+  reward?: string;
+  proposal_bond?: string;
+  reward_token?: string;
+
+  ancillary_data?: string;
+  request_timestamp?: string;
+
+  proposer_address?: string;
+  proposed_price?: string;
+  proposed_price_label?: UmaOraclePriceLabel;
+  expiration_timestamp?: string;
+
+  disputer_address?: string;
+  triggered_reset?: boolean;
+
+  question_id?: string;
+  resolve_attempt_status?: string;
+  resolve_attempt_error?: string;
+
+  settled_price?: string;
+  settled_price_label?: UmaOraclePriceLabel;
+  payouts?: unknown;
+};
+
+export type UmaHistory = {
+  events: UmaHistoryEvent[];
+};
+
 export type OperatorLogEntry = {
   id: number;
   external_id: string;

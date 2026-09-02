@@ -1,6 +1,7 @@
 // Visual representation of a market's lifecycle and final result. Pure
 // presentational — feed it the output of lib/market-lifecycle.ts and forget.
 
+import { UmaHistoryEventDot } from "@/components/uma-history-event-link";
 import type {
   Lifecycle,
   LifecycleStage,
@@ -37,8 +38,9 @@ const LINE_TONE: Record<LifecycleStageStatus, string> = {
 // A disputed round completes with status "done" (the dispute landed on chain),
 // but it's a red flag the operator should see — so its dot and connector render
 // in the danger tone regardless of the "done" progress state. A "reset" stage
-// is always the current, live state (see deriveUmaTimeline) — render it in the
-// same warning tone as the "needs re-proposal" banner above the stepper.
+// — whether still live or a completed round further back in history — always
+// renders in the same warning tone as the "needs re-proposal" banner above
+// the stepper, since either way a fresh proposal was (or is) required.
 function dotClass(s: LifecycleStage): string {
   if (s.key === "disputed") return DOT_TONE.failed;
   if (s.key === "reset") return DOT_TONE.skipped;
@@ -69,16 +71,22 @@ export function LifecycleStepper({
   variant?: "compact" | "full";
 }) {
   const stages = lifecycle.stages;
+  // role="img" collapses the whole stepper to a single opaque image for
+  // assistive tech — correct when every dot is decorative, but any stage
+  // with an on-chain event renders a real <button> (see Dot below), and a
+  // focusable element inside role="img" is both unreachable by AT and an
+  // ARIA violation. Drop the role there and let each button's own aria-label
+  // carry the semantics instead.
+  const hasClickableStage = stages.some((s) => s.event);
+  const containerA11yProps = hasClickableStage
+    ? {}
+    : { role: "img" as const, "aria-label": a11yLabel(stages) };
   if (variant === "compact") {
     return (
-      <div
-        className="inline-flex items-center"
-        role="img"
-        aria-label={a11yLabel(stages)}
-      >
+      <div className="inline-flex items-center" {...containerA11yProps}>
         {stages.map((s, i) => (
           <span key={`${s.key}-${i}`} className="inline-flex items-center">
-            <span className={`block w-2 h-2 rounded-full ${dotClass(s)}`} />
+            <Dot stage={s} sizeClass="w-2 h-2" />
             {i < stages.length - 1 ? (
               <span className={`block w-3 h-0.5 ${lineClass(s)}`} />
             ) : null}
@@ -88,13 +96,11 @@ export function LifecycleStepper({
     );
   }
   return (
-    <div className="flex items-start w-full" role="img" aria-label={a11yLabel(stages)}>
+    <div className="flex items-start w-full" {...containerA11yProps}>
       {stages.map((s, i) => (
         <div key={`${s.key}-${i}`} className="flex items-start flex-1 last:flex-initial">
           <div className="flex flex-col items-center gap-1.5 shrink-0">
-            <span
-              className={`block w-3.5 h-3.5 rounded-full ${dotClass(s)}`}
-            />
+            <Dot stage={s} sizeClass="w-3.5 h-3.5" />
             <div className="text-center">
               <div className="text-[11px] font-medium text-foreground leading-tight">
                 {STAGE_LABELS[s.key]}
@@ -124,6 +130,16 @@ export function LifecycleStepper({
       ))}
     </div>
   );
+}
+
+// Stages built from the on-chain history know which transaction produced
+// them, so their dot becomes a button that opens that transaction's drawer.
+// Stages derived from status strings alone have nothing to show and stay
+// exactly as inert as they have always been.
+function Dot({ stage, sizeClass }: { stage: LifecycleStage; sizeClass: string }) {
+  const className = `block ${sizeClass} rounded-full ${dotClass(stage)}`;
+  if (!stage.event) return <span className={className} />;
+  return <UmaHistoryEventDot event={stage.event} dotClassName={className} />;
 }
 
 export function ResultChip({

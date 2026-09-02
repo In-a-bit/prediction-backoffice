@@ -8,7 +8,7 @@ export async function GET(
 ) {
   try {
     const { external_id } = await ctx.params;
-    const data = await uma.getQuestion(external_id);
+    const data = await uma.getHistory(external_id);
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

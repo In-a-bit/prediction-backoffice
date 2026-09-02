@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { manual } from "@/lib/api";
+import { uma } from "@/lib/api";
 
 export async function GET(
   _req: NextRequest,
@@ -8,7 +8,7 @@ export async function GET(
 ) {
   try {
     const { external_id } = await ctx.params;
-    const data = await manual.getUmaOracleRequest(external_id);
+    const data = await uma.getOracleRequest(external_id);
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

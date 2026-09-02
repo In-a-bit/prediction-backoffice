@@ -13,7 +13,7 @@ import {
 import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcome";
 import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
 import { MarketOutcomeCard } from "@/components/market-outcome";
-import { manual, sports, crypto as cryptoApi } from "@/lib/api";
+import { manual, sports, crypto as cryptoApi, uma } from "@/lib/api";
 import { formatDateTimeFull, formatUsdc } from "@/lib/format";
 import { derive, deriveUmaTimeline } from "@/lib/market-lifecycle";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
@@ -29,6 +29,7 @@ import type {
   MarketStatusVerdict,
   SportEvent,
   SportMarket,
+  UmaHistoryEvent,
 } from "@/lib/types";
 
 import { ExternalProposalCard } from "./external-proposal-card";
@@ -109,7 +110,7 @@ export default async function MarketDetailPage({
   const wantManualLookup = sourceHint === "manual" && manualMarketId === undefined && isDpmId;
   const wantCrypto = sourceHint === "crypto" && cryptoEventId !== undefined;
 
-  const [verdictRes, planRes, sportStatusRes, sportLookupRes, manualStatusRes, manualLookupRes, cryptoEventRes, outcomeRes] =
+  const [verdictRes, planRes, sportStatusRes, sportLookupRes, manualStatusRes, manualLookupRes, cryptoEventRes, outcomeRes, umaHistoryRes] =
     await Promise.all([
       isDpmId
         ? manual.getMarketStatus(external_id).catch((err) => {
@@ -138,10 +139,16 @@ export default async function MarketDetailPage({
       isDpmId
         ? manual.getMarketOutcome(external_id).catch(() => null)
         : Promise.resolve(null),
+      // Soft-fails to null: without it the timeline still renders from the
+      // status strings, just without clickable dots.
+      isDpmId
+        ? uma.getHistory(external_id).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
   verdict = verdictRes;
   marketOutcome = outcomeRes;
+  const umaHistoryEvents: UmaHistoryEvent[] = umaHistoryRes?.events ?? [];
   if (planRes) {
     plan = planRes;
     planMarket = planRes.markets.find((m) => m.position === pos);
@@ -253,6 +260,7 @@ export default async function MarketDetailPage({
         manualMarket={manualMarket}
         cryptoMarket={cryptoMarketRecord}
         cryptoEvent={cryptoEvent}
+        umaHistoryEvents={umaHistoryEvents}
       />
 
       {/* Two-column layout on wide screens: info on the left, actions on the right. */}
@@ -434,6 +442,7 @@ function LifecycleHeader({
   manualMarket,
   cryptoMarket,
   cryptoEvent,
+  umaHistoryEvents,
 }: {
   source: PlanSource;
   verdict: MarketStatusVerdict | null;
@@ -444,6 +453,7 @@ function LifecycleHeader({
   manualMarket?: ManualMarket;
   cryptoMarket?: CryptoMarket;
   cryptoEvent?: CryptoEvent;
+  umaHistoryEvents: UmaHistoryEvent[];
 }) {
   const isSportPending =
     source === "sport" && (!sportMarket || sportMarket.local_status === "pending");
@@ -468,10 +478,12 @@ function LifecycleHeader({
   // Prefer the on-chain UMA history when present: it captures repeated propose
   // rounds, disputes, and external activity that the source-specific 3-stage
   // tables collapse into a single step. Falls back to the derived lifecycle.
-  const umaHistory = verdict?.market?.uma_resolution_statuses;
+  const umaStatuses = verdict?.market?.uma_resolution_statuses;
+  const hasUmaTimeline =
+    umaHistoryEvents.length > 0 || (umaStatuses?.length ?? 0) > 0;
   const lifecycle =
-    verdict?.market && umaHistory && umaHistory.length > 0
-      ? deriveUmaTimeline(verdict.market)
+    verdict?.market && hasUmaTimeline
+      ? deriveUmaTimeline(verdict.market, umaHistoryEvents)
       : derived.lifecycle;
 
   // For sport and manual markets, use local_status as the authoritative source;
