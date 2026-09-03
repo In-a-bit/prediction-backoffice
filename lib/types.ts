@@ -708,7 +708,13 @@ export type SportTask = {
   updated_at: string;
   sport_key: string;
   api_league_id: number;
-  api_season: number;
+  /**
+   * The upstream season token, verbatim. Vendors disagree on the format:
+   * api-football and api-hockey use a start year ("2025") while api-basketball
+   * uses a start year for some leagues and a dashed span ("2025-2026") for
+   * others, so it is stored and sent as the vendor's own string.
+   */
+  api_season: string;
   league_slug: string;
   series_id: number;
   series_slug: string;
@@ -864,7 +870,8 @@ export type CreateSportTaskInput = {
   correlation_id?: string;
   sport_key: string;
   api_league_id: number;
-  api_season: number;
+  /** The vendor's own season token — see SportTask.api_season. */
+  api_season: string;
   league_slug: string;
   time_ahead_hours: number;
   tag_ids?: number[];

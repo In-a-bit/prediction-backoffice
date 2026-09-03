@@ -37,10 +37,15 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
   // The page 404s on an unknown sport before rendering the form, so the
   // lookup here always hits.
   const ui = sportUi(sportKey)!;
-  const seasonChoices = ui.seasonOptions();
-  const defaultSeason = ui.defaultSeason();
 
-  const [season, setSeason] = useState<number>(defaultSeason);
+  // The season list comes from the sport's vendor, newest first, so it can't
+  // be known at first render. "" means "not chosen yet" and holds back the
+  // league fetch, which would otherwise ask upstream for a blank season.
+  const [seasons, setSeasons] = useState<string[]>([]);
+  const [season, setSeason] = useState<string>("");
+  const [seasonError, setSeasonError] = useState<string | null>(null);
+  const newestSeason = seasons[0];
+
   const [allLeagues, setAllLeagues] = useState<SportsLeague[]>([]);
   const [existingConfigs, setExistingConfigs] = useState<SportTask[]>([]);
   // Default to true so the "0 leagues" warning doesn't flash before the
@@ -68,11 +73,40 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [livenessError, setLivenessError] = useState<string | null>(null);
 
+  // Load the vendor's season list once per sport, and pre-select the newest.
+  // Everything below keys off `season`, so this runs before the league fetch.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const list = await ui.fetchSeasons();
+        if (cancelled) return;
+        setSeasons(list);
+        setSeason(list[0] ?? "");
+        if (list.length === 0) {
+          // Nothing to pick means the league fetch will never fire, so say so
+          // here rather than leaving the form stuck on "loading…".
+          setSeasonError("the upstream returned no seasons for this sport");
+          setLoadingLeagues(false);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setSeasonError(err instanceof Error ? err.message : String(err));
+        setLoadingLeagues(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [ui]);
+
   // Fetch leagues + existing configs whenever the season changes. The
   // leagues call is a large payload (~1000 rows) but server-side cached.
   // 20s hard timeout via AbortController so the form doesn't hang silently
   // when the Go backoffice is down (the route handler proxies blocking).
   useEffect(() => {
+    if (!season) return;
     let cancelled = false;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -81,7 +115,7 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
       setLeagueError(null);
       try {
         const [leaguesRes, configsRes] = await Promise.all([
-          fetch(`/api/sports/leagues/all?sport=${sportKey}&season=${season}`, {
+          fetch(`/api/sports/leagues/all?sport=${sportKey}&season=${encodeURIComponent(season)}`, {
             cache: "no-store",
             signal: controller.signal,
           }),
@@ -206,9 +240,9 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
     setSelectedLeagueId(lg.id);
   };
 
-  // Auto-derive league_slug = "{kebab(name)}-{year}" whenever the league or
+  // Auto-derive league_slug = "{kebab(name)}-{season}" whenever the league or
   // season changes, unless the operator has manually edited the slug. We
-  // append the year only if the base slug doesn't already include it — per
+  // append the season only if the base slug doesn't already include it — per
   // the rule "if the api returns a slug use it; if it's missing the year,
   // concat it" (api-sports doesn't currently return a slug, but the rule
   // covers a future where it might).
@@ -219,8 +253,8 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
       return;
     }
     const base = slugify(selectedLeague.name) || `league-${selectedLeague.id}`;
-    const yearSuffix = `-${season}`;
-    const next = base.endsWith(yearSuffix) ? base : `${base}${yearSuffix}`;
+    const seasonSuffix = `-${season}`;
+    const next = base.endsWith(seasonSuffix) ? base : `${base}${seasonSuffix}`;
     setLeagueSlug(next);
   }, [selectedLeague, season, slugEdited]);
 
@@ -247,6 +281,7 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
 
   const canSubmit =
     selectedLeague !== null &&
+    season !== "" &&
     leagueSlug.trim().length > 0 &&
     timeAheadHours > 0 &&
     marketTypes.length > 0;
@@ -305,24 +340,28 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
             <div className="w-36">
               <Field
                 label="Season"
-                hint={`Default ${defaultSeason} — ${ui.formatSeason(defaultSeason)}.`}
+                hint={
+                  newestSeason
+                    ? `Listed by the upstream, newest first. Latest: ${ui.formatSeason(newestSeason)}.`
+                    : "Loading the seasons the upstream has data for…"
+                }
               >
                 <select
                   className={selectClass}
                   value={season}
+                  disabled={seasons.length === 0}
                   onChange={(e) => {
-                    const n = parseInt(e.target.value, 10);
-                    if (!Number.isFinite(n)) return;
-                    setSeason(n);
+                    setSeason(e.target.value);
                     setSelectedLeagueId(null);
                     setTypeFilter("");
                     setCountryFilter("");
                   }}
                 >
-                  {seasonChoices.map((y) => (
-                    <option key={y} value={y}>
-                      {ui.formatSeason(y)}
-                      {y === defaultSeason ? " (current)" : ""}
+                  {seasons.length === 0 && <option value="">loading…</option>}
+                  {seasons.map((token) => (
+                    <option key={token} value={token}>
+                      {ui.formatSeason(token)}
+                      {token === newestSeason ? " (latest)" : ""}
                     </option>
                   ))}
                 </select>
@@ -386,13 +425,14 @@ export function NewSportTaskForm({ sportKey }: { sportKey: string }) {
             </div>
           </div>
 
+          {seasonError && <ErrorMessage>{`seasons: ${seasonError}`}</ErrorMessage>}
           {leagueError && <ErrorMessage>{leagueError}</ErrorMessage>}
 
-          {!loadingLeagues && allLeagues.length === 0 && !leagueError && (
+          {!loadingLeagues && season !== "" && allLeagues.length === 0 && !leagueError && (
             <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
               The upstream returned 0 leagues for season{" "}
               <strong>{ui.formatSeason(season)}</strong>. That season probably isn&apos;t populated
-              yet — try <strong>{ui.formatSeason(defaultSeason)}</strong> instead. (If you
+              yet — try <strong>{ui.formatSeason(newestSeason)}</strong> instead. (If you
               don&apos;t see{" "}
               <code>SPORTS_{sportKey.toUpperCase()}_API_KEY</code> errors in the backoffice logs,
               this is the most likely cause.)

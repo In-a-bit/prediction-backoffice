@@ -618,9 +618,15 @@ export const sports = {
 
   // League search — the backoffice proxies whichever provider owns the
   // sport and normalizes the result into SportsLeague.
-  searchLeagues: (sportKey: string, q: string, season?: number) => {
+  //
+  // `season` is the vendor's own token, passed through verbatim: api-football
+  // and api-hockey spell it as a start year ("2025") while api-basketball uses
+  // a start year for some leagues and a dashed span ("2025-2026") for others,
+  // and an unrecognised spelling comes back as an empty list rather than an
+  // error. Hence a string, never a parsed number.
+  searchLeagues: (sportKey: string, q: string, season?: string) => {
     const params = new URLSearchParams({ sport: sportKey, q });
-    if (season) params.set("season", String(season));
+    if (season) params.set("season", season);
     return request<SportsLeague[]>(`/sports/leagues/search?${params.toString()}`);
   },
 
@@ -628,13 +634,21 @@ export const sports = {
   // Optional country/type filters. Cached server-side for an hour per param set.
   listAllLeagues: (
     sportKey: string,
-    season: number,
+    season: string,
     filters: { country?: string; type?: string } = {},
   ) => {
-    const params = new URLSearchParams({ sport: sportKey, season: String(season) });
+    const params = new URLSearchParams({ sport: sportKey, season });
     if (filters.country) params.set("country", filters.country);
     if (filters.type) params.set("type", filters.type);
     return request<SportsLeague[]>(`/sports/leagues/all?${params.toString()}`);
+  },
+
+  // Every season token the sport's vendor has data for, newest first. Backs
+  // the new-config season dropdown, which offers exactly these rather than a
+  // guessed range of years — no sport agrees on the format.
+  listSeasons: (sportKey: string) => {
+    const params = new URLSearchParams({ sport: sportKey });
+    return request<string[]>(`/sports/leagues/seasons?${params.toString()}`);
   },
 };
 
