@@ -130,6 +130,30 @@ export function formatUsdc(raw: string | null | undefined): string {
   }
 }
 
+// Ancillary data travels the wire as hex-encoded bytes (prediction-go's
+// txprocessor stores it via hexutil.Encode), but UMA convention encodes the
+// actual content as plain ASCII/UTF-8 ("q: title: ..., description: ...").
+// Decode it for display and only fall back to the raw hex when the bytes
+// aren't valid UTF-8 — mirrors dpm-api's UmaQuestionResponse.AncillaryDataText
+// (the getQuestion read decodes server-side; history events don't, so this
+// covers that case client-side instead of adding a field across 4 files).
+export function decodeAncillaryData(hex: string | null | undefined): string {
+  if (!hex) return "—";
+  const clean = hex.startsWith("0x") || hex.startsWith("0X") ? hex.slice(2) : hex;
+  if (clean === "" || clean.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(clean)) {
+    return hex;
+  }
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return hex;
+  }
+}
+
 // formatFootballSeason renders an api-football "start year" integer as the
 // operator-facing "YYYY/YYYY+1" label. The integer remains the wire format
 // (and the DB representation); only the UI swaps in the prettier form.

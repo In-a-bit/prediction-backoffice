@@ -16,7 +16,7 @@ import {
 } from "@/components/side-drawer";
 import { Badge } from "@/components/ui";
 import { txUrl } from "@/lib/explorer";
-import { formatUsdc } from "@/lib/format";
+import { decodeAncillaryData, formatUsdc } from "@/lib/format";
 import { umaPriceLabelName, umaPriceLabelTone } from "@/lib/market-lifecycle";
 import type {
   UmaHistoryEvent,
@@ -279,7 +279,7 @@ function AncillaryDataSection({ value }: { value?: string }) {
   return (
     <Section title="Ancillary data">
       <pre className="text-xs font-mono whitespace-pre-wrap break-all bg-foreground/[0.03] border border-border rounded-md p-3">
-        {value}
+        {decodeAncillaryData(value)}
       </pre>
     </Section>
   );
