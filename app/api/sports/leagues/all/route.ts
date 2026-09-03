@@ -4,8 +4,10 @@ import { sports } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
   try {
-    const season = Number.parseInt(req.nextUrl.searchParams.get("season") ?? "", 10);
-    if (!Number.isFinite(season)) {
+    // The season stays a string: it is the vendor's own token and only that
+    // exact spelling matches upstream (see sports.listAllLeagues).
+    const season = req.nextUrl.searchParams.get("season") ?? "";
+    if (!season) {
       return NextResponse.json({ error: "season is required" }, { status: 400 });
     }
     const sport = req.nextUrl.searchParams.get("sport") ?? "";
