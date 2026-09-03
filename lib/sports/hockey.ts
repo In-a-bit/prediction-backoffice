@@ -1,5 +1,6 @@
 import { buildTags } from "@/lib/sports/tags";
 import { num, obj, str, toneFrom } from "@/lib/sports/payload";
+import { fetchSeasonsFor, formatStartYearSeason } from "@/lib/sports/seasons";
 import type { SportContest, SportUi, StatusTone } from "@/lib/sports/types";
 
 // api-hockey status short codes. The vocabulary overlaps soccer's only
@@ -43,25 +44,17 @@ export const hockey: SportUi = {
     },
   ],
 
-  // api-hockey identifies a season by its start year, so 2025 means the
-  // 2025/26 season (Sep 2025 → Jun 2026).
-  seasonOptions: () => {
-    const current = new Date().getUTCFullYear();
-    const years: number[] = [];
-    for (let year = current + 1; year >= current - 3; year--) years.push(year);
-    return years;
-  },
-  defaultSeason: () => new Date().getUTCFullYear(),
-  formatSeason: (season) => {
-    if (season == null || !Number.isFinite(season)) return "—";
-    return `${season}/${season + 1}`;
-  },
+  // api-hockey identifies a season by its start year, so "2025" means the
+  // 2025/26 season (Sep 2025 → Jun 2026). Its /seasons endpoint publishes the
+  // years it holds data for, which is what the dropdown offers.
+  fetchSeasons: () => fetchSeasonsFor("hockey"),
+  formatSeason: formatStartYearSeason,
 
   statusTone: toneFrom(STATUS_TONES),
   isLiveStatus: (statusShort) => LIVE_STATUSES.has(statusShort.toUpperCase()),
 
   suggestTags: ({ leagueName, country, season }) =>
-    buildTags([leagueName, String(season), country, "Hockey", "Ice Hockey"]),
+    buildTags([leagueName, season, country, "Hockey", "Ice Hockey"]),
 
   parseContest,
 };

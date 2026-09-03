@@ -1,5 +1,6 @@
 import { buildTags } from "@/lib/sports/tags";
 import { num, obj, str, toneFrom } from "@/lib/sports/payload";
+import { fetchSeasonsFor, formatStartYearSeason } from "@/lib/sports/seasons";
 import type { SportContest, SportUi, StatusTone } from "@/lib/sports/types";
 
 // api-football status short codes. Grouped by what an operator needs to
@@ -51,25 +52,17 @@ export const soccer: SportUi = {
     },
   ],
 
-  // api-football identifies a season by its start year, so 2025 means the
-  // 2025/26 campaign. Offer three back and one forward from today.
-  seasonOptions: () => {
-    const current = new Date().getUTCFullYear();
-    const years: number[] = [];
-    for (let year = current + 1; year >= current - 3; year--) years.push(year);
-    return years;
-  },
-  defaultSeason: () => new Date().getUTCFullYear(),
-  formatSeason: (season) => {
-    if (season == null || !Number.isFinite(season)) return "—";
-    return `${season}/${season + 1}`;
-  },
+  // api-football identifies a season by its start year, so "2025" means the
+  // 2025/26 campaign. It publishes the years it holds data for at
+  // /leagues/seasons, which is what the dropdown offers.
+  fetchSeasons: () => fetchSeasonsFor("soccer"),
+  formatSeason: formatStartYearSeason,
 
   statusTone: toneFrom(STATUS_TONES),
   isLiveStatus: (statusShort) => LIVE_STATUSES.has(statusShort.toUpperCase()),
 
   suggestTags: ({ leagueName, country, season }) =>
-    buildTags([leagueName, String(season), country, "Soccer", "Football"]),
+    buildTags([leagueName, season, country, "Soccer", "Football"]),
 
   parseContest,
 };

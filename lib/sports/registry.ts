@@ -1,3 +1,4 @@
+import { basketball } from "@/lib/sports/basketball";
 import { hockey } from "@/lib/sports/hockey";
 import { soccer } from "@/lib/sports/soccer";
 import type { SportContest, SportUi } from "@/lib/sports/types";
@@ -9,14 +10,9 @@ export type { SportContest, SportUi, MarketTypeUi, StatusTone } from "@/lib/spor
 // in the backoffice database and the /automations/sports/<key> route.
 //
 // COMING_SOON entries are advertised on the hub but have no provider yet.
-const REGISTRY: SportUi[] = [soccer, hockey];
+const REGISTRY: SportUi[] = [soccer, hockey, basketball];
 
 const COMING_SOON: Pick<SportUi, "key" | "label" | "description">[] = [
-  {
-    key: "basketball",
-    label: "Basketball",
-    description: "Coming soon. Plugs into the same scheduler — a market type plus a basketball strategy.",
-  },
   {
     key: "nfl",
     label: "NFL",

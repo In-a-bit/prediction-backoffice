@@ -53,11 +53,20 @@ export type SportUi = {
   contest: ContestNoun;
   marketTypes: MarketTypeUi[];
 
-  // seasonOptions lists the seasons offered in the new-task form, newest
+  // fetchSeasons lists the season tokens offered in the new-task form, newest
   // first, and formatSeason renders one for display.
-  seasonOptions: () => number[];
-  defaultSeason: () => number;
-  formatSeason: (season: number | null | undefined) => string;
+  //
+  // The list is asked of the sport's own vendor rather than computed from the
+  // calendar, because the tokens are not years: api-basketball spells roughly
+  // half its leagues as a dashed span ("2025-2026") and the rest as a start
+  // year, and a token the vendor doesn't recognise returns an empty league
+  // list instead of an error. Offering only what the vendor published is what
+  // keeps that failure impossible.
+  //
+  // Browser-only: the implementations go through this app's own proxy route,
+  // which is a relative URL. Server components must not call it.
+  fetchSeasons: () => Promise<string[]>;
+  formatSeason: (season: string | null | undefined) => string;
 
   // statusTone colors a vendor status short code, and isLiveStatus reports
   // whether the contest is currently under way.
@@ -65,7 +74,7 @@ export type SportUi = {
   isLiveStatus: (statusShort: string) => boolean;
 
   // suggestTags seeds the tag chips when an operator picks a league.
-  suggestTags: (opts: { leagueName?: string; country?: string; season: number }) => SportsTagSpec[];
+  suggestTags: (opts: { leagueName?: string; country?: string; season: string }) => SportsTagSpec[];
 
   // parseContest projects a stored fixture payload. Returns null when the
   // payload is missing or shaped unexpectedly, which callers render as "—"
