@@ -1,5 +1,8 @@
+import { baseball } from "@/lib/sports/baseball";
 import { basketball } from "@/lib/sports/basketball";
 import { hockey } from "@/lib/sports/hockey";
+import { mma } from "@/lib/sports/mma";
+import { nfl } from "@/lib/sports/nfl";
 import { soccer } from "@/lib/sports/soccer";
 import type { SportContest, SportUi } from "@/lib/sports/types";
 
@@ -10,20 +13,10 @@ export type { SportContest, SportUi, MarketTypeUi, StatusTone } from "@/lib/spor
 // in the backoffice database and the /automations/sports/<key> route.
 //
 // COMING_SOON entries are advertised on the hub but have no provider yet.
-const REGISTRY: SportUi[] = [soccer, hockey, basketball];
+// Empty at the moment: every sport the hub advertises is wired up.
+const REGISTRY: SportUi[] = [soccer, hockey, basketball, nfl, baseball, mma];
 
-const COMING_SOON: Pick<SportUi, "key" | "label" | "description">[] = [
-  {
-    key: "nfl",
-    label: "NFL",
-    description: "Coming soon. Same plugin pattern, on the api-sports American football host.",
-  },
-  {
-    key: "mma",
-    label: "MMA",
-    description: "Coming soon. Single-fight moneyline + method-of-victory once the api-sports MMA client lands.",
-  },
-];
+const COMING_SOON: Pick<SportUi, "key" | "label" | "description">[] = [];
 
 // sportUi returns the config for a sport key, or undefined when the key is
 // unknown. Route handlers turn undefined into a 404.
