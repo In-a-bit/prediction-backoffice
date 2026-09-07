@@ -158,6 +158,20 @@ export const manual = {
       authed: true,
     }),
 
+  // Attach a tag to an existing event. Addressed by slug — the backoffice
+  // upserts the tag first, so an unknown slug creates the row. Returns the tag.
+  attachEventTag: (externalId: string, slug: string, label: string) =>
+    request<TagResponse>(
+      `/manual/events/${encodeURIComponent(externalId)}/tags`,
+      { method: "POST", body: { slug, label }, authed: true },
+    ),
+  // Detach a tag from an existing event. Idempotent.
+  detachEventTag: (externalId: string, tagId: number) =>
+    request<void>(
+      `/manual/events/${encodeURIComponent(externalId)}/tags/${tagId}`,
+      { method: "DELETE", authed: true },
+    ),
+
   // ----- Markets (async) -----
   createMarket: (payload: MarketPayload, audit: ManualAudit = {}) =>
     request<MarketAccepted>("/manual/markets", {

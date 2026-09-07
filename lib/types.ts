@@ -283,6 +283,18 @@ export type EventResponse = {
   tags?: TagResponse[];
 };
 
+// EventTagDraft is one tag as the manual-creator editors carry it: a
+// {slug,label} pair that may or may not correspond to an existing dpm-api tag
+// row yet. `id` is set once the tag has been upserted (either because it came
+// back from a real event, or because the operator's create call resolved it).
+// Drafts without an id are "pending" — they are upserted on submit, which is
+// what lets an operator add a brand-new tag without a separate write.
+export type EventTagDraft = {
+  id?: number;
+  slug: string;
+  label: string;
+};
+
 export type TagResponse = {
   id: number;
   external_id: string;

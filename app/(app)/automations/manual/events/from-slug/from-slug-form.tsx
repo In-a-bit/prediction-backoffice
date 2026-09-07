@@ -35,13 +35,13 @@ import {
 } from "@/components/manual/series-editor";
 import { DeployPlanDriver } from "@/components/manual/deploy-plan-driver";
 import { marketDraftToPayload, newUUID } from "@/lib/manual/helpers";
+import { mergeTagDrafts, resolveTagIds } from "@/lib/manual/tags";
 import type {
   DeployPlan,
   EventResponse,
   ManualAudit,
   MarketPayload,
   SeriesResponse,
-  TagResponse,
 } from "@/lib/types";
 
 type AdaptResponse = {
@@ -79,9 +79,6 @@ export function FromSlugForm() {
   const [includeSeries, setIncludeSeries] = useState(true);
   const [eventState, setEventState] = useState<EventEditorState | null>(null);
   const [drafts, setDrafts] = useState<MarketEditorState[]>([]);
-  const [tagDrafts, setTagDrafts] = useState<{ slug: string; label: string }[]>(
-    [],
-  );
 
   // Set after the chained creates.
   const [createdSeries, setCreatedSeries] = useState<SeriesResponse | null>(
@@ -115,13 +112,20 @@ export function FromSlugForm() {
             : emptySeriesEditorState(),
         );
         setIncludeSeries(Boolean(out.data.series));
-        setEventState(eventEditorStateFromPayload(out.data.event));
+        // Seed the event's tag list with what Polymarket had, so the
+        // operator can see (and edit) exactly what will be attached instead
+        // of it happening invisibly at create time.
+        setEventState(
+          eventEditorStateFromPayload(
+            out.data.event,
+            mergeTagDrafts(out.data.tags),
+          ),
+        );
         setDrafts(
           out.data.markets
             .map(marketDraftToPayload)
             .map((p) => marketEditorStateFromPayload(p as MarketPayload)),
         );
-        setTagDrafts(out.data.tags);
         setPhase("review");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -131,31 +135,18 @@ export function FromSlugForm() {
 
   const audit: ManualAudit = { correlation_id: correlationId };
 
-  const upsertTags = async (): Promise<number[]> => {
-    const ids: number[] = [];
-    for (const t of tagDrafts) {
-      try {
-        const res = await fetch("/api/manual/tags/upsert", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug: t.slug, label: t.label }),
-        });
-        if (!res.ok) continue;
-        const data = (await res.json()) as TagResponse;
-        ids.push(data.id);
-      } catch {
-        // Skip individual tag failures — the rest of the chain proceeds.
-      }
-    }
-    return ids;
-  };
-
   const startChain = () => {
     setError(null);
     if (!eventState) return;
     startTransition(async () => {
       try {
-        // Series first (optional).
+        // Tags first: one list, edited in the Event card above — the
+        // Polymarket ones plus anything the operator typed. Pending drafts are
+        // upserted here, and a failure aborts before anything else is created
+        // rather than silently dropping the tag (or orphaning a series).
+        const tagIds = await resolveTagIds(eventState.tags);
+
+        // Series next (optional).
         let seriesExternalId: string | undefined;
         if (includeSeries && seriesState) {
           setPhase("creating-series");
@@ -175,9 +166,6 @@ export function FromSlugForm() {
           setCreatedSeries(series);
           seriesExternalId = series.external_id;
         }
-
-        // Tags (best-effort).
-        const tagIds = await upsertTags();
 
         // Event next.
         setPhase("creating-event");

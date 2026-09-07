@@ -18,6 +18,7 @@ import {
   type EventEditorState,
 } from "@/components/manual/event-editor";
 import { isMetadataValid } from "@/lib/manual/helpers";
+import { resolveTagIds } from "@/lib/manual/tags";
 import type { EventResponse } from "@/lib/types";
 
 export function EventForm({
@@ -50,6 +51,10 @@ export function EventForm({
     startTransition(async () => {
       try {
         const payload = eventEditorStateToPayload(state);
+        // Upsert any tag the operator typed but that doesn't exist yet, then
+        // stamp the resolved ids onto the payload.
+        const tagIds = await resolveTagIds(state.tags);
+        if (tagIds.length) payload.tag_ids = tagIds;
         const res = await fetch("/api/manual/events/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

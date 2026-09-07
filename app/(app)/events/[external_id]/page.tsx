@@ -28,6 +28,7 @@ import type {
 import { derive } from "@/lib/market-lifecycle";
 import { LifecycleStepper, ResultChip } from "@/components/market-lifecycle";
 import { EventActionsPanel } from "./event-actions-panel";
+import { EventTagsEditor } from "./event-tags-card";
 import { MarketActionsPanel } from "../../markets/[external_id]/market-actions-panel";
 
 export const dynamic = "force-dynamic";
@@ -393,16 +394,7 @@ function EventDetailsCard({
           <FlagBadge label="neg_risk" value={event.neg_risk} />
         </div>
 
-        {event.tags && event.tags.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-foreground-muted">
-              tags
-            </span>
-            {event.tags.map((t) => (
-              <Badge key={t.id} tone="neutral">{t.label || t.slug}</Badge>
-            ))}
-          </div>
-        ) : null}
+        <EventTagsEditor externalId={external_id} tags={event.tags ?? []} />
 
         {hasNonEmptyString(event.description) ? (
           <details className="rounded-md border border-border bg-foreground/[0.02]">

@@ -15,13 +15,21 @@ import {
   stringifyMetadata,
   suggestSlug,
 } from "@/lib/manual/helpers";
-import type { EventPayload } from "@/lib/types";
+import { mergeTagDrafts } from "@/lib/manual/tags";
+import type { EventPayload, EventTagDraft } from "@/lib/types";
 
 import { SeriesSearchSelect } from "./series-search-select";
 import { TagSearchSelect } from "./tag-search-select";
 
-export type EventEditorState = Omit<EventPayload, "metadata" | "end_date"> & {
+export type EventEditorState = Omit<
+  EventPayload,
+  "metadata" | "end_date" | "tag_ids"
+> & {
   metadataText: string;
+  // Tags are edited as {slug,label} drafts, not resolved ids: an operator can
+  // add a tag that does not exist in dpm-api yet. The submitting form calls
+  // resolveTagIds(state.tags) and stamps the resulting ids onto the payload.
+  tags: EventTagDraft[];
   start_date_local: string;
   end_date_local: string;
   deploying_timestamp_local: string;
@@ -59,13 +67,25 @@ export function emptyEventEditorState(): EventEditorState {
     start_date_local: "",
     end_date_local: "",
     deploying_timestamp_local: "",
-    tag_ids: [],
+    tags: [],
   };
 }
 
-export function eventEditorStateFromPayload(p: EventPayload): EventEditorState {
+// `tags` is passed separately because EventPayload only carries resolved
+// numeric tag_ids, which are useless for display. Callers that have the
+// {slug,label} list (AI drafts, the slug adapter, an existing event's tags)
+// hand it in here.
+export function eventEditorStateFromPayload(
+  p: EventPayload,
+  tags: EventTagDraft[] = [],
+): EventEditorState {
+  // tag_ids are dropped: the editor's tag source of truth is the `tags` draft
+  // list, and carrying a stale id list alongside it is how the two used to
+  // diverge (the resolved list silently overwrote the operator's picks).
+  const rest: EventPayload = { ...p };
+  delete rest.tag_ids;
   return {
-    ...p,
+    ...rest,
     ticker: p.ticker ?? "",
     description: p.description ?? "",
     resolution_source: p.resolution_source ?? "",
@@ -77,7 +97,7 @@ export function eventEditorStateFromPayload(p: EventPayload): EventEditorState {
     start_date_local: "",
     end_date_local: isoToLocalInput(p.end_date),
     deploying_timestamp_local: "",
-    tag_ids: p.tag_ids ?? [],
+    tags: mergeTagDrafts(tags),
   };
 }
 
@@ -96,7 +116,8 @@ export function eventEditorStateToPayload(s: EventEditorState): EventPayload {
     metadata_type: cleanString(s.metadata_type),
     metadata: parseMetadata(s.metadataText),
     end_date: localInputToIso(s.end_date_local),
-    tag_ids: s.tag_ids?.length ? s.tag_ids : undefined,
+    // tag_ids are resolved asynchronously by the caller (resolveTagIds) and
+    // stamped onto the returned payload — this conversion is synchronous.
   };
 }
 
@@ -212,8 +233,9 @@ export function EventEditor({
         </Field>
         <Field label="Tags">
           <TagSearchSelect
-            valueIds={value.tag_ids ?? []}
-            onChange={(ids) => set("tag_ids", ids)}
+            idPrefix={`${idPrefix}-tags`}
+            value={value.tags}
+            onChange={(tags) => set("tags", tags)}
           />
         </Field>
       </div>

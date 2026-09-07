@@ -33,6 +33,7 @@ import {
 } from "@/components/manual/series-editor";
 import { DeployPlanDriver } from "@/components/manual/deploy-plan-driver";
 import { marketDraftToPayload, newUUID } from "@/lib/manual/helpers";
+import { mergeTagDrafts, resolveTagIds } from "@/lib/manual/tags";
 import type {
   AiDraftMode,
   SeriesOfEventsDraft,
@@ -44,7 +45,6 @@ import type {
   ManualAudit,
   MarketPayload,
   SeriesResponse,
-  TagResponse,
 } from "@/lib/types";
 
 type DraftEnvelope =
@@ -85,9 +85,6 @@ export function FromDescriptionForm() {
     null,
   );
   const [eventRows, setEventRows] = useState<EventDraftRow[]>([]);
-  const [tagDrafts, setTagDrafts] = useState<{ slug: string; label: string }[]>(
-    [],
-  );
 
   // Created results.
   const [createdSeries, setCreatedSeries] = useState<SeriesResponse | null>(
@@ -97,6 +94,10 @@ export function FromDescriptionForm() {
   // each followed by its full market deploy queue).
   const [activeEventIndex, setActiveEventIndex] = useState<number>(-1);
   const [correlationId] = useState<string>(() => newUUID());
+  // Every event row is seeded with the same AI tag list, so without a cache a
+  // 10-event series would re-upsert the same slugs ten times. Scoped to this
+  // form instance, which is exactly one create chain.
+  const [tagIdCache] = useState<Map<string, number>>(() => new Map());
 
   const audit: ManualAudit = { correlation_id: correlationId };
 
@@ -122,24 +123,26 @@ export function FromDescriptionForm() {
           markets
             .map(marketDraftToPayload)
             .map((p) => marketEditorStateFromPayload(p as MarketPayload));
+        // The AI returns one tag list for the whole draft. Seed it onto every
+        // event's editor so the operator sees what will be attached and can
+        // add/remove per event before approving.
+        const aiTags = mergeTagDrafts(env.data.tags);
         if (env.mode === "single-event") {
           setSeriesState(null);
           setEventRows([
             {
-              state: eventEditorStateFromPayload(env.data.event),
+              state: eventEditorStateFromPayload(env.data.event, aiTags),
               markets: draftMarketsToEditor(env.data.markets),
             },
           ]);
-          setTagDrafts(env.data.tags);
         } else {
           setSeriesState(seriesEditorStateFromPayload(env.data.series));
           setEventRows(
             env.data.events.map((e) => ({
-              state: eventEditorStateFromPayload(e.event),
+              state: eventEditorStateFromPayload(e.event, aiTags),
               markets: draftMarketsToEditor(e.markets),
             })),
           );
-          setTagDrafts(env.data.tags);
         }
         setPhase("review");
       } catch (err) {
@@ -148,29 +151,17 @@ export function FromDescriptionForm() {
     });
   };
 
-  const upsertTags = async (): Promise<number[]> => {
-    const ids: number[] = [];
-    for (const t of tagDrafts) {
-      try {
-        const res = await fetch("/api/manual/tags/upsert", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug: t.slug, label: t.label }),
-        });
-        if (!res.ok) continue;
-        const data = (await res.json()) as TagResponse;
-        ids.push(data.id);
-      } catch {
-        // Best-effort.
-      }
-    }
-    return ids;
-  };
-
   const startChain = () => {
     setError(null);
     startTransition(async () => {
       try {
+        // Resolve every event's tags up front, so a bad tag aborts before
+        // anything is created rather than orphaning a series (or a partially
+        // deployed batch). createEventAt then reads them back off the cache.
+        for (const row of eventRows) {
+          await resolveTagIds(row.state.tags, tagIdCache);
+        }
+
         // Series first if present.
         let seriesExternalId: string | undefined;
         if (seriesState) {
@@ -191,12 +182,11 @@ export function FromDescriptionForm() {
           seriesExternalId = data.external_id;
         }
 
-        const tagIds = await upsertTags();
-
         // Each event is created right before its markets deploy. We seed the
         // first event here; subsequent events are created via advanceToNextEvent,
-        // triggered by the DeployPlanDriver's onCompleted callback.
-        await createEventAt(0, seriesExternalId, tagIds);
+        // triggered by the DeployPlanDriver's onCompleted callback. Each event
+        // resolves its own tag list from its editor state.
+        await createEventAt(0, seriesExternalId);
         setPhase("deploying-markets");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -208,11 +198,13 @@ export function FromDescriptionForm() {
   const createEventAt = async (
     index: number,
     seriesExternalId: string | undefined,
-    tagIds: number[],
   ) => {
     const row = eventRows[index];
     const eventPayload = eventEditorStateToPayload(row.state);
     if (seriesExternalId) eventPayload.series_external_id = seriesExternalId;
+    // Pending tag drafts are upserted here; a failure aborts this event's
+    // create rather than silently dropping the tag.
+    const tagIds = await resolveTagIds(row.state.tags, tagIdCache);
     if (tagIds.length) eventPayload.tag_ids = tagIds;
     const res = await fetch("/api/manual/events/create", {
       method: "POST",
@@ -273,15 +265,10 @@ export function FromDescriptionForm() {
       return;
     }
     try {
-      // Reuse the seriesExternalId already set on the events. tagIds are stamped
-      // once on the first event's create — subsequent events can read them off
-      // the first event's payload if needed; for simplicity we don't re-attach
-      // tags to subsequent events in the series (they inherit via the series).
-      await createEventAt(
-        next,
-        createdSeries?.external_id,
-        eventRows[next].state.tag_ids ?? [],
-      );
+      // Reuse the seriesExternalId already set on the events. Each event
+      // carries its own tag list in editor state, so createEventAt resolves
+      // and attaches them per event.
+      await createEventAt(next, createdSeries?.external_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setPhase("review");
@@ -462,25 +449,6 @@ export function FromDescriptionForm() {
 
       {phase === "review" ? (
         <>
-          {tagDrafts.length ? (
-            <Card>
-              <CardHeader>
-                <h2 className="font-semibold">Tags</h2>
-              </CardHeader>
-              <CardBody className="text-sm flex flex-wrap gap-1.5">
-                {tagDrafts.map((t) => (
-                  <span
-                    key={t.slug}
-                    className="inline-flex items-center gap-1 rounded-full bg-foreground/5 border border-border px-2 py-0.5 text-xs"
-                  >
-                    {t.label}{" "}
-                    <span className="text-foreground-muted">({t.slug})</span>
-                  </span>
-                ))}
-              </CardBody>
-            </Card>
-          ) : null}
-
           <Card>
             <CardBody>
               <Field
