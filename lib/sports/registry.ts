@@ -14,6 +14,12 @@ export type { SportContest, SportUi, MarketTypeUi, StatusTone } from "@/lib/spor
 //
 // COMING_SOON entries are advertised on the hub but have no provider yet.
 // Empty at the moment: every sport the hub advertises is wired up.
+//
+// MMA stays in the registry while switched off (available: false in
+// lib/sports/mma.ts, matching the commented-out provider on the Go side). It
+// is hidden from the hub and its routes 404, but any stored mma row still
+// renders with its own status vocabulary rather than falling back to
+// soccer's — see uiOrSoccer.
 const REGISTRY: SportUi[] = [soccer, hockey, basketball, nfl, baseball, mma];
 
 const COMING_SOON: Pick<SportUi, "key" | "label" | "description">[] = [];
