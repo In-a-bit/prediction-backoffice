@@ -26,7 +26,12 @@ export const mma: SportUi = {
   shortLabel: "MMA",
   description:
     "UFC cards on api-mma. One moneyline market per fight whose outcomes are the two fighters, settled on the official result — with a 50-50 refund for a draw, a no contest, or a cancelled bout.",
-  available: true,
+  // Switched off: this vendor's handling of draws, no contests and postponed
+  // bouts still needs investigating, so no operator can configure an MMA task
+  // for now. The sport is hidden from the hub and its routes 404, but stored
+  // mma rows keep rendering through the entry below. The Go side is off too —
+  // see the commented-out KeyMMA factory in sportsapi/wiring.
+  available: false,
 
   contest: { singular: "fight", plural: "fights", startLabel: "First bell" },
 
