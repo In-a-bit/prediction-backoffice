@@ -77,6 +77,13 @@ export function FromSlugForm() {
     null,
   );
   const [includeSeries, setIncludeSeries] = useState(true);
+  // Set when the adapted series slug already exists in our DB. Creating it
+  // again would hit the series_slug_key unique constraint, so we skip the
+  // create and link the event to the existing row instead.
+  const [existingSeries, setExistingSeries] = useState<SeriesResponse | null>(
+    null,
+  );
+  const [linkExistingSeries, setLinkExistingSeries] = useState(true);
   const [eventState, setEventState] = useState<EventEditorState | null>(null);
   const [drafts, setDrafts] = useState<MarketEditorState[]>([]);
 
@@ -88,8 +95,28 @@ export function FromSlugForm() {
   const [createdPlanId, setCreatedPlanId] = useState<string | null>(null);
   const [correlationId] = useState<string>(() => newUUID());
 
+  // lookupSeriesBySlug answers "does this slug already exist in our DB?".
+  // A 404 means free. Any other failure (500, network) returns null so the
+  // adapt still completes with the prefilled form — this is an optimization
+  // that avoids a known-doomed create, not a gate on the flow.
+  const lookupSeriesBySlug = async (
+    seriesSlug: string,
+  ): Promise<SeriesResponse | null> => {
+    try {
+      const res = await fetch(
+        `/api/manual/series/by-slug?slug=${encodeURIComponent(seriesSlug)}`,
+      );
+      if (!res.ok) return null;
+      return (await res.json()) as SeriesResponse;
+    } catch {
+      return null;
+    }
+  };
+
   const fetchAdapt = () => {
     setError(null);
+    setExistingSeries(null);
+    setLinkExistingSeries(true);
     if (!slug.trim()) {
       setError("Slug is required");
       return;
@@ -106,20 +133,40 @@ export function FromSlugForm() {
           throw new Error(body.error ?? `request failed with ${res.status}`);
         }
         const out = (await res.json()) as AdaptResponse;
-        setSeriesState(
-          out.data.series
-            ? seriesEditorStateFromPayload(out.data.series)
-            : emptySeriesEditorState(),
-        );
-        setIncludeSeries(Boolean(out.data.series));
+
+        // A series is a one-to-many container (one series → many events), so
+        // re-ingesting a recurring Polymarket question is expected to find its
+        // series already there. Look it up before offering to create it.
+        const found = out.data.series
+          ? await lookupSeriesBySlug(out.data.series.slug)
+          : null;
+        setExistingSeries(found);
+
+        if (found) {
+          // Clear the form rather than leave the colliding prefill sitting in
+          // it — if the operator does tick the box, they start from blank.
+          setSeriesState(emptySeriesEditorState());
+          setIncludeSeries(false);
+        } else {
+          setSeriesState(
+            out.data.series
+              ? seriesEditorStateFromPayload(out.data.series)
+              : emptySeriesEditorState(),
+          );
+          setIncludeSeries(Boolean(out.data.series));
+        }
+
         // Seed the event's tag list with what Polymarket had, so the
         // operator can see (and edit) exactly what will be attached instead
         // of it happening invisibly at create time.
+        const eventBase = eventEditorStateFromPayload(
+          out.data.event,
+          mergeTagDrafts(out.data.tags),
+        );
         setEventState(
-          eventEditorStateFromPayload(
-            out.data.event,
-            mergeTagDrafts(out.data.tags),
-          ),
+          found
+            ? { ...eventBase, series_external_id: found.external_id }
+            : eventBase,
         );
         setDrafts(
           out.data.markets
@@ -288,7 +335,50 @@ export function FromSlugForm() {
             </label>
           </CardHeader>
           <CardBody>
-            {includeSeries ? (
+            {existingSeries && !includeSeries ? (
+              <div className="space-y-3">
+                <p className="text-sm">
+                  ✓ A series with slug{" "}
+                  <code className="font-mono">{existingSeries.slug}</code>{" "}
+                  already exists — external_id{" "}
+                  <code className="font-mono">
+                    {existingSeries.external_id}
+                  </code>
+                  . It will not be created again.
+                </p>
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={linkExistingSeries}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setLinkExistingSeries(next);
+                      setEventState((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              series_external_id: next
+                                ? existingSeries.external_id
+                                : "",
+                            }
+                          : prev,
+                      );
+                    }}
+                    disabled={
+                      phase === "creating-series" ||
+                      phase === "creating-event" ||
+                      phase === "deploying-markets"
+                    }
+                  />
+                  Link this event to the existing series
+                </label>
+                {!linkExistingSeries ? (
+                  <p className="text-sm text-foreground-muted">
+                    The event will not be linked to any series.
+                  </p>
+                ) : null}
+              </div>
+            ) : includeSeries ? (
               createdSeries ? (
                 <p className="text-sm">
                   ✓ Created — external_id{" "}

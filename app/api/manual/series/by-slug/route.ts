@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { manual } from "@/lib/api";
+import { BackofficeApiError, manual } from "@/lib/api";
+import { proxyError } from "@/lib/route-guard";
 
 export async function GET(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get("slug")?.trim();
@@ -11,10 +12,12 @@ export async function GET(req: NextRequest) {
     const data = await manual.getSeriesBySlug(slug);
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("404")) {
+    // 404 is the expected "no such series" answer, not a failure — callers use
+    // it to decide whether a slug is free. Anything else is a real error and
+    // keeps its upstream status.
+    if (err instanceof BackofficeApiError && err.status === 404) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return proxyError(err);
   }
 }
