@@ -35,7 +35,7 @@ type Ctx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
-  sportProposeExhausted?: boolean;
+  sportAutoProposePending?: boolean;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
   externalProposalDecision?: ExternalProposalDecision;
@@ -125,6 +125,7 @@ const ACTIONS_WITH_FORM = new Set<MarketActionKey>([
   // it gets a confirmation step. Accepting is reversible until dispute_by and
   // fires inline.
   "uma-dispute-external-proposal",
+  "uma-dispute",
 ]);
 
 // One-click actions — fire immediately with no parameters.
@@ -221,6 +222,8 @@ function ActionForm({
       return <PayoutsForm ctx={ctx} onClose={onClose} kind="ctf-oracle" onBusyChange={onBusyChange} />;
     case "uma-dispute-external-proposal":
       return <DisputeExternalProposalForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
+    case "uma-dispute":
+      return <SportDisputeForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
     default:
       return null;
   }
@@ -452,6 +455,70 @@ function DisputeExternalProposalForm({
   );
 }
 
+// Disputes whatever proposal is live on a sport market — ours or external.
+function SportDisputeForm({
+  ctx,
+  onClose,
+  onBusyChange,
+}: {
+  ctx: Ctx;
+  onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
+}) {
+  const router = useRouter();
+  const [confirm, setConfirm] = useState("");
+  const { isPending, submitted, error, run } = useFormSubmit(onClose, onBusyChange);
+
+  const ready = confirm.trim().toUpperCase() === "DISPUTE";
+
+  function submit() {
+    run(async () => {
+      const res = await fetch(`/api/sports/markets/${ctx.sportMarketId}/uma/dispute`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <FormCard title="UMA · Dispute proposal" tone="danger">
+      <p className="text-[11px] text-foreground-muted leading-snug">
+        Broadcasts <code>disputePriceFor</code> from the UMA_ADMIN wallet against
+        the proposal live on this market and posts the dispute bond. The first
+        dispute resets the question so a new price can be proposed; a second
+        sends it to the UMA DVM for a vote.
+      </p>
+      <label className="flex flex-col gap-1 text-[11px]">
+        Type <strong>DISPUTE</strong> to confirm
+        <input
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs font-mono"
+        />
+      </label>
+      {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+      <UpdatingNote show={submitted}>Dispute sent — updating…</UpdatingNote>
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} disabled={isPending} className={buttonVariants.ghost}>
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!ready || isPending || submitted}
+          className={buttonVariants.danger}
+        >
+          {submitted ? "Updating…" : isPending ? "Disputing…" : "Dispute"}
+        </button>
+      </div>
+    </FormCard>
+  );
+}
+
 function PayoutsForm({
   ctx,
   onClose,
@@ -598,6 +665,7 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
     case "uma-resolve-manually":
     case "ctf-oracle-report-payouts":
     case "uma-dispute-external-proposal":
+    case "uma-dispute":
       // Multi-step — handled by ActionForm.
       return null;
   }

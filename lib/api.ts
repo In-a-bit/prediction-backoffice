@@ -583,6 +583,13 @@ export const sports = {
       `/sports/markets/${id}/uma/watch-dispute`,
       { method: "POST", body: audit, authed: true },
     ),
+  // Disputes whatever proposal is live on the market (ours or external). The
+  // backoffice pins the dispute to the proposal it reads at request time.
+  umaDispute: (id: number, audit: { actor?: string } = {}) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/sports/markets/${id}/uma/dispute`,
+      { method: "POST", body: audit, authed: true },
+    ),
   getMarketStatus: (id: number) =>
     request<Record<string, unknown>>(`/sports/markets/${id}/status`),
   findMarketByExternalId: (externalId: string) =>

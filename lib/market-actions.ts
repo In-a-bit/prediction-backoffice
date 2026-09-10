@@ -39,6 +39,10 @@ export type MarketActionKey =
   // dispute_by makes the workflow dispute on its own.
   | "uma-accept-external-proposal"
   | "uma-dispute-external-proposal"
+  // Operator dispute of whatever proposal is live on a sport market — ours or
+  // an external one. The backoffice pins it to the proposal it reads at
+  // request time, so a replaced proposal is refused rather than disputed.
+  | "uma-dispute"
   // Recover stuck CTF funds after a first-dispute DVM reset. Visible when
   // settle_status === "settle_required" and a backoffice market ID is present
   // (sport or manual only — crypto markets have no backoffice row).
@@ -52,12 +56,13 @@ export type MarketActionCtx = {
   planExternalId?: string;
   sportMarketId?: number;
   sportLocalStatus?: SportMarketStatus;
-  // Whether the sports dispatcher's one-shot automatic propose pass for this
-  // market's decision has already run (propose_dispatched_at set — see
+  // Whether the sports dispatcher is still going to propose this market on its
+  // own: a SportDecision priced for this outcome exists and its one-shot
+  // propose pass hasn't run yet (propose_dispatched_at unset — see
   // apps/backoffice/internal/scheduler/sports/dispatcher.go's RunOnce doc).
-  // Only then does a "reset" sport market actually need an operator; before
-  // that the 10s dispatcher tick still re-proposes it on its own.
-  sportProposeExhausted?: boolean;
+  // While true, a manual "Propose price" would only race the 10s dispatcher
+  // tick, so it isn't offered.
+  sportAutoProposePending?: boolean;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
   // The operator's already-recorded call on the current external proposal.
@@ -197,13 +202,12 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       actions.push("ctf-oracle-report-payouts");
     }
   } else if (ctx.source === "sport" && ctx.sportLocalStatus) {
-    // Sport markets: gate UMA actions on local_status which is the authoritative
-    // source of truth. Only "reset" allows operator proposal — "created" means
-    // the automated flow hasn't triggered yet, not that a re-proposal is needed.
-    // "reset" additionally requires sportProposeExhausted: while the
-    // decision's propose_dispatched_at is still unset, the sports dispatcher's
-    // 10s tick auto re-proposes this market on its own, so offering a manual
-    // "Propose price" button would just race it.
+    // Sport markets: gate UMA actions on local_status, the authoritative source
+    // of truth, ANDed with the on-chain status the backoffice validates against.
+    // Propose is offered from "created" (no automated result yet, or a failed
+    // propose) and "reset" (a dispute cleared the last proposal) — except while
+    // the sports dispatcher is still about to propose this market by itself
+    // (sportAutoProposePending), which a manual button would only race.
     const ls = ctx.sportLocalStatus;
     const isTerminal =
       ls === "resolved" ||
@@ -211,8 +215,21 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
       ls === "cancelled" ||
       ls === "failed";
     if (!isTerminal) {
-      if (ls === "reset" && ctx.sportProposeExhausted && canProposeOnChain(ctx)) {
+      if (
+        (ls === "created" || ls === "reset") &&
+        !ctx.sportAutoProposePending &&
+        canProposeOnChain(ctx)
+      ) {
         actions.push("uma-propose");
+      }
+      // Dispute whatever proposal is live — ours or external. The backoffice
+      // pins the dispute to the on-chain proposal snapshot, so it must exist.
+      if (
+        ctx.sportMarketId !== undefined &&
+        umaStatus(ctx.dpmMarket) === "PROPOSED" &&
+        ctx.dpmMarket?.last_proposal_expiration != null
+      ) {
+        actions.push("uma-dispute");
       }
       // uma-resolve is intentionally omitted for sport markets: the Temporal
       // workflow resolves automatically after the liveness window. Operators
@@ -350,6 +367,12 @@ export const ACTION_META: Record<
     tone: "danger",
     title:
       "Challenge the outside proposal on-chain now, from the UMA_ADMIN wallet. The first dispute resets the question; the second sends it to the DVM.",
+  },
+  "uma-dispute": {
+    label: "Dispute proposal",
+    tone: "danger",
+    title:
+      "Dispute the proposal live on this market — ours or external — from the UMA_ADMIN wallet. The first dispute resets the question for a new proposal; the second sends it to the DVM.",
   },
   "uma-recover-funds": {
     label: "Recover funds",

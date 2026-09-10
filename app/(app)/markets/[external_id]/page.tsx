@@ -223,6 +223,13 @@ export default async function MarketDetailPage({
       )
     : undefined;
   const sportProposeExhausted = !!sportDecisionForMarket?.propose_dispatched_at;
+  // While the decision is priced for this outcome and hasn't been dispatched
+  // yet, the dispatcher will propose this market by itself, so the Actions
+  // panel holds back a manual propose.
+  const sportAutoProposePending =
+    !!sportMarket &&
+    sportDecisionForMarket?.proposed_prices?.[sportMarket.outcome_key] !== undefined &&
+    !sportProposeExhausted;
 
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
@@ -371,7 +378,7 @@ export default async function MarketDetailPage({
                   planExternalId={plan?.external_id}
                   sportMarketId={resolvedSportMarketId}
                   sportLocalStatus={sportMarket?.local_status}
-                  sportProposeExhausted={sportProposeExhausted}
+                  sportAutoProposePending={sportAutoProposePending}
                   manualMarketId={resolvedManualMarketId}
                   manualLocalStatus={manualMarket?.local_status}
                   externalProposalDecision={externalProposal?.decision}
