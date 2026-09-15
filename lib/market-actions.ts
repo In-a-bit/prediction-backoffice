@@ -4,6 +4,8 @@ import type {
   ExternalProposalDecision,
   ManualMarketLocalStatus,
   MarketStatus,
+  SportEvent,
+  SportMarket,
   SportMarketStatus,
 } from "./types";
 import type { PlanSource } from "./source-from-plan";
@@ -39,8 +41,8 @@ export type MarketActionKey =
   // dispute_by makes the workflow dispute on its own.
   | "uma-accept-external-proposal"
   | "uma-dispute-external-proposal"
-  // Operator dispute of whatever proposal is live on a sport market — ours or
-  // an external one. The backoffice pins it to the proposal it reads at
+  // Operator dispute of whatever proposal is live on a sport or manual market —
+  // ours or an external one. The backoffice pins it to the proposal it reads at
   // request time, so a replaced proposal is refused rather than disputed.
   | "uma-dispute"
   // Recover stuck CTF funds after a first-dispute DVM reset. Visible when
@@ -63,11 +65,23 @@ export type MarketActionCtx = {
   // While true, a manual "Propose price" would only race the 10s dispatcher
   // tick, so it isn't offered.
   sportAutoProposePending?: boolean;
+  // Whether that one-shot automatic propose pass has already run
+  // (propose_dispatched_at set). It is never cleared, so a market reset after
+  // it will not be proposed automatically again.
+  sportProposeExhausted?: boolean;
+  // The sport (sports.key) and its vendor's latest game status short code
+  // (sport_events.fixture_status_short). The codes collide across sports, so
+  // the key picks the vocabulary.
+  sportKey?: string;
+  sportFixtureStatus?: string;
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
   // The operator's already-recorded call on the current external proposal.
   // Present means the decision is made and the buttons must not offer it again.
   externalProposalDecision?: ExternalProposalDecision;
+  // Whether a SportDecision accepts or disputes the current external proposal
+  // by itself (sport markets only), leaving no call for the operator to make.
+  externalProposalAutomated?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -144,6 +158,33 @@ function canProposeOnChain(ctx: MarketActionCtx): boolean {
   return umaStatus(ctx.dpmMarket) === "INITIALIZING";
 }
 
+// Game statuses the sports Decide strategies deliberately leave open (see the
+// decision matrices in prediction-bundler apps/backoffice/internal/
+// sportsresolution/*). Only these need an operator's price; any other status is
+// either still in play or settled automatically. Keys match sports.key.
+const OPERATOR_PROPOSABLE_GAME_STATUSES: Record<string, ReadonlySet<string>> = {
+  baseball: new Set(["POST", "CANC", "INTR", "ABD"]),
+  basketball: new Set(["POST", "CANC", "SUSP", "AWD", "ABD"]),
+  hockey: new Set(["AW", "POST", "CANC", "INTR", "ABD"]),
+  nfl: new Set(["CANC", "PST"]),
+  soccer: new Set(["PST", "CANC", "ABD", "AWD", "WO"]),
+};
+
+// An unknown sport or a missing status is "no" — like canProposeOnChain, we
+// never offer a proposal on a game state we can't confirm.
+function gameAwaitsOperatorProposal(ctx: MarketActionCtx): boolean {
+  const statuses = ctx.sportKey ? OPERATOR_PROPOSABLE_GAME_STATUSES[ctx.sportKey] : undefined;
+  const status = (ctx.sportFixtureStatus ?? "").toUpperCase();
+  return !!statuses?.has(status);
+}
+
+// A market reset after the dispatcher's one automatic propose pass is never
+// proposed automatically again, so it is the operator's to handle whatever the
+// game status is.
+function automaticProposeWillNotRetry(ctx: MarketActionCtx): boolean {
+  return ctx.sportLocalStatus === "reset" && !!ctx.sportProposeExhausted;
+}
+
 // CTF_ORACLE markets don't carry a per-status enum; once they're resolved on
 // chain the dpm-api row is marked closed=true. Treat closed/archived as
 // terminal so we stop offering "Report payouts".
@@ -152,11 +193,14 @@ function ctfIsTerminal(d?: DpmMarket): boolean {
 }
 
 // A decision is open only while the proposal is still live on-chain (PROPOSED
-// with the external flag set) and the operator hasn't recorded one. Mirrors the
-// guard in apps/backoffice/handlers/manual_external_proposal.go, so we never
-// offer a call the backoffice would reject.
+// with the external flag set), the operator hasn't recorded one, and no
+// SportDecision settles it by itself. Mirrors the guards in
+// apps/backoffice/handlers/manual_external_proposal.go and
+// sports_external_proposal.go, so we never offer a call the backoffice would
+// reject.
 function awaitsExternalProposalDecision(ctx: MarketActionCtx): boolean {
   if (ctx.externalProposalDecision) return false;
+  if (ctx.externalProposalAutomated) return false;
   if (!ctx.dpmMarket?.has_external_proposal) return false;
   return umaStatus(ctx.dpmMarket) === "PROPOSED";
 }
@@ -174,16 +218,21 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     if (s === "failed") actions.push("retry", "recreate");
   }
 
-  // 2) Manual-market watch-dispute — available when the market is in the
-  //     disputed phase and a backoffice manual_market row exists.
+  // 2) Manual-market dispute handling — needs a backoffice manual_market row.
+  //     Watch-dispute is available in the disputed phase.
   if (ctx.source === "manual" && ctx.manualMarketId !== undefined) {
     if (ctx.manualLocalStatus === "disputed") {
       actions.push("manual-watch-dispute");
     }
     if (awaitsExternalProposalDecision(ctx)) {
+      actions.push("uma-accept-external-proposal");
+    }
+    // Dispute whenever the market is proposed. An external proposal still
+    // awaiting the operator's call is disputed through the recorded decision
+    // the dispute-watch reads; any other proposal — ours included — directly.
+    if (ctx.manualLocalStatus === "proposed") {
       actions.push(
-        "uma-accept-external-proposal",
-        "uma-dispute-external-proposal",
+        awaitsExternalProposalDecision(ctx) ? "uma-dispute-external-proposal" : "uma-dispute",
       );
     }
   }
@@ -201,40 +250,11 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
     if (!ctfIsTerminal(ctx.dpmMarket)) {
       actions.push("ctf-oracle-report-payouts");
     }
-  } else if (ctx.source === "sport" && ctx.sportLocalStatus) {
-    // Sport markets: gate UMA actions on local_status, the authoritative source
-    // of truth, ANDed with the on-chain status the backoffice validates against.
-    // Propose is offered from "created" (no automated result yet, or a failed
-    // propose) and "reset" (a dispute cleared the last proposal) — except while
-    // the sports dispatcher is still about to propose this market by itself
-    // (sportAutoProposePending), which a manual button would only race.
-    const ls = ctx.sportLocalStatus;
-    const isTerminal =
-      ls === "resolved" ||
-      ls === "refunded" ||
-      ls === "cancelled" ||
-      ls === "failed";
-    if (!isTerminal) {
-      if (
-        (ls === "created" || ls === "reset") &&
-        !ctx.sportAutoProposePending &&
-        canProposeOnChain(ctx)
-      ) {
-        actions.push("uma-propose");
-      }
-      // Dispute whatever proposal is live — ours or external. The backoffice
-      // pins the dispute to the on-chain proposal snapshot, so it must exist.
-      if (
-        ctx.sportMarketId !== undefined &&
-        umaStatus(ctx.dpmMarket) === "PROPOSED" &&
-        ctx.dpmMarket?.last_proposal_expiration != null
-      ) {
-        actions.push("uma-dispute");
-      }
-      // uma-resolve is intentionally omitted for sport markets: the Temporal
-      // workflow resolves automatically after the liveness window. Operators
-      // should not manually trigger settlement.
-    }
+  } else if (ctx.source === "sport") {
+    // A sport market whose backoffice row didn't load gets no UMA action: all
+    // of them are gated on local_status, and the dpm-only fallback below would
+    // propose straight to dpm-api, bypassing the resolution workflow.
+    actions.push(...sportUmaActions(ctx));
   } else if (ctx.source === "manual" && ctx.manualLocalStatus) {
     // Manual markets with a backoffice DB row: gate on local_status, mirroring
     // the sport market flow.
@@ -288,6 +308,121 @@ export function getAvailableActions(ctx: MarketActionCtx): MarketActionKey[] {
   }
 
   return actions;
+}
+
+// UMA actions for a sport market: gated on local_status, the authoritative
+// source of truth, ANDed with the on-chain status the backoffice validates
+// against. The operator is only offered what automation won't do.
+function sportUmaActions(ctx: MarketActionCtx): MarketActionKey[] {
+  const ls = ctx.sportLocalStatus;
+  const isTerminal =
+    ls === "resolved" ||
+    ls === "refunded" ||
+    ls === "cancelled" ||
+    ls === "failed";
+  if (!ls || isTerminal) return [];
+
+  const actions: MarketActionKey[] = [];
+  if (operatorMayProposeSport(ctx)) {
+    actions.push("uma-propose");
+  }
+  // An external proposal no SportDecision settles waits for the operator's
+  // call, as on a manual market: accept it here or dispute it below. Silence
+  // past dispute_by makes the dispute-watch dispute on its own.
+  if (ctx.sportMarketId !== undefined && awaitsExternalProposalDecision(ctx)) {
+    actions.push("uma-accept-external-proposal");
+  }
+  // Dispute whatever proposal is live — ours or external — whenever the market
+  // is proposed, whatever the game status.
+  if (ctx.sportMarketId !== undefined && ls === "proposed") {
+    actions.push("uma-dispute");
+  }
+  // uma-resolve is intentionally omitted for sport markets: the Temporal
+  // workflow resolves automatically after the liveness window. Operators
+  // should not manually trigger settlement.
+  return actions;
+}
+
+// Propose is offered from "created" (no automated result yet, or a failed
+// propose) and "reset" (a dispute cleared the last proposal) — except while
+// the sports dispatcher is still about to propose this market by itself
+// (sportAutoProposePending), which a manual button would only race. On top of
+// that, the operator only proposes what automation won't: a game status Decide
+// leaves open, or a reset the dispatcher will not re-propose.
+function operatorMayProposeSport(ctx: MarketActionCtx): boolean {
+  const ls = ctx.sportLocalStatus;
+  return (
+    (ls === "created" || ls === "reset") &&
+    !ctx.sportAutoProposePending &&
+    canProposeOnChain(ctx) &&
+    (gameAwaitsOperatorProposal(ctx) || automaticProposeWillNotRetry(ctx))
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context builders and per-surface filters
+// ---------------------------------------------------------------------------
+
+export type SportMarketActionContext = Pick<
+  MarketActionCtx,
+  | "sportMarketId"
+  | "sportLocalStatus"
+  | "sportAutoProposePending"
+  | "sportProposeExhausted"
+  | "sportKey"
+  | "sportFixtureStatus"
+>;
+
+// The sport-market slice of MarketActionCtx, derived from the backoffice sport
+// event and the market's own row. Shared by the market page and the event
+// page's inline panels so both apply exactly the same rules.
+export function sportMarketActionContext(
+  sportEvent: SportEvent | undefined,
+  sportMarket: SportMarket | undefined,
+): SportMarketActionContext {
+  const decision = sportMarket
+    ? sportEvent?.decisions?.find(
+        (d) => d.sport_market_type_id === sportMarket.sport_market_type_id,
+      )
+    : undefined;
+  // Whether the sports dispatcher (apps/backoffice/internal/scheduler/sports/
+  // dispatcher.go) has already used this decision's one automatic propose
+  // pass. propose_dispatched_at, once set, is never cleared again, so a sport
+  // market currently local_status="reset" needs an operator only when its
+  // decision's propose_dispatched_at is set — otherwise the 10s dispatcher
+  // tick will auto re-propose it on its own shortly.
+  const sportProposeExhausted = !!decision?.propose_dispatched_at;
+  // While the decision is priced for this outcome and hasn't been dispatched
+  // yet, the dispatcher will propose this market by itself, so the Actions
+  // panel holds back a manual propose.
+  const sportAutoProposePending =
+    !!sportMarket &&
+    decision?.proposed_prices?.[sportMarket.outcome_key] !== undefined &&
+    !sportProposeExhausted;
+  return {
+    sportMarketId: sportMarket?.id,
+    sportLocalStatus: sportMarket?.local_status,
+    sportAutoProposePending,
+    sportProposeExhausted,
+    sportKey: sportEvent?.sport_key,
+    sportFixtureStatus: sportEvent?.fixture_status_short,
+  };
+}
+
+// Actions that review a live proposal — accepting or disputing it. The event
+// page leaves them to the market page, which shows the proposal evidence.
+export const PROPOSAL_REVIEW_ACTIONS: ReadonlySet<MarketActionKey> = new Set<MarketActionKey>([
+  "uma-accept-external-proposal",
+  "uma-dispute-external-proposal",
+  "uma-dispute",
+]);
+
+export function withoutActions(
+  actions: MarketActionKey[],
+  hidden: ReadonlySet<MarketActionKey> | undefined,
+): MarketActionKey[] {
+  if (!hidden) return actions;
+  return actions.filter((key) => !hidden.has(key));
 }
 
 // Human-facing copy for each action.

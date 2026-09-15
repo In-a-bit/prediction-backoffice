@@ -360,6 +360,13 @@ export const manual = {
       `/manual/backoffice-markets/${id}/uma/dispute-external-proposal`,
       { method: "POST", body: audit, authed: true },
     ),
+  // Disputes whatever proposal is live on the market, ours included. The
+  // backoffice pins the dispute to the proposal it reads at request time.
+  umaDispute: (id: number, audit: { actor?: string } = {}) =>
+    request<{ workflow_id?: string; status?: string }>(
+      `/manual/backoffice-markets/${id}/uma/dispute`,
+      { method: "POST", body: audit, authed: true },
+    ),
   triggerManualResolution: (manualMarketId: number, proposedPrice: string) =>
     request<{ workflow_id: string; run_id: string }>(
       `/manual/backoffice-markets/${manualMarketId}/trigger-resolution`,
@@ -588,6 +595,20 @@ export const sports = {
   umaDispute: (id: number, audit: { actor?: string } = {}) =>
     request<{ workflow_id?: string; status?: string }>(
       `/sports/markets/${id}/uma/dispute`,
+      { method: "POST", body: audit, authed: true },
+    ),
+  // ----- External (non-operator) proposals on sport markets -----
+  // Without a SportDecision to rely on, the running resolution workflow waits
+  // for the operator's call exactly as on a manual market.
+  getExternalProposal: (id: number) =>
+    request<import("./types").ExternalProposalView>(
+      `/sports/markets/${id}/external-proposal`,
+    ),
+  // Accept only records the decision — the workflow waits out liveness and
+  // resolves. Disputing goes through umaDispute.
+  acceptExternalProposal: (id: number, audit: { actor?: string } = {}) =>
+    request<{ decision: import("./types").ExternalProposalDecision }>(
+      `/sports/markets/${id}/uma/accept-external-proposal`,
       { method: "POST", body: audit, authed: true },
     ),
   getMarketStatus: (id: number) =>

@@ -15,11 +15,18 @@ import { SportOutcomeBlock, CryptoOutcomeBlock } from "@/components/event-outcom
 import { MarketOutcomeInline } from "@/components/market-outcome";
 import { formatDateTimeFull, formatRelative, formatUsdc } from "@/lib/format";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
+import {
+  PROPOSAL_REVIEW_ACTIONS,
+  sportMarketActionContext,
+  type MarketActionCtx,
+  type SportMarketActionContext,
+} from "@/lib/market-actions";
 import type {
   CryptoEvent,
   DeployPlan,
   DeployPlanMarket,
   EventResponse,
+  ManualMarketLocalStatus,
   MarketOutcome,
   MarketStatusVerdict,
   SportEvent,
@@ -66,7 +73,7 @@ export default async function EventDetailPage({
 
   // Fan out the verdict hydration alongside the parent-event scan — they share
   // no inputs and both can take measurable time on busy events.
-  const [parentSportEvent, parentCryptoEvent, verdicts, outcomes] =
+  const [parentSportEvent, parentCryptoEvent, verdicts, outcomes, manualMarkets] =
     await Promise.all([
       source === "sport"
         ? findParentSportEvent(external_id)
@@ -76,6 +83,9 @@ export default async function EventDetailPage({
         : Promise.resolve(undefined),
       hydrateVerdicts(rows),
       hydrateOutcomes(rows),
+      source === "manual"
+        ? hydrateManualMarkets(rows)
+        : Promise.resolve(new Map<string, ManualActionContext>()),
     ]);
 
   return (
@@ -152,6 +162,10 @@ export default async function EventDetailPage({
                 verdict={row.market.external_id ? verdicts.get(row.market.external_id) : undefined}
                 outcome={row.market.external_id ? outcomes.get(row.market.external_id) : undefined}
                 cryptoEventId={parentCryptoEvent?.id}
+                actionContext={backofficeActionContext(row.market.external_id, {
+                  sportEvent: parentSportEvent,
+                  manualMarkets,
+                })}
               />
             ))}
           </ul>
@@ -226,31 +240,63 @@ function collectMarketRows(plans: DeployPlan[]): MarketRow[] {
   return [...seen.values(), ...unkeyed];
 }
 
+type ManualActionContext = Pick<MarketActionCtx, "manualMarketId" | "manualLocalStatus">;
+type BackofficeActionContext = Partial<SportMarketActionContext & ManualActionContext>;
+
+// The backoffice-row slice of a market's action context, so the inline panel
+// applies the same propose rules — and proposes through the same workflow — as
+// the market page. Empty when the row didn't load: a sport market then offers
+// no UMA action, and a manual one falls back to dpm-api status, exactly as on
+// the market page.
+function backofficeActionContext(
+  externalId: string | undefined,
+  backofficeRows: {
+    sportEvent?: SportEvent;
+    manualMarkets: Map<string, ManualActionContext>;
+  },
+): BackofficeActionContext {
+  if (!externalId) return {};
+  const sportMarket = backofficeRows.sportEvent?.markets?.find(
+    (candidate) => candidate.market_external_id === externalId,
+  );
+  if (sportMarket) {
+    return sportMarketActionContext(backofficeRows.sportEvent, sportMarket);
+  }
+  return backofficeRows.manualMarkets.get(externalId) ?? {};
+}
+
 async function hydrateVerdicts(
   rows: MarketRow[],
 ): Promise<Map<string, MarketStatusVerdict>> {
-  const ids = rows
-    .map((r) => r.market.external_id)
-    .filter((x): x is string => !!x)
-    .slice(0, MAX_MARKET_STATUS_FETCHES);
-  const results = await Promise.all(
-    ids.map(async (id) => {
-      try {
-        const v = await manual.getMarketStatus(id);
-        return [id, v] as const;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  const out = new Map<string, MarketStatusVerdict>();
-  for (const r of results) if (r) out.set(r[0], r[1]);
-  return out;
+  return hydrateByExternalId(rows, manual.getMarketStatus);
 }
 
 async function hydrateOutcomes(
   rows: MarketRow[],
 ): Promise<Map<string, MarketOutcome>> {
+  return hydrateByExternalId(rows, manual.getMarketOutcome);
+}
+
+async function hydrateManualMarkets(
+  rows: MarketRow[],
+): Promise<Map<string, ManualActionContext>> {
+  return hydrateByExternalId(rows, fetchManualActionContext);
+}
+
+async function fetchManualActionContext(externalId: string): Promise<ManualActionContext> {
+  const found = await manual.findManualMarketByExternalId(externalId);
+  return {
+    manualMarketId: found.id,
+    manualLocalStatus: found.local_status as ManualMarketLocalStatus,
+  };
+}
+
+// Fans out one fetch per deployed market, capped at MAX_MARKET_STATUS_FETCHES,
+// and drops the markets whose fetch fails.
+async function hydrateByExternalId<T>(
+  rows: MarketRow[],
+  fetchOne: (externalId: string) => Promise<T>,
+): Promise<Map<string, T>> {
   const ids = rows
     .map((r) => r.market.external_id)
     .filter((x): x is string => !!x)
@@ -258,14 +304,13 @@ async function hydrateOutcomes(
   const results = await Promise.all(
     ids.map(async (id) => {
       try {
-        const o = await manual.getMarketOutcome(id);
-        return [id, o] as const;
+        return [id, await fetchOne(id)] as const;
       } catch {
         return null;
       }
     }),
   );
-  const out = new Map<string, MarketOutcome>();
+  const out = new Map<string, T>();
   for (const r of results) if (r) out.set(r[0], r[1]);
   return out;
 }
@@ -432,12 +477,14 @@ function MarketCard({
   verdict,
   outcome,
   cryptoEventId,
+  actionContext,
 }: {
   row: MarketRow;
   source: PlanSource;
   verdict?: MarketStatusVerdict;
   outcome?: MarketOutcome;
   cryptoEventId?: number;
+  actionContext: BackofficeActionContext;
 }) {
   const m = row.market;
   const dpm = verdict?.market;
@@ -501,12 +548,14 @@ function MarketCard({
           {/* Inline actions — keeps the operator in flow. */}
           {m.external_id ? (
             <MarketActionsPanel
+              {...actionContext}
               source={source}
               dpmMarket={dpm}
               verdictStatus={verdict?.status}
               planMarket={m}
               planExternalId={row.planExternalId}
               marketExternalId={m.external_id}
+              hiddenActions={PROPOSAL_REVIEW_ACTIONS}
             />
           ) : (
             <p className="text-xs text-foreground-muted">

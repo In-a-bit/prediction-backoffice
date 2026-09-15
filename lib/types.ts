@@ -985,8 +985,14 @@ export type PolymarketReference = {
 export type ExternalProposalView = {
   market_id: number;
   market_external_id: string;
-  create_method: ManualMarketCreateMethod;
-  local_status: ManualMarketLocalStatus;
+  /** Manual markets only. */
+  create_method?: ManualMarketCreateMethod;
+  local_status: ManualMarketLocalStatus | SportMarketStatus;
+  /**
+   * Sport markets only: a SportDecision accepts or disputes this proposal by
+   * itself, so there is no call for the operator to make.
+   */
+  automated_by_decision?: boolean;
 
   has_external_proposal: boolean;
   has_external_dispute: boolean;
