@@ -7,17 +7,10 @@ import { Badge, ErrorMessage, buttonVariants } from "@/components/ui";
 import {
   ACTION_META,
   getAvailableActions,
+  withoutActions,
+  type MarketActionCtx,
   type MarketActionKey,
 } from "@/lib/market-actions";
-import type { PlanSource } from "@/lib/source-from-plan";
-import type {
-  DeployPlanMarket,
-  DpmMarket,
-  ExternalProposalDecision,
-  ManualMarketLocalStatus,
-  MarketStatus,
-  SportMarketStatus,
-} from "@/lib/types";
 
 // Canonical UMA price encodings. proposed_price is a wei-encoded integer the
 // adapter passes through to the Optimistic Oracle.
@@ -27,26 +20,18 @@ const UMA_PRICE_OPTIONS: { label: string; value: string }[] = [
   { label: "UNKNOWN (P50)", value: "500000000000000000" },
 ];
 
-type Ctx = {
-  source: PlanSource;
-  dpmMarket?: DpmMarket;
-  verdictStatus?: MarketStatus;
-  planMarket?: DeployPlanMarket;
-  planExternalId?: string;
-  sportMarketId?: number;
-  sportLocalStatus?: SportMarketStatus;
-  sportAutoProposePending?: boolean;
-  manualMarketId?: number;
-  manualLocalStatus?: ManualMarketLocalStatus;
-  externalProposalDecision?: ExternalProposalDecision;
+type Ctx = MarketActionCtx & {
   marketExternalId: string;
+  // Actions this surface leaves to another page — the event page hides
+  // proposal review (PROPOSAL_REVIEW_ACTIONS) in favour of the market page.
+  hiddenActions?: ReadonlySet<MarketActionKey>;
 };
 
 // MarketActionsPanel renders only the actions relevant to the market's state.
 // Used by both the unified /markets/[external_id] page and inline per-market
 // on the event detail page. Visibility comes from lib/market-actions.
 export function MarketActionsPanel(props: Ctx) {
-  const actions = getAvailableActions(props);
+  const actions = withoutActions(getAvailableActions(props), props.hiddenActions);
   const [openForm, setOpenForm] = useState<MarketActionKey | null>(null);
   // A submit anywhere in the panel (an inline action or the open form) greys
   // out every action button, so a slow accept can't be double-fired and the
@@ -223,7 +208,7 @@ function ActionForm({
     case "uma-dispute-external-proposal":
       return <DisputeExternalProposalForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
     case "uma-dispute":
-      return <SportDisputeForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
+      return <DisputeProposalForm ctx={ctx} onClose={onClose} onBusyChange={onBusyChange} />;
     default:
       return null;
   }
@@ -455,8 +440,9 @@ function DisputeExternalProposalForm({
   );
 }
 
-// Disputes whatever proposal is live on a sport market — ours or external.
-function SportDisputeForm({
+// Disputes whatever proposal is live on a sport or manual market — ours or
+// external.
+function DisputeProposalForm({
   ctx,
   onClose,
   onBusyChange,
@@ -473,9 +459,11 @@ function SportDisputeForm({
 
   function submit() {
     run(async () => {
-      const res = await fetch(`/api/sports/markets/${ctx.sportMarketId}/uma/dispute`, {
-        method: "POST",
-      });
+      const url = disputePathFor(ctx);
+      if (!url) {
+        throw new Error("market has no backoffice row to dispute through");
+      }
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((data as { error?: string }).error ?? `request failed with ${res.status}`);
@@ -633,6 +621,17 @@ function PayoutsForm({
   );
 }
 
+// The operator dispute goes through whichever backoffice row the market has.
+function disputePathFor(ctx: Ctx): string | null {
+  if (ctx.sportMarketId !== undefined) {
+    return `/api/sports/markets/${ctx.sportMarketId}/uma/dispute`;
+  }
+  if (ctx.manualMarketId !== undefined) {
+    return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/dispute`;
+  }
+  return null;
+}
+
 function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
   switch (key) {
     case "retry":
@@ -643,8 +642,13 @@ function pathFor(key: MarketActionKey, ctx: Ctx): string | null {
       if (ctx.manualMarketId === undefined) return null;
       return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/watch-dispute`;
     case "uma-accept-external-proposal":
-      if (ctx.manualMarketId === undefined) return null;
-      return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/accept-external-proposal`;
+      if (ctx.sportMarketId !== undefined) {
+        return `/api/sports/markets/${ctx.sportMarketId}/uma/accept-external-proposal`;
+      }
+      if (ctx.manualMarketId !== undefined) {
+        return `/api/manual/backoffice-markets/${ctx.manualMarketId}/uma/accept-external-proposal`;
+      }
+      return null;
     case "uma-resolve":
       return `/api/dpm/markets/${encodeURIComponent(ctx.marketExternalId)}/uma/resolve`;
     case "uma-reset":

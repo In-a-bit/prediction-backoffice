@@ -38,7 +38,9 @@ export function ExternalProposalCard({ view }: { view: ExternalProposalView }) {
           {view.has_external_dispute ? (
             <Badge tone="danger">dispute</Badge>
           ) : null}
-          <Badge tone="neutral">{CREATE_METHOD_LABEL[view.create_method]}</Badge>
+          {view.create_method ? (
+            <Badge tone="neutral">{CREATE_METHOD_LABEL[view.create_method]}</Badge>
+          ) : null}
         </div>
       </CardHeader>
       <CardBody className="space-y-4">
@@ -91,6 +93,15 @@ function DecisionBanner({ view }: { view: ExternalProposalView }) {
         The dispute was sent on-chain. A first dispute resets the question for a
         new proposal; a second hands the outcome to the UMA DVM.
         <Attribution view={view} />
+      </Banner>
+    );
+  }
+  if (view.automated_by_decision) {
+    return (
+      <Banner tone="success" title="Handled by the game's recorded result">
+        The resolution workflow accepts this proposal if it matches the result
+        recorded for the game and disputes it otherwise — no operator decision
+        is needed.
       </Banner>
     );
   }

@@ -16,6 +16,7 @@ import { MarketOutcomeCard } from "@/components/market-outcome";
 import { manual, sports, crypto as cryptoApi, uma } from "@/lib/api";
 import { formatDateTimeFull, formatUsdc } from "@/lib/format";
 import { derive, deriveUmaTimeline } from "@/lib/market-lifecycle";
+import { sportMarketActionContext } from "@/lib/market-actions";
 import { inferSourceFromPlan, type PlanSource } from "@/lib/source-from-plan";
 import type {
   CryptoEvent,
@@ -55,6 +56,22 @@ function parseSource(value: string | undefined): PlanSource | undefined {
 function hasExternalActivity(verdict: MarketStatusVerdict | null): boolean {
   const market = verdict?.market;
   return market?.has_external_proposal === true || market?.has_external_dispute === true;
+}
+
+// Reads the external-proposal view through whichever backoffice row the market
+// has. Soft-fails to null: the page still renders, just without the evidence
+// card and the recorded decision.
+async function fetchExternalProposal(backofficeIds: {
+  manualMarketId?: number;
+  sportMarketId?: number;
+}): Promise<ExternalProposalView | null> {
+  if (backofficeIds.manualMarketId !== undefined) {
+    return manual.getExternalProposal(backofficeIds.manualMarketId).catch(() => null);
+  }
+  if (backofficeIds.sportMarketId !== undefined) {
+    return sports.getExternalProposal(backofficeIds.sportMarketId).catch(() => null);
+  }
+  return null;
 }
 
 export default async function MarketDetailPage({
@@ -184,15 +201,15 @@ export default async function MarketDetailPage({
   }
 
   // Only fetched once we know there is something to decide: the view joins
-  // dpm-side proposal state, the operator's recorded call, and the cached
-  // Polymarket reference, and needs the backoffice manual_market id resolved
-  // above.
-  let externalProposal: ExternalProposalView | null = null;
-  if (hasExternalActivity(verdict) && resolvedManualMarketId !== undefined) {
-    externalProposal = await manual
-      .getExternalProposal(resolvedManualMarketId)
-      .catch(() => null);
-  }
+  // dpm-side proposal state, the operator's recorded call, and either the
+  // cached Polymarket reference (manual) or whether a SportDecision settles it
+  // (sport), and needs the backoffice market id resolved above.
+  const externalProposal = hasExternalActivity(verdict)
+    ? await fetchExternalProposal({
+        manualMarketId: resolvedManualMarketId,
+        sportMarketId: resolvedSportMarketId,
+      })
+    : null;
 
   if (sportFindRes) {
     const eventId = extractParentEventId(sportFindRes);
@@ -211,25 +228,10 @@ export default async function MarketDetailPage({
   const eventExternalId = plan?.event_external_id;
   const m = verdict?.market;
 
-  // Whether the sports dispatcher (apps/backoffice/internal/scheduler/sports/
-  // dispatcher.go) has already used this decision's one automatic propose
-  // pass. propose_dispatched_at, once set, is never cleared again, so a sport
-  // market currently local_status="reset" needs an operator only when its
-  // decision's propose_dispatched_at is set — otherwise the 10s dispatcher
-  // tick will auto re-propose it on its own shortly.
-  const sportDecisionForMarket = sportMarket
-    ? sportEvent?.decisions?.find(
-        (d) => d.sport_market_type_id === sportMarket?.sport_market_type_id,
-      )
-    : undefined;
-  const sportProposeExhausted = !!sportDecisionForMarket?.propose_dispatched_at;
-  // While the decision is priced for this outcome and hasn't been dispatched
-  // yet, the dispatcher will propose this market by itself, so the Actions
-  // panel holds back a manual propose.
-  const sportAutoProposePending =
-    !!sportMarket &&
-    sportDecisionForMarket?.proposed_prices?.[sportMarket.outcome_key] !== undefined &&
-    !sportProposeExhausted;
+  // The sport-market inputs to the Actions panel's rules, shared with the event
+  // page's inline panels (see sportMarketActionContext).
+  const sportActionContext = sportMarketActionContext(sportEvent, sportMarket);
+  const { sportProposeExhausted } = sportActionContext;
 
   return (
     <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-6xl mx-auto space-y-6">
@@ -376,12 +378,11 @@ export default async function MarketDetailPage({
                   verdictStatus={verdict?.status}
                   planMarket={planMarket}
                   planExternalId={plan?.external_id}
-                  sportMarketId={resolvedSportMarketId}
-                  sportLocalStatus={sportMarket?.local_status}
-                  sportAutoProposePending={sportAutoProposePending}
+                  {...sportActionContext}
                   manualMarketId={resolvedManualMarketId}
                   manualLocalStatus={manualMarket?.local_status}
                   externalProposalDecision={externalProposal?.decision}
+                  externalProposalAutomated={externalProposal?.automated_by_decision}
                   marketExternalId={external_id}
                 />
               )}
