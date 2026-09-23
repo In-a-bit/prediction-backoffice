@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
       wallet_public_key: body.wallet_public_key.trim(),
       wallet_secret_key: body.wallet_secret_key.trim(),
       wallet_verification_key: body.wallet_verification_key?.trim() || undefined,
+      paybis_api_key: body.paybis_api_key?.trim() || undefined,
+      paybis_private_key: body.paybis_private_key?.trim() || undefined,
+      paybis_provider_public_key: body.paybis_provider_public_key?.trim() || undefined,
     });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {

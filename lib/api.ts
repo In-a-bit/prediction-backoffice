@@ -935,6 +935,9 @@ export type BuilderRow = {
   wallet_public_key: string;
   // Active publishable API key (pk_builder_…); "" when the builder has no active key.
   api_public_key: string;
+  paybis_api_key?: string;
+  paybis_private_key?: string;
+  paybis_provider_public_key?: string;
   created_at: string;
   updated_at: string;
 };
@@ -944,6 +947,9 @@ export type CreateBuilderInput = {
   wallet_public_key: string;
   wallet_secret_key: string;
   wallet_verification_key?: string;
+  paybis_api_key?: string;
+  paybis_private_key?: string;
+  paybis_provider_public_key?: string;
 };
 
 export type CreateBuilderResult = { api_public_key: string };
@@ -965,6 +971,18 @@ export const builders = {
       method: "POST",
       // wallet_type is fixed for now; the dpm-api accepts it in the body.
       body: { ...input, wallet_type: "privy_proxy" },
+    }),
+  update: (
+    id: number,
+    body: {
+      paybis_api_key?: string;
+      paybis_private_key?: string;
+      paybis_provider_public_key?: string;
+    },
+  ) =>
+    request<BuilderRow>(`/proxy/dpm/builders/${id}`, {
+      method: "PATCH",
+      body,
     }),
 };
 
