@@ -928,6 +928,16 @@ export const liquidityProviders = {
     ),
 };
 
+// Credentials for the builder's own Paybis account. dpm-api stores them
+// encrypted and returns them decrypted on the admin list only. Every field is
+// optional on write, and a blank one leaves the stored value unchanged, so a
+// credential can be replaced but never cleared.
+export type BuilderPaybisInput = {
+  paybis_api_key?: string;
+  paybis_private_key?: string;
+  paybis_provider_public_key?: string;
+};
+
 export type BuilderRow = {
   id: number;
   name: string;
@@ -935,22 +945,18 @@ export type BuilderRow = {
   wallet_public_key: string;
   // Active publishable API key (pk_builder_…); "" when the builder has no active key.
   api_public_key: string;
-  paybis_api_key?: string;
-  paybis_private_key?: string;
-  paybis_provider_public_key?: string;
   created_at: string;
   updated_at: string;
-};
+} & BuilderPaybisInput;
 
 export type CreateBuilderInput = {
   name: string;
   wallet_public_key: string;
   wallet_secret_key: string;
   wallet_verification_key?: string;
-  paybis_api_key?: string;
-  paybis_private_key?: string;
-  paybis_provider_public_key?: string;
-};
+} & BuilderPaybisInput;
+
+export type UpdateBuilderInput = BuilderPaybisInput;
 
 export type CreateBuilderResult = { api_public_key: string };
 
@@ -972,17 +978,10 @@ export const builders = {
       // wallet_type is fixed for now; the dpm-api accepts it in the body.
       body: { ...input, wallet_type: "privy_proxy" },
     }),
-  update: (
-    id: number,
-    body: {
-      paybis_api_key?: string;
-      paybis_private_key?: string;
-      paybis_provider_public_key?: string;
-    },
-  ) =>
+  update: (id: number, patch: UpdateBuilderInput) =>
     request<BuilderRow>(`/proxy/dpm/builders/${id}`, {
       method: "PATCH",
-      body,
+      body: patch,
     }),
 };
 

@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  BuilderPaybisPanel,
+  paybisSummary,
+} from "@/components/admin/builder-paybis-panel";
 import { useCan } from "@/components/auth/permission-context";
 import {
   Card,
@@ -18,39 +22,6 @@ import type { BuilderRow } from "@/lib/api";
 
 const DEFAULT_PER_PAGE = 25;
 const SEARCH_DEBOUNCE_MS = 300;
-
-type PaybisField = "paybis_api_key" | "paybis_private_key" | "paybis_provider_public_key";
-
-function RevealSecret({
-  value,
-  revealed,
-  copied,
-  onToggle,
-  onCopy,
-}: {
-  value: string;
-  revealed: boolean;
-  copied: boolean;
-  onToggle: () => void;
-  onCopy: () => void;
-}) {
-  if (!value) return <span className="text-foreground-muted">—</span>;
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <code className="max-w-xs text-xs break-all">
-        {revealed ? value : "•".repeat(16)}
-      </code>
-      <button type="button" className={buttonVariants.secondary} onClick={onToggle}>
-        {revealed ? "Hide" : "Reveal"}
-      </button>
-      {revealed && (
-        <button type="button" className={buttonVariants.secondary} onClick={onCopy}>
-          {copied ? "Copied" : "Copy"}
-        </button>
-      )}
-    </div>
-  );
-}
 
 type ListResponse = {
   data: BuilderRow[];
@@ -87,11 +58,9 @@ export default function BuildersPage() {
   // publishable but hidden by default so the operator reveals them deliberately.
   const [revealedKeys, setRevealedKeys] = useState<Set<number>>(new Set());
   const [copiedRowId, setCopiedRowId] = useState<number | null>(null);
-  const [paybisDraft, setPaybisDraft] = useState<Record<string, string>>({});
-  const [paybisSaving, setPaybisSaving] = useState<string | null>(null);
-  const [paybisError, setPaybisError] = useState("");
-  const [revealedPaybis, setRevealedPaybis] = useState<Set<string>>(new Set());
-  const [copiedPaybis, setCopiedPaybis] = useState<string | null>(null);
+  // Only one builder's Paybis panel is open at a time; the credentials are bulky
+  // and the table is paginated.
+  const [openPaybisId, setOpenPaybisId] = useState<number | null>(null);
 
   const offset = (page - 1) * perPage;
 
@@ -173,48 +142,6 @@ export default function BuildersPage() {
       setCreateError(err instanceof Error ? err.message : String(err));
     } finally {
       setCreating(false);
-    }
-  }
-
-  function paybisSlot(id: number, field: PaybisField) {
-    return `${id}:${field}`;
-  }
-
-  function togglePaybis(slot: string) {
-    setRevealedPaybis((prev) => {
-      const next = new Set(prev);
-      if (next.has(slot)) next.delete(slot);
-      else next.add(slot);
-      return next;
-    });
-  }
-
-  async function copyPaybis(slot: string, value: string) {
-    await navigator.clipboard.writeText(value);
-    setCopiedPaybis(slot);
-    setTimeout(() => setCopiedPaybis((cur) => (cur === slot ? null : cur)), 1500);
-  }
-
-  async function handleSetPaybis(id: number, field: PaybisField) {
-    const slot = paybisSlot(id, field);
-    const key = (paybisDraft[slot] ?? "").trim();
-    if (!key || !canManage) return;
-    setPaybisSaving(slot);
-    setPaybisError("");
-    try {
-      const res = await fetch(`/api/admin/builders/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: key }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? `Status ${res.status}`);
-      setPaybisDraft((prev) => ({ ...prev, [slot]: "" }));
-      await load();
-    } catch (err) {
-      setPaybisError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setPaybisSaving(null);
     }
   }
 
@@ -366,7 +293,6 @@ export default function BuildersPage() {
           </div>
 
           {error && <ErrorMessage>{error}</ErrorMessage>}
-          {paybisError && <ErrorMessage>{paybisError}</ErrorMessage>}
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -395,109 +321,78 @@ export default function BuildersPage() {
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className="border-b border-border/60 align-top">
-                      <td className="py-3 pr-3">{row.name}</td>
-                      <td className="py-3 pr-3">{row.wallet_type}</td>
-                      <td className="py-3 pr-3">
-                        <code className="text-xs break-all">{row.wallet_public_key}</code>
-                      </td>
-                      <td className="py-3 pr-3">
-                        {row.api_public_key ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <code className="text-xs break-all">
-                              {revealedKeys.has(row.id)
-                                ? row.api_public_key
-                                : maskKey(row.api_public_key)}
-                            </code>
-                            <button
-                              type="button"
-                              className={buttonVariants.secondary}
-                              onClick={() => toggleReveal(row.id)}
-                            >
-                              {revealedKeys.has(row.id) ? "Hide" : "Reveal"}
-                            </button>
-                            {revealedKeys.has(row.id) && (
+                    <Fragment key={row.id}>
+                      <tr className="border-b border-border/60 align-top">
+                        <td className="py-3 pr-3">{row.name}</td>
+                        <td className="py-3 pr-3">{row.wallet_type}</td>
+                        <td className="py-3 pr-3">
+                          <code className="text-xs break-all">{row.wallet_public_key}</code>
+                        </td>
+                        <td className="py-3 pr-3">
+                          {row.api_public_key ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <code className="text-xs break-all">
+                                {revealedKeys.has(row.id)
+                                  ? row.api_public_key
+                                  : maskKey(row.api_public_key)}
+                              </code>
                               <button
                                 type="button"
                                 className={buttonVariants.secondary}
-                                onClick={() => copyRowKey(row.id, row.api_public_key)}
+                                onClick={() => toggleReveal(row.id)}
                               >
-                                {copiedRowId === row.id ? "Copied" : "Copy"}
+                                {revealedKeys.has(row.id) ? "Hide" : "Reveal"}
                               </button>
-                            )}
+                              {revealedKeys.has(row.id) && (
+                                <button
+                                  type="button"
+                                  className={buttonVariants.secondary}
+                                  onClick={() => copyRowKey(row.id, row.api_public_key)}
+                                >
+                                  {copiedRowId === row.id ? "Copied" : "Copy"}
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-foreground-muted">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-foreground-muted">
+                              {paybisSummary(row)}
+                            </span>
+                            <button
+                              type="button"
+                              className={buttonVariants.secondary}
+                              onClick={() =>
+                                setOpenPaybisId((id) => (id === row.id ? null : row.id))
+                              }
+                            >
+                              {openPaybisId === row.id
+                                ? "Close"
+                                : canManage
+                                  ? "Manage"
+                                  : "View"}
+                            </button>
                           </div>
-                        ) : (
-                          <span className="text-foreground-muted">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <div className="space-y-3">
-                          {(
-                            [
-                              ["API key", "paybis_api_key", row.paybis_api_key ?? "", false],
-                              ["Private key", "paybis_private_key", row.paybis_private_key ?? "", true],
-                              [
-                                "Provider public key",
-                                "paybis_provider_public_key",
-                                row.paybis_provider_public_key ?? "",
-                                true,
-                              ],
-                            ] as const
-                          ).map(([label, field, value, multiline]) => {
-                            const slot = paybisSlot(row.id, field);
-                            return (
-                              <div key={field} className="space-y-1">
-                                <div className="text-xs text-foreground-muted">{label}</div>
-                                <RevealSecret
-                                  value={value}
-                                  revealed={revealedPaybis.has(slot)}
-                                  copied={copiedPaybis === slot}
-                                  onToggle={() => togglePaybis(slot)}
-                                  onCopy={() => copyPaybis(slot, value)}
-                                />
-                                {canManage &&
-                                  (multiline ? (
-                                    <textarea
-                                      className={`${inputClass} min-h-[64px] font-mono text-xs`}
-                                      autoComplete="off"
-                                      placeholder={value ? "Replace" : "Set"}
-                                      value={paybisDraft[slot] ?? ""}
-                                      onChange={(e) =>
-                                        setPaybisDraft((prev) => ({ ...prev, [slot]: e.target.value }))
-                                      }
-                                    />
-                                  ) : (
-                                    <input
-                                      className={inputClass}
-                                      data-lpignore="true"
-                                      type="password"
-                                      autoComplete="off"
-                                      placeholder={value ? "Replace" : "Set"}
-                                      value={paybisDraft[slot] ?? ""}
-                                      onChange={(e) =>
-                                        setPaybisDraft((prev) => ({ ...prev, [slot]: e.target.value }))
-                                      }
-                                    />
-                                  ))}
-                                {canManage && (
-                                  <button
-                                    type="button"
-                                    className={buttonVariants.secondary}
-                                    disabled={paybisSaving === slot || !(paybisDraft[slot] ?? "").trim()}
-                                    onClick={() => handleSetPaybis(row.id, field)}
-                                  >
-                                    {paybisSaving === slot ? "Saving…" : "Save"}
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </td>
-                      <td className="py-3 pr-3 tabular-nums">
-                        {new Date(row.created_at).toLocaleString()}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="py-3 pr-3 tabular-nums">
+                          {new Date(row.created_at).toLocaleString()}
+                        </td>
+                      </tr>
+                      {openPaybisId === row.id && (
+                        <tr className="border-b border-border/60 bg-foreground/[0.02]">
+                          <td colSpan={6} className="px-1 py-4">
+                            <BuilderPaybisPanel
+                              row={row}
+                              canManage={canManage}
+                              onSaved={load}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))
                 )}
               </tbody>
