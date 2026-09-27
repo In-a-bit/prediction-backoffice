@@ -87,6 +87,23 @@ function DecisionBanner({ view }: { view: ExternalProposalView }) {
       </Banner>
     );
   }
+  // The decision row is recorded when dpm-api accepts the dispute, before the
+  // tx lands, and dpm-api moves the market to DISPUTING while it is in flight.
+  // Reading PROPOSED again means that dispute failed and the same proposal is
+  // live: the resolution workflow waits and disputes it at auto_dispute_at.
+  if (view.decision === "disputed" && view.uma_resolution_status === "PROPOSED") {
+    return (
+      <Banner tone="warning" title="The operator's dispute did not land">
+        This proposal is live again. Dispute it again, or the resolution
+        workflow disputes it automatically at{" "}
+        {view.auto_dispute_at
+          ? formatDateTimeFull(view.auto_dispute_at)
+          : "the deadline"}
+        .
+        <Attribution view={view} />
+      </Banner>
+    );
+  }
   if (view.decision === "disputed") {
     return (
       <Banner tone="danger" title="Disputed by an operator">

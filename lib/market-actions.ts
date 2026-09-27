@@ -77,7 +77,10 @@ export type MarketActionCtx = {
   manualMarketId?: number;
   manualLocalStatus?: ManualMarketLocalStatus;
   // The operator's already-recorded call on the current external proposal.
-  // Present means the decision is made and the buttons must not offer it again.
+  // Present means the call is made, so accept / dispute-external-proposal are
+  // not offered again. If a recorded dispute failed and the same proposal is
+  // PROPOSED again, the plain uma-dispute action stays available to retry, and
+  // the dispute-watch disputes it at auto_dispute_at if nobody does.
   externalProposalDecision?: ExternalProposalDecision;
   // Whether a SportDecision accepts or disputes the current external proposal
   // by itself (sport markets only), leaving no call for the operator to make.
