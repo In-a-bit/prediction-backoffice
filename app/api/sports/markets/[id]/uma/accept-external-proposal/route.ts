@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { sports } from "@/lib/api";
+import { proxyError } from "@/lib/route-guard";
 
 // Records the operator's decision to let an outside proposal on a sport market
 // settle. Nothing goes on-chain here — the running dispute-watch reads the
@@ -16,7 +17,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const data = await sports.acceptExternalProposal(id, audit);
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Keep the upstream status: a 400 (price not allowed), 403 (missing
+    // permission) or 409 (proposal replaced) is the operator's answer, not a crash.
+    return proxyError(err);
   }
 }
