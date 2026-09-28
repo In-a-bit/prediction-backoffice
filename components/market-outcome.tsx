@@ -3,6 +3,7 @@
 //   <MarketOutcomeCard>   — full card for the market detail page
 //   <MarketOutcomeInline> — single-line summary for event-market cards and the /markets list row
 
+import { umaPriceLabelDisplayName } from "@/lib/market-lifecycle";
 import type { MarketOutcome, ProposedAnswer, TokenOutcome } from "@/lib/types";
 
 // 18-decimal fixed-point: 1e18 = YES, 0 = NO, 0.5e18 = 50/50. Mirrors the
@@ -20,22 +21,18 @@ type ResolvedLabel = {
 
 // resolveProposedLabel maps the server label + token list to a display label.
 // The server tells us *which side* was proposed (first/second/tie); we look
-// up the actual outcome label from the tokens so we say "UP" instead of
-// "first outcome" for crypto markets.
+// up the actual outcome label from the tokens (via the shared
+// umaPriceLabelDisplayName, also used by the lifecycle stepper and history
+// drawers) so we say "UP" instead of "first outcome" for crypto markets.
+// "unknown" has no token-based mapping, so it falls back to the raw price.
 function resolveProposedLabel(
   proposed: ProposedAnswer,
   tokens: TokenOutcome[],
 ): ResolvedLabel {
-  switch (proposed.label) {
-    case "first_outcome_yes":
-      return { label: tokens[0]?.outcome ?? "YES", raw: proposed.proposed_price };
-    case "second_outcome_yes":
-      return { label: tokens[1]?.outcome ?? "NO", raw: proposed.proposed_price };
-    case "fifty_fifty":
-      return { label: "50/50", raw: proposed.proposed_price };
-    default:
-      return { label: proposed.proposed_price, raw: proposed.proposed_price };
+  if (proposed.label === "unknown") {
+    return { label: proposed.proposed_price, raw: proposed.proposed_price };
   }
+  return { label: umaPriceLabelDisplayName(proposed.label, tokens), raw: proposed.proposed_price };
 }
 
 function tokenWinnerChip(t: TokenOutcome) {

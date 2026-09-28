@@ -12,6 +12,7 @@ import type {
   SportEvent,
   SportMarket,
   CryptoEventMarketStatus,
+  TokenOutcome,
   UmaHistoryEvent,
   UmaOraclePriceLabel,
 } from "@/lib/types";
@@ -107,6 +108,7 @@ export function deriveSportLifecycle(market: SportMarket): Lifecycle {
 export function deriveSportResult(
   market: SportMarket,
   decision?: SportDecision,
+  tokens: TokenOutcome[] = [],
 ): Result {
   if (market.local_status === "cancelled") {
     return { kind: "refund", label: "Cancelled", reason: "Market was cancelled" };
@@ -131,18 +133,22 @@ export function deriveSportResult(
       reason: `Outcome ${market.outcome_key} not present in decision`,
     };
   }
+  // "YES"/"NO" name the CTF token slot the decision priced, not what actually
+  // happened — for a moneyline market that's meaningless without knowing
+  // which team is which slot. Name the market's own token instead (e.g. the
+  // winning team), falling back to YES/NO only when tokens didn't load.
   if (price === PRICE_YES) {
     return {
       kind: "won",
       label: "Won",
-      reason: `Decision priced ${market.outcome_key} = YES`,
+      reason: `Decision priced ${market.outcome_key} = ${tokens[0]?.outcome ?? "YES"}`,
     };
   }
   if (price === PRICE_NO) {
     return {
       kind: "lost",
       label: "Lost",
-      reason: `Decision priced ${market.outcome_key} = NO`,
+      reason: `Decision priced ${market.outcome_key} = ${tokens[1]?.outcome ?? "NO"}`,
     };
   }
   if (price === PRICE_5050) {
@@ -310,9 +316,10 @@ const UMA_RESOLVED_STATUSES = new Set(["RESOLVED", "MANUALLY_RESOLVED"]);
 export function deriveUmaTimeline(
   market: DpmMarket,
   events?: UmaHistoryEvent[],
+  tokens: TokenOutcome[] = [],
 ): Lifecycle {
-  if (events && events.length > 0) return umaTimelineFromEvents(market, events);
-  return umaTimelineFromStatuses(market);
+  if (events && events.length > 0) return umaTimelineFromEvents(market, events, tokens);
+  return umaTimelineFromStatuses(market, tokens);
 }
 
 // The events arrive in chain order and already have dispute-triggered resets
@@ -322,6 +329,7 @@ export function deriveUmaTimeline(
 function umaTimelineFromEvents(
   market: DpmMarket,
   events: UmaHistoryEvent[],
+  tokens: TokenOutcome[],
 ): Lifecycle {
   const current = (market.uma_resolution_status ?? "").toUpperCase();
   const lastProposedIdx = lastIndexOfEvent(events, "proposed");
@@ -335,6 +343,7 @@ function umaTimelineFromEvents(
       isLastEvent: i === events.length - 1,
       current,
       market,
+      tokens,
     }),
   );
 
@@ -359,6 +368,7 @@ type StageContext = {
   isLastEvent: boolean;
   current: string;
   market: DpmMarket;
+  tokens: TokenOutcome[];
 };
 
 function stageForEvent(event: UmaHistoryEvent, ctx: StageContext): LifecycleStage {
@@ -385,7 +395,7 @@ function proposedEventStage(event: UmaHistoryEvent, ctx: StageContext): Lifecycl
   };
   if (ctx.isLastOfKind && ctx.market.has_external_proposal) stage.origin = "external";
   const answer = event.proposed_price_label
-    ? umaPriceLabelName(event.proposed_price_label)
+    ? umaPriceLabelDisplayName(event.proposed_price_label, ctx.tokens)
     : undefined;
   if (answer) stage.detail = answer;
   return stage;
@@ -417,20 +427,34 @@ function lastIndexOfEvent(
   return -1;
 }
 
-// Display names for dpm-api's classified on-chain price. The classification
-// is market-agnostic (see labelForOraclePrice in apps/dpm-api), so these are
-// the generic answer names rather than the market's own outcome titles.
-const UMA_PRICE_LABEL_NAMES: Record<UmaOraclePriceLabel, string> = {
-  first_outcome_yes: "YES",
-  second_outcome_yes: "NO",
-  fifty_fifty: "50 / 50",
-  too_early: "Too early",
-  none: "—",
-  unknown: "Unknown",
-};
-
-export function umaPriceLabelName(label: UmaOraclePriceLabel): string {
-  return UMA_PRICE_LABEL_NAMES[label] ?? UMA_PRICE_LABEL_NAMES.unknown;
+// Maps dpm-api's classified on-chain price to the market's actual outcome
+// name (e.g. the winning team for a moneyline market, "UP"/"DOWN" for a
+// crypto market). The classification itself is market-agnostic (see
+// labelForOraclePrice in apps/dpm-api) — it only knows "first slot" vs
+// "second slot" of the CTF outcome pair — so resolving that to a name an
+// operator recognizes is a UI-side lookup against the market's own tokens.
+// Falls back to the generic YES/NO names only when the token list didn't
+// load. Single source of truth for this mapping: also used by
+// components/market-outcome.tsx and the getRequest drawer
+// (app/(app)/markets/[external_id]/uma-question-link.tsx).
+export function umaPriceLabelDisplayName(
+  label: UmaOraclePriceLabel,
+  tokens: TokenOutcome[] = [],
+): string {
+  switch (label) {
+    case "first_outcome_yes":
+      return tokens[0]?.outcome ?? "YES";
+    case "second_outcome_yes":
+      return tokens[1]?.outcome ?? "NO";
+    case "fifty_fifty":
+      return "50 / 50";
+    case "too_early":
+      return "Too early";
+    case "none":
+      return "—";
+    default:
+      return "Unknown";
+  }
 }
 
 export type UmaPriceBadgeTone = "neutral" | "success" | "warning";
@@ -460,7 +484,7 @@ export function umaPriceLabelTone(label: UmaOraclePriceLabel): UmaPriceBadgeTone
 // Known limits: the array carries no timestamps and no per-round attribution,
 // so only the most recent propose/dispute can be tagged external (from the
 // has_external_* flags, which reflect the current lingering activity).
-function umaTimelineFromStatuses(market: DpmMarket): Lifecycle {
+function umaTimelineFromStatuses(market: DpmMarket, tokens: TokenOutcome[]): Lifecycle {
   const history = market.uma_resolution_statuses ?? [];
   const current = (market.uma_resolution_status ?? "").toUpperCase();
 
@@ -472,7 +496,7 @@ function umaTimelineFromStatuses(market: DpmMarket): Lifecycle {
   history.forEach((raw, i) => {
     const entry = raw.toUpperCase();
     if (entry === "PROPOSED") {
-      stages.push(proposedStage(i === lastProposedIdx, current, market));
+      stages.push(proposedStage(i === lastProposedIdx, current, market, tokens));
     } else if (entry === "DISPUTED") {
       stages.push(disputedStage(i === lastDisputedIdx, market));
     }
@@ -494,7 +518,12 @@ function umaTimelineFromStatuses(market: DpmMarket): Lifecycle {
   return { stages };
 }
 
-function proposedStage(isLast: boolean, current: string, market: DpmMarket): LifecycleStage {
+function proposedStage(
+  isLast: boolean,
+  current: string,
+  market: DpmMarket,
+  tokens: TokenOutcome[],
+): LifecycleStage {
   const stillLive = isLast && current === "PROPOSED";
   const stage: LifecycleStage = {
     key: "proposed",
@@ -502,7 +531,7 @@ function proposedStage(isLast: boolean, current: string, market: DpmMarket): Lif
   };
   if (isLast && market.has_external_proposal) stage.origin = "external";
   if (isLast) {
-    const answer = proposedPriceLabel(market.last_proposal_price);
+    const answer = proposedPriceLabel(market.last_proposal_price, tokens);
     if (answer) stage.detail = answer;
   }
   return stage;
@@ -530,10 +559,13 @@ function lastIndexOfStatus(history: string[], target: string): number {
   return -1;
 }
 
-function proposedPriceLabel(price?: string | null): string | undefined {
-  if (price === PRICE_YES) return "YES";
-  if (price === PRICE_NO) return "NO";
-  if (price === PRICE_5050) return "50/50";
+function proposedPriceLabel(
+  price: string | null | undefined,
+  tokens: TokenOutcome[],
+): string | undefined {
+  if (price === PRICE_YES) return tokens[0]?.outcome ?? "YES";
+  if (price === PRICE_NO) return tokens[1]?.outcome ?? "NO";
+  if (price === PRICE_5050) return "50 / 50";
   return undefined;
 }
 
@@ -542,7 +574,13 @@ function proposedPriceLabel(price?: string | null): string | undefined {
 // ---------------------------------------------------------------------------
 
 export type DeriveInput =
-  | { source: "sport"; sportMarket: SportMarket; sportEvent?: SportEvent; verdict?: MarketStatusVerdict | null }
+  | {
+      source: "sport";
+      sportMarket: SportMarket;
+      sportEvent?: SportEvent;
+      verdict?: MarketStatusVerdict | null;
+      tokens?: TokenOutcome[];
+    }
   | { source: "crypto"; cryptoMarket: CryptoMarket; cryptoEvent?: CryptoEvent; verdict?: MarketStatusVerdict | null }
   | {
       source: "manual";
@@ -557,7 +595,7 @@ export function derive(
     const decision = findSportDecisionFor(input.sportEvent, input.sportMarket);
     return {
       lifecycle: deriveSportLifecycle(input.sportMarket),
-      result: deriveSportResult(input.sportMarket, decision),
+      result: deriveSportResult(input.sportMarket, decision, input.tokens ?? []),
     };
   }
   if (input.source === "crypto") {

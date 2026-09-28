@@ -17,8 +17,9 @@ import {
 import { Badge } from "@/components/ui";
 import { txUrl } from "@/lib/explorer";
 import { decodeAncillaryData, formatUsdc } from "@/lib/format";
-import { umaPriceLabelName, umaPriceLabelTone } from "@/lib/market-lifecycle";
+import { umaPriceLabelDisplayName, umaPriceLabelTone } from "@/lib/market-lifecycle";
 import type {
+  TokenOutcome,
   UmaHistoryEvent,
   UmaHistoryEventType,
   UmaOraclePriceLabel,
@@ -33,9 +34,14 @@ import type {
 export function UmaHistoryEventDot({
   event,
   dotClassName,
+  tokens = [],
 }: {
   event: UmaHistoryEvent;
   dotClassName: string;
+  // The market's own outcome names, used to resolve proposed_price_label /
+  // settled_price_label to something more informative than generic YES/NO —
+  // e.g. a team name for a moneyline market. See umaPriceLabelDisplayName.
+  tokens?: TokenOutcome[];
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -58,7 +64,7 @@ export function UmaHistoryEventDot({
         title={label}
         className={`${dotClassName} cursor-pointer transition-transform hover:scale-125 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1`}
       />
-      {open ? <EventDrawer event={event} onClose={handleClose} /> : null}
+      {open ? <EventDrawer event={event} tokens={tokens} onClose={handleClose} /> : null}
     </>
   );
 }
@@ -97,9 +103,11 @@ const EVENT_TONES: Record<
 
 function EventDrawer({
   event,
+  tokens,
   onClose,
 }: {
   event: UmaHistoryEvent;
+  tokens: TokenOutcome[];
   onClose: () => void;
 }) {
   const [raw, setRaw] = useState(false);
@@ -134,7 +142,7 @@ function EventDrawer({
         ) : (
           <>
             <TransactionSection event={event} />
-            <EventDetailSection event={event} />
+            <EventDetailSection event={event} tokens={tokens} />
           </>
         )}
       </div>
@@ -163,18 +171,24 @@ function TransactionSection({ event }: { event: UmaHistoryEvent }) {
   );
 }
 
-function EventDetailSection({ event }: { event: UmaHistoryEvent }) {
+function EventDetailSection({
+  event,
+  tokens,
+}: {
+  event: UmaHistoryEvent;
+  tokens: TokenOutcome[];
+}) {
   switch (event.type) {
     case "created":
       return <CreatedDetail event={event} />;
     case "proposed":
-      return <ProposedDetail event={event} />;
+      return <ProposedDetail event={event} tokens={tokens} />;
     case "disputed":
-      return <DisputedDetail event={event} />;
+      return <DisputedDetail event={event} tokens={tokens} />;
     case "reset":
       return <ResetDetail event={event} />;
     default:
-      return <ResolvedDetail event={event} />;
+      return <ResolvedDetail event={event} tokens={tokens} />;
   }
 }
 
@@ -197,12 +211,18 @@ function CreatedDetail({ event }: { event: UmaHistoryEvent }) {
   );
 }
 
-function ProposedDetail({ event }: { event: UmaHistoryEvent }) {
+function ProposedDetail({
+  event,
+  tokens,
+}: {
+  event: UmaHistoryEvent;
+  tokens: TokenOutcome[];
+}) {
   return (
     <>
       <Section title="Proposal">
         <CopyRow label="Proposer" value={event.proposer_address} />
-        <PriceRow label="Proposed answer" priceLabel={event.proposed_price_label} />
+        <PriceRow label="Proposed answer" priceLabel={event.proposed_price_label} tokens={tokens} />
         <TimeRow
           label="Liveness expires"
           value={unixSecondsToDate(event.expiration_timestamp)}
@@ -217,13 +237,19 @@ function ProposedDetail({ event }: { event: UmaHistoryEvent }) {
   );
 }
 
-function DisputedDetail({ event }: { event: UmaHistoryEvent }) {
+function DisputedDetail({
+  event,
+  tokens,
+}: {
+  event: UmaHistoryEvent;
+  tokens: TokenOutcome[];
+}) {
   return (
     <>
       <Section title="Dispute">
         <CopyRow label="Disputer" value={event.disputer_address} />
         <CopyRow label="Proposer" value={event.proposer_address} />
-        <PriceRow label="Disputed answer" priceLabel={event.proposed_price_label} />
+        <PriceRow label="Disputed answer" priceLabel={event.proposed_price_label} tokens={tokens} />
         <TimeRow
           label="Request timestamp"
           value={unixSecondsToDate(event.request_timestamp)}
@@ -263,10 +289,16 @@ function ResetDetail({ event }: { event: UmaHistoryEvent }) {
   );
 }
 
-function ResolvedDetail({ event }: { event: UmaHistoryEvent }) {
+function ResolvedDetail({
+  event,
+  tokens,
+}: {
+  event: UmaHistoryEvent;
+  tokens: TokenOutcome[];
+}) {
   return (
     <Section title="Resolution">
-      <PriceRow label="Settled answer" priceLabel={event.settled_price_label} />
+      <PriceRow label="Settled answer" priceLabel={event.settled_price_label} tokens={tokens} />
       <KV label="Settled price" value={event.settled_price ?? "—"} mono />
       <KV label="Payouts" value={formatPayouts(event.payouts)} mono />
       <CopyRow label="Question id" value={event.question_id} />
@@ -298,9 +330,11 @@ function Note({ children }: { children: React.ReactNode }) {
 function PriceRow({
   label,
   priceLabel,
+  tokens,
 }: {
   label: string;
   priceLabel?: UmaOraclePriceLabel;
+  tokens: TokenOutcome[];
 }) {
   if (!priceLabel || priceLabel === "none") {
     return (
@@ -313,7 +347,9 @@ function PriceRow({
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-foreground-muted text-xs">{label}</span>
-      <Badge tone={umaPriceLabelTone(priceLabel)}>{umaPriceLabelName(priceLabel)}</Badge>
+      <Badge tone={umaPriceLabelTone(priceLabel)}>
+        {umaPriceLabelDisplayName(priceLabel, tokens)}
+      </Badge>
     </div>
   );
 }

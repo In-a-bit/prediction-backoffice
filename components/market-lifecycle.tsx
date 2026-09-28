@@ -8,6 +8,7 @@ import type {
   LifecycleStageStatus,
   Result,
 } from "@/lib/market-lifecycle";
+import type { TokenOutcome } from "@/lib/types";
 
 const STAGE_LABELS: Record<LifecycleStage["key"], string> = {
   created: "Created",
@@ -66,9 +67,14 @@ const RESULT_STYLE: Record<
 export function LifecycleStepper({
   lifecycle,
   variant = "full",
+  tokens = [],
 }: {
   lifecycle: Lifecycle;
   variant?: "compact" | "full";
+  // The market's own outcome names, passed through to each clickable dot's
+  // drawer so "Proposed answer"/"Settled answer" name the actual outcome
+  // (e.g. a team name) instead of the generic YES/NO price label.
+  tokens?: TokenOutcome[];
 }) {
   const stages = lifecycle.stages;
   // role="img" collapses the whole stepper to a single opaque image for
@@ -86,7 +92,7 @@ export function LifecycleStepper({
       <div className="inline-flex items-center" {...containerA11yProps}>
         {stages.map((s, i) => (
           <span key={`${s.key}-${i}`} className="inline-flex items-center">
-            <Dot stage={s} sizeClass="w-2 h-2" />
+            <Dot stage={s} sizeClass="w-2 h-2" tokens={tokens} />
             {i < stages.length - 1 ? (
               <span className={`block w-3 h-0.5 ${lineClass(s)}`} />
             ) : null}
@@ -100,7 +106,7 @@ export function LifecycleStepper({
       {stages.map((s, i) => (
         <div key={`${s.key}-${i}`} className="flex items-start flex-1 last:flex-initial">
           <div className="flex flex-col items-center gap-1.5 shrink-0">
-            <Dot stage={s} sizeClass="w-3.5 h-3.5" />
+            <Dot stage={s} sizeClass="w-3.5 h-3.5" tokens={tokens} />
             <div className="text-center">
               <div className="text-[11px] font-medium text-foreground leading-tight">
                 {STAGE_LABELS[s.key]}
@@ -136,10 +142,18 @@ export function LifecycleStepper({
 // them, so their dot becomes a button that opens that transaction's drawer.
 // Stages derived from status strings alone have nothing to show and stay
 // exactly as inert as they have always been.
-function Dot({ stage, sizeClass }: { stage: LifecycleStage; sizeClass: string }) {
+function Dot({
+  stage,
+  sizeClass,
+  tokens,
+}: {
+  stage: LifecycleStage;
+  sizeClass: string;
+  tokens: TokenOutcome[];
+}) {
   const className = `block ${sizeClass} rounded-full ${dotClass(stage)}`;
   if (!stage.event) return <span className={className} />;
-  return <UmaHistoryEventDot event={stage.event} dotClassName={className} />;
+  return <UmaHistoryEventDot event={stage.event} dotClassName={className} tokens={tokens} />;
 }
 
 export function ResultChip({

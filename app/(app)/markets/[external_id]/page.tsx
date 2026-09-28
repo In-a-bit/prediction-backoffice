@@ -30,6 +30,7 @@ import type {
   MarketStatusVerdict,
   SportEvent,
   SportMarket,
+  TokenOutcome,
   UmaHistoryEvent,
 } from "@/lib/types";
 
@@ -270,6 +271,7 @@ export default async function MarketDetailPage({
         cryptoMarket={cryptoMarketRecord}
         cryptoEvent={cryptoEvent}
         umaHistoryEvents={umaHistoryEvents}
+        tokens={marketOutcome?.tokens ?? []}
       />
 
       {/* Two-column layout on wide screens: info on the left, actions on the right. */}
@@ -451,6 +453,7 @@ function LifecycleHeader({
   cryptoMarket,
   cryptoEvent,
   umaHistoryEvents,
+  tokens,
 }: {
   source: PlanSource;
   verdict: MarketStatusVerdict | null;
@@ -462,6 +465,10 @@ function LifecycleHeader({
   cryptoMarket?: CryptoMarket;
   cryptoEvent?: CryptoEvent;
   umaHistoryEvents: UmaHistoryEvent[];
+  // The market's own outcome names (e.g. team names for a sport moneyline
+  // market), used to resolve UMA's generic first/second-outcome price labels
+  // to something an operator recognizes throughout the stepper below.
+  tokens: TokenOutcome[];
 }) {
   const isSportPending =
     source === "sport" && (!sportMarket || sportMarket.local_status === "pending");
@@ -478,7 +485,7 @@ function LifecycleHeader({
         result: { kind: "pending" as const, label: "Pending" },
       }
     : source === "sport" && sportMarket
-      ? derive({ source: "sport", sportMarket, sportEvent, verdict: verdict ?? undefined })
+      ? derive({ source: "sport", sportMarket, sportEvent, verdict: verdict ?? undefined, tokens })
       : source === "crypto" && cryptoMarket
         ? derive({ source: "crypto", cryptoMarket, cryptoEvent, verdict: verdict ?? undefined })
         : derive({ source: "manual", planMarket, verdict: verdict ?? undefined });
@@ -491,7 +498,7 @@ function LifecycleHeader({
     umaHistoryEvents.length > 0 || (umaStatuses?.length ?? 0) > 0;
   const lifecycle =
     verdict?.market && hasUmaTimeline
-      ? deriveUmaTimeline(verdict.market, umaHistoryEvents)
+      ? deriveUmaTimeline(verdict.market, umaHistoryEvents, tokens)
       : derived.lifecycle;
 
   // For sport and manual markets, use local_status as the authoritative source;
@@ -600,7 +607,7 @@ function LifecycleHeader({
         )}
 
         <div className="mt-4">
-          <LifecycleStepper lifecycle={lifecycle} variant="full" />
+          <LifecycleStepper lifecycle={lifecycle} variant="full" tokens={tokens} />
         </div>
       </div>
 

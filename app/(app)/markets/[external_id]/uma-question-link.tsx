@@ -16,7 +16,7 @@ import {
 } from "@/components/side-drawer";
 import { Badge, ErrorMessage } from "@/components/ui";
 import { formatUsdc } from "@/lib/format";
-import { umaPriceLabelTone } from "@/lib/market-lifecycle";
+import { umaPriceLabelDisplayName, umaPriceLabelTone } from "@/lib/market-lifecycle";
 import type {
   TokenOutcome,
   UmaOracleHasPriceData,
@@ -464,25 +464,6 @@ function OracleRequestTabContent({
   );
 }
 
-// Maps a request's classified price label to the market's actual outcome
-// name — same convention as components/market-outcome.tsx's
-// resolveProposedLabel, extended with the two states unique to a live
-// oracle read (no proposal/settlement yet, or UMA's too-early sentinel).
-function resolveOraclePriceLabel(label: UmaOraclePriceLabel, tokens: TokenOutcome[]): string {
-  switch (label) {
-    case "first_outcome_yes":
-      return tokens[0]?.outcome ?? "First outcome";
-    case "second_outcome_yes":
-      return tokens[1]?.outcome ?? "Second outcome";
-    case "fifty_fifty":
-      return "50 / 50";
-    case "too_early":
-      return "Too early";
-    default:
-      return "Unknown";
-  }
-}
-
 function PriceRow({
   label,
   priceLabel,
@@ -503,7 +484,7 @@ function PriceRow({
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-foreground-muted text-xs">{label}</span>
-      <Badge tone={umaPriceLabelTone(priceLabel)}>{resolveOraclePriceLabel(priceLabel, tokens)}</Badge>
+      <Badge tone={umaPriceLabelTone(priceLabel)}>{umaPriceLabelDisplayName(priceLabel, tokens)}</Badge>
     </div>
   );
 }
