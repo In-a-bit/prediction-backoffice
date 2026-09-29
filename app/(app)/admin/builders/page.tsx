@@ -284,6 +284,8 @@ export default function BuildersPage() {
             <Field label="Search name">
               <input
                 className={inputClass}
+                type="search"
+                autoComplete="off"
                 data-lpignore="true"
                 placeholder="Search by name…"
                 value={search}

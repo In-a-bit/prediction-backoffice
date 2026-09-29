@@ -863,10 +863,31 @@ export type CreateContractInput = {
   contract_type: string;
 };
 
+// AddressBalance is a normalized + raw on-chain balance for a single asset
+// at an arbitrary address (not tied to a tracked relayer wallet) — the
+// payload of /proxy/dpm/{collateral,native}/balance.
+export type AddressBalance = {
+  address: string;
+  balance_raw: string;
+  balance_normalized: string;
+  decimals: number;
+};
+
 export const contracts = {
   list: () => request<Contract[]>("/proxy/dpm/contracts"),
   create: (input: CreateContractInput) =>
     request<Contract>("/proxy/dpm/contracts", { method: "POST", body: input }),
+  // getBalances reads POL + USDC.e balances for any address directly from
+  // chain (e.g. the Treasury contract's own address).
+  getBalances: (address: string) =>
+    Promise.all([
+      request<AddressBalance>(
+        `/proxy/dpm/native/balance?address=${encodeURIComponent(address)}`,
+      ),
+      request<AddressBalance>(
+        `/proxy/dpm/collateral/balance?address=${encodeURIComponent(address)}`,
+      ),
+    ]).then(([pol, usdc]) => ({ pol, usdc })),
 };
 
 // Mnemonic + relayer-wallet reads/writes go through the Go backoffice proxy

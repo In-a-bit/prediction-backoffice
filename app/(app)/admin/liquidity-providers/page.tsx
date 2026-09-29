@@ -318,6 +318,8 @@ export default function LiquidityProvidersPage() {
             <Field label="Search name or email">
               <input
                 className={inputClass}
+                type="search"
+                autoComplete="off"
                 data-lpignore="true"
                 placeholder="Search by name or email…"
                 value={search}

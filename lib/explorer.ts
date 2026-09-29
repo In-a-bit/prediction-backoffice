@@ -17,3 +17,7 @@ function baseUrl(): string {
 export function txUrl(txHash: string): string {
   return `${baseUrl()}/tx/${encodeURIComponent(txHash)}`;
 }
+
+export function addressUrl(address: string): string {
+  return `${baseUrl()}/address/${encodeURIComponent(address)}`;
+}
