@@ -82,6 +82,17 @@ export function shortId(uuid: string | null | undefined): string {
   return uuid.slice(0, 8);
 }
 
+// formatBalanceAmount renders an already-normalized decimal balance string
+// (e.g. AddressBalance.balance_normalized, which carries the token's full
+// decimal precision) with thousands separators and a fixed 2 decimal places,
+// for compact table display.
+export function formatBalanceAmount(normalized: string | null | undefined): string {
+  if (normalized === null || normalized === undefined || normalized === "") return "—";
+  const n = Number(normalized);
+  if (!isFinite(n)) return normalized;
+  return n.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // Words that should render as their all-caps form rather than plain title
 // case when they show up in a raw DB value, e.g. a future "uma_*" local_status
 // not yet covered by a display-label lookup table.

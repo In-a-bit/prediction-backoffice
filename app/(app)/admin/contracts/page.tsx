@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import type { AddressBalance, Contract } from "@/lib/api";
 import { addressUrl } from "@/lib/explorer";
+import { formatBalanceAmount } from "@/lib/format";
 import { getKnownContracts } from "@/lib/known-contracts";
 
 // Contract rows never change type after creation, so the treasury contract's
@@ -391,11 +392,11 @@ function TreasuryBalanceCell({
     <div className="flex flex-col gap-0.5 text-xs font-mono">
       <div className="flex gap-1.5">
         <span className="w-9 shrink-0 text-foreground-muted">POL</span>
-        <span>{balances.pol.balance_normalized}</span>
+        <span>{formatBalanceAmount(balances.pol.balance_normalized)}</span>
       </div>
       <div className="flex gap-1.5">
         <span className="w-9 shrink-0 text-foreground-muted">USDC</span>
-        <span>{balances.usdc.balance_normalized}</span>
+        <span>{formatBalanceAmount(balances.usdc.balance_normalized)}</span>
       </div>
     </div>
   );
