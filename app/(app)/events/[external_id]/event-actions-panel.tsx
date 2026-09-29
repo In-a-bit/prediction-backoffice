@@ -9,9 +9,10 @@ import type { EventResponse } from "@/lib/types";
 type EventActionKey = "pause" | "unpause" | "activate" | "deactivate";
 
 // EventActionsPanel renders the dpm-api event lifecycle controls. Visibility
-// mirrors the dpm-api LifecycleHandler — pause/unpause flip a single bool,
-// activate/deactivate flip event.active. We hide the no-op variants so the
-// operator can't fire something that's already in the target state.
+// mirrors the dpm-api LifecycleHandler — pause/unpause flip a single bool.
+// activate/deactivate also flip a single bool (event.active), so they are
+// shown as one toggle button whose label reflects the current state instead
+// of two separately-visible buttons.
 export function EventActionsPanel({
   externalId,
   event,
@@ -55,12 +56,11 @@ export function EventActionsPanel({
     });
   }
 
+  const showActiveToggle = !event.archived;
   const showPause = !event.paused && !event.archived;
   const showUnpause = event.paused;
-  const showActivate = !event.active && !event.archived;
-  const showDeactivate = event.active && !event.archived;
 
-  if (!showPause && !showUnpause && !showActivate && !showDeactivate) {
+  if (!showActiveToggle && !showPause && !showUnpause) {
     return (
       <p className="text-xs text-foreground-muted">
         No lifecycle actions available — event is archived.
@@ -68,29 +68,29 @@ export function EventActionsPanel({
     );
   }
 
+  // One button, two states: active → clicking it deactivates (and vice
+  // versa), so the label always names the action that will fire, not the
+  // current state.
+  const activeToggleKey: EventActionKey = event.active ? "deactivate" : "activate";
+  const activeToggleLabel = event.active ? "Inactive" : "Activate";
+  const activeTogglePendingLabel = event.active ? "Deactivating…" : "Activating…";
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {showActivate ? (
+        {showActiveToggle ? (
           <button
             type="button"
-            onClick={() => fire("activate")}
+            onClick={() => fire(activeToggleKey)}
             disabled={isPending}
-            className={buttonVariants.primary}
-            title="Set event.active=true. Idempotent."
+            className={event.active ? buttonVariants.danger : buttonVariants.primary}
+            title={
+              event.active
+                ? "Set event.active=false — hides the event from users."
+                : "Set event.active=true. Idempotent."
+            }
           >
-            {pending === "activate" ? "Activating…" : "Activate"}
-          </button>
-        ) : null}
-        {showDeactivate ? (
-          <button
-            type="button"
-            onClick={() => fire("deactivate")}
-            disabled={isPending}
-            className={buttonVariants.danger}
-            title="Set event.active=false — hides the event from users."
-          >
-            {pending === "deactivate" ? "Deactivating…" : "Deactivate"}
+            {pending === activeToggleKey ? activeTogglePendingLabel : activeToggleLabel}
           </button>
         ) : null}
         {showPause ? (
