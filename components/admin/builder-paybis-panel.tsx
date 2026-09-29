@@ -132,7 +132,7 @@ function CredentialInput({
       className={inputClass}
       data-lpignore="true"
       type="password"
-      autoComplete="off"
+      autoComplete="new-password"
       placeholder={placeholder}
       value={draft}
       onChange={(e) => onChange(e.target.value)}

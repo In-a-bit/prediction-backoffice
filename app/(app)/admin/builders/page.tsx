@@ -209,6 +209,7 @@ export default function BuildersPage() {
                   className={inputClass}
                   data-lpignore="true"
                   type="password"
+                  autoComplete="new-password"
                   value={createSecretKey}
                   onChange={(e) => setCreateSecretKey(e.target.value)}
                   required
@@ -226,7 +227,7 @@ export default function BuildersPage() {
                   className={inputClass}
                   data-lpignore="true"
                   type="password"
-                  autoComplete="off"
+                  autoComplete="new-password"
                   value={createPaybisKey}
                   onChange={(e) => setCreatePaybisKey(e.target.value)}
                 />
