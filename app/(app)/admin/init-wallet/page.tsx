@@ -16,10 +16,13 @@ import {
   buttonVariants,
 } from "@/components/ui";
 import type {
+  AddressBalance,
   InitRelayerWalletResponse,
   RelayerWallet,
   WalletType,
 } from "@/lib/api";
+import { addressUrl } from "@/lib/explorer";
+import { formatBalanceAmount } from "@/lib/format";
 
 const tableBtn =
   "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap";
@@ -194,6 +197,35 @@ export default function InitWalletPage() {
     });
   }
   const [withdrawWallet, setWithdrawWallet] = useState<RelayerWallet | null>(null);
+
+  // Wallet balances are fetched on demand only (never eagerly for the whole
+  // page) — with PAGE_SIZE=10 rows, an eager fetch would fire 10 wallets ×
+  // ~3 RPC calls on every mount. `balances` holds the last successfully
+  // loaded value per wallet id so a failed refresh never blanks a
+  // previously-good read; `balanceStatus` is the transient in-flight/error
+  // state layered on top of it.
+  const [balances, setBalances] = useState<
+    Record<number, { pol: AddressBalance; usdc: AddressBalance }>
+  >({});
+  const [balanceStatus, setBalanceStatus] = useState<
+    Record<number, "loading" | "error" | undefined>
+  >({});
+
+  const fetchBalance = useCallback(async (walletId: number, address: string) => {
+    setBalanceStatus((prev) => ({ ...prev, [walletId]: "loading" }));
+    try {
+      const res = await fetch(
+        `/api/admin/contracts/balance?address=${encodeURIComponent(address)}`,
+        { cache: "no-store" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? `Status ${res.status}`);
+      setBalances((prev) => ({ ...prev, [walletId]: data }));
+      setBalanceStatus((prev) => ({ ...prev, [walletId]: undefined }));
+    } catch {
+      setBalanceStatus((prev) => ({ ...prev, [walletId]: "error" }));
+    }
+  }, []);
 
   async function handleDeactivate(w: RelayerWallet) {
     if (
@@ -429,6 +461,7 @@ export default function InitWalletPage() {
                   <col className="w-10" />
                   <col />
                   <col className="w-24" />
+                  <col className="w-36" />
                   <col className="w-28" />
                   <col className="w-24" />
                   <col className="w-10" />
@@ -439,7 +472,7 @@ export default function InitWalletPage() {
                 </colgroup>
                 <thead className="border-b border-border bg-foreground/[0.03]">
                   <tr>
-                    {["ID", "Address", "Type", "Init", "Status", "●", "Nonce", "Label", "Created", "Actions"].map(
+                    {["ID", "Address", "Type", "Balance", "Init", "Status", "●", "Nonce", "Label", "Created", "Actions"].map(
                       (h) => (
                         <th key={h} className="px-3 py-2 font-medium text-foreground-muted">
                           {h}
@@ -475,6 +508,18 @@ export default function InitWalletPage() {
                               </svg>
                             )}
                           </button>
+                          <a
+                            href={addressUrl(w.address)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="View on explorer"
+                            className="shrink-0 cursor-pointer text-foreground-muted hover:text-foreground transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                              <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v6a.75.75 0 0 0 .75.75h6a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 10.25 14.5h-6A2.25 2.25 0 0 1 2 12.25v-6A2.25 2.25 0 0 1 4.25 4h4a.75.75 0 0 1 0 1.5h-4Z" clipRule="evenodd" />
+                              <path fillRule="evenodd" d="M6.194 9.806a.75.75 0 0 0 1.06 0l6.246-6.246v2.19a.75.75 0 0 0 1.5 0v-4a.75.75 0 0 0-.75-.75h-4a.75.75 0 0 0 0 1.5h2.19L6.194 8.746a.75.75 0 0 0 0 1.06Z" clipRule="evenodd" />
+                            </svg>
+                          </a>
                         </div>
                       </td>
                       <td className="px-3 py-2">
@@ -483,6 +528,15 @@ export default function InitWalletPage() {
                             {SHORT_TYPE[w.wallet_type] ?? w.wallet_type}
                           </Badge>
                         </span>
+                      </td>
+                      <td className="px-3 py-2 pr-5">
+                        <WalletBalanceCell
+                          walletId={w.id}
+                          address={w.address}
+                          data={balances[w.id]}
+                          status={balanceStatus[w.id]}
+                          onFetch={fetchBalance}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <Badge tone={initStatusTone[w.init_status ?? ""] ?? "neutral"}>
@@ -581,5 +635,108 @@ export default function InitWalletPage() {
         onWithdrawSuccess={() => fetchWallets(page)}
       />
     </div>
+  );
+}
+
+// WalletBalanceCell shows a wallet's live on-chain POL + USDC.e balance,
+// fetched only on demand (never eagerly for the whole page — see the
+// `balances`/`balanceStatus` state comment above). Three states on top of
+// "unset":
+//   - loading, no prior data  -> small inline spinner
+//   - error, no prior data    -> "Error" text, click to retry
+//   - loaded                  -> POL/USDC rows + a refresh icon; a refresh
+//     in flight dims the existing values instead of blanking them, and a
+//     refresh that fails turns the icon red but leaves the last-known-good
+//     values on screen.
+function WalletBalanceCell({
+  walletId,
+  address,
+  data,
+  status,
+  onFetch,
+}: {
+  walletId: number;
+  address: string;
+  data?: { pol: AddressBalance; usdc: AddressBalance };
+  status: "loading" | "error" | undefined;
+  onFetch: (walletId: number, address: string) => void;
+}) {
+  const refresh = () => onFetch(walletId, address);
+
+  if (!data) {
+    if (status === "loading") {
+      return (
+        <span className="inline-flex h-3 w-3 items-center justify-center">
+          <RefreshIcon className="h-3 w-3 animate-spin text-foreground-muted" />
+        </span>
+      );
+    }
+    if (status === "error") {
+      return (
+        <button
+          type="button"
+          onClick={refresh}
+          title="Failed to load balance — click to retry"
+          className="cursor-pointer text-danger hover:underline"
+        >
+          Error
+        </button>
+      );
+    }
+    return (
+      <button type="button" onClick={refresh} className={tableBtnSecondary}>
+        <PlusIcon className="h-2.5 w-2.5" />
+        Get
+      </button>
+    );
+  }
+
+  const refreshing = status === "loading";
+  const failed = status === "error";
+  return (
+    <div className="flex items-center gap-1.5">
+      <div
+        className={`flex flex-col gap-0.5 text-xs font-mono ${refreshing ? "opacity-45" : ""}`}
+      >
+        <div className="flex gap-1.5">
+          <span className="w-9 shrink-0 text-foreground-muted">POL</span>
+          <span>{formatBalanceAmount(data.pol.balance_normalized)}</span>
+        </div>
+        <div className="flex gap-1.5">
+          <span className="w-9 shrink-0 text-foreground-muted">USDC</span>
+          <span>{formatBalanceAmount(data.usdc.balance_normalized)}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={refresh}
+        title={failed ? "Refresh failed — click to retry" : "Refresh balance"}
+        className={`shrink-0 cursor-pointer transition-colors ${
+          failed ? "text-danger" : "text-foreground-muted hover:text-foreground"
+        }`}
+      >
+        <RefreshIcon className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+      </button>
+    </div>
+  );
+}
+
+function PlusIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className}>
+      <path d="M8 3a.75.75 0 0 1 .75.75v3.5h3.5a.75.75 0 0 1 0 1.5h-3.5v3.5a.75.75 0 0 1-1.5 0v-3.5h-3.5a.75.75 0 0 1 0-1.5h3.5v-3.5A.75.75 0 0 1 8 3Z" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className}>
+      <path
+        fillRule="evenodd"
+        d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.932.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-1.242l.842.84V3.227a.75.75 0 0 1 .75-.75Zm-13.5 8.83a.75.75 0 0 1 .75-.75h3.182a.75.75 0 0 1 0 1.5h-1.37l.84.841a4.5 4.5 0 0 0 7.08-.932.75.75 0 1 1 1.3.75 6 6 0 0 1-9.44 1.242l-.842-.84v1.371a.75.75 0 0 1-1.5 0v-3.182Z"
+        clipRule="evenodd"
+      />
+    </svg>
   );
 }
