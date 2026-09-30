@@ -186,24 +186,15 @@ export type MarketPayload = {
   slug?: string;
   description?: string;
   resolution_source?: string;
-  start_date?: string;
   end_date?: string;
-  active?: boolean;
-  closed?: boolean;
-  archived?: boolean;
-  restricted?: boolean;
-  accepting_orders?: boolean;
-  accepting_orders_timestamp?: string;
-  funded?: boolean;
-  approved?: boolean;
-  activation?: "AUTO" | "MANUAL";
-  automatically_active?: boolean;
-  clear_book_on_start?: boolean;
-  rfq_enabled?: boolean;
-  neg_risk?: boolean;
-  neg_risk_market_id?: string;
-  neg_risk_request_id?: string;
-  neg_risk_other?: boolean;
+  // start_date, active, closed, archived, restricted, accepting_orders,
+  // accepting_orders_timestamp, funded, approved, activation,
+  // automatically_active, clear_book_on_start, rfq_enabled, neg_risk,
+  // neg_risk_market_id, neg_risk_request_id and neg_risk_other are
+  // intentionally absent — none of them are exposed as editable on the
+  // manual market-creation form (they either can't be set at creation time,
+  // or the manual-creation flow has no legitimate use for them). Mirrors
+  // EventPayload's equivalent omission above.
   // Decimals serialized as strings to preserve precision through JSON.
   order_price_min_tick_size?: string;
   order_min_size?: number;
