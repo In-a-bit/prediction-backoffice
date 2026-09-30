@@ -2,7 +2,6 @@
 
 import {
   AdvancedCollapse,
-  BoolSelect,
   Field,
   JsonField,
   inputClass,
@@ -30,18 +29,7 @@ export type EventEditorState = Omit<
   // add a tag that does not exist in dpm-api yet. The submitting form calls
   // resolveTagIds(state.tags) and stamps the resulting ids onto the payload.
   tags: EventTagDraft[];
-  start_date_local: string;
   end_date_local: string;
-  deploying_timestamp_local: string;
-  // Not in EventPayload (cannot be set at creation time) but kept as local
-  // editor state so the form can display/prefill from existing event data.
-  active?: boolean;
-  closed?: boolean;
-  archived?: boolean;
-  restricted?: boolean;
-  neg_risk?: boolean;
-  neg_risk_market_id?: string;
-  comment_count?: number;
 };
 
 export function emptyEventEditorState(): EventEditorState {
@@ -52,21 +40,11 @@ export function emptyEventEditorState(): EventEditorState {
     description: "",
     resolution_source: "",
     icon: "",
-    active: undefined,
-    closed: undefined,
-    archived: undefined,
-    restricted: undefined,
-    neg_risk: undefined,
-    neg_risk_market_id: "",
-    parent_event_id: undefined,
-    comment_count: undefined,
     series_id: undefined,
     series_external_id: "",
     metadata_type: "",
     metadataText: "",
-    start_date_local: "",
     end_date_local: "",
-    deploying_timestamp_local: "",
     tags: [],
   };
 }
@@ -90,13 +68,10 @@ export function eventEditorStateFromPayload(
     description: p.description ?? "",
     resolution_source: p.resolution_source ?? "",
     icon: p.icon ?? "",
-    neg_risk_market_id: "",
     series_external_id: p.series_external_id ?? "",
     metadata_type: p.metadata_type ?? "",
     metadataText: stringifyMetadata(p.metadata),
-    start_date_local: "",
     end_date_local: isoToLocalInput(p.end_date),
-    deploying_timestamp_local: "",
     tags: mergeTagDrafts(tags),
   };
 }
@@ -110,7 +85,6 @@ export function eventEditorStateToPayload(s: EventEditorState): EventPayload {
     description: cleanString(s.description),
     resolution_source: cleanString(s.resolution_source),
     icon: cleanString(s.icon),
-    parent_event_id: s.parent_event_id,
     series_id: s.series_id,
     series_external_id: cleanString(s.series_external_id),
     metadata_type: cleanString(s.metadata_type),
@@ -183,16 +157,7 @@ export function EventEditor({
         />
       </Field>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Start date" htmlFor={`${idPrefix}-start`}>
-          <input
-            id={`${idPrefix}-start`}
-            type="datetime-local"
-            className={inputClass}
-            value={value.start_date_local}
-            onChange={(e) => set("start_date_local", e.target.value)}
-          />
-        </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="End date" htmlFor={`${idPrefix}-end`}>
           <input
             id={`${idPrefix}-end`}
@@ -202,9 +167,6 @@ export function EventEditor({
             onChange={(e) => set("end_date_local", e.target.value)}
           />
         </Field>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Resolution source" htmlFor={`${idPrefix}-resource`}>
           <input
             id={`${idPrefix}-resource`}
@@ -240,14 +202,6 @@ export function EventEditor({
         </Field>
       </div>
 
-      <Field label="Active" htmlFor={`${idPrefix}-active`}>
-        <BoolSelect
-          id={`${idPrefix}-active`}
-          value={value.active}
-          onChange={(v) => set("active", v)}
-        />
-      </Field>
-
       <AdvancedCollapse>
         <Field label="Icon URL" htmlFor={`${idPrefix}-icon`}>
           <input
@@ -257,91 +211,6 @@ export function EventEditor({
             onChange={(e) => set("icon", e.target.value)}
           />
         </Field>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Field label="Closed">
-            <BoolSelect value={value.closed} onChange={(v) => set("closed", v)} />
-          </Field>
-          <Field label="Archived">
-            <BoolSelect
-              value={value.archived}
-              onChange={(v) => set("archived", v)}
-            />
-          </Field>
-          <Field label="Restricted">
-            <BoolSelect
-              value={value.restricted}
-              onChange={(v) => set("restricted", v)}
-            />
-          </Field>
-          <Field label="Neg risk">
-            <BoolSelect
-              value={value.neg_risk}
-              onChange={(v) => set("neg_risk", v)}
-            />
-          </Field>
-        </div>
-
-        <Field
-          label="Neg-risk market ID"
-          htmlFor={`${idPrefix}-neg-risk-market-id`}
-        >
-          <input
-            id={`${idPrefix}-neg-risk-market-id`}
-            className={inputClass}
-            value={value.neg_risk_market_id ?? ""}
-            onChange={(e) => set("neg_risk_market_id", e.target.value)}
-          />
-        </Field>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field
-            label="Deploying timestamp"
-            htmlFor={`${idPrefix}-deploying-timestamp`}
-          >
-            <input
-              id={`${idPrefix}-deploying-timestamp`}
-              type="datetime-local"
-              className={inputClass}
-              value={value.deploying_timestamp_local}
-              onChange={(e) =>
-                set("deploying_timestamp_local", e.target.value)
-              }
-            />
-          </Field>
-          <Field
-            label="Parent event ID"
-            htmlFor={`${idPrefix}-parent-event-id`}
-          >
-            <input
-              id={`${idPrefix}-parent-event-id`}
-              type="number"
-              className={inputClass}
-              value={value.parent_event_id ?? ""}
-              onChange={(e) =>
-                set(
-                  "parent_event_id",
-                  e.target.value === "" ? undefined : Number(e.target.value),
-                )
-              }
-            />
-          </Field>
-          <Field label="Comment count" htmlFor={`${idPrefix}-comments`}>
-            <input
-              id={`${idPrefix}-comments`}
-              type="number"
-              min={0}
-              className={inputClass}
-              value={value.comment_count ?? ""}
-              onChange={(e) =>
-                set(
-                  "comment_count",
-                  e.target.value === "" ? undefined : Number(e.target.value),
-                )
-              }
-            />
-          </Field>
-        </div>
 
         <Field label="Metadata type" htmlFor={`${idPrefix}-metadata-type`}>
           <input

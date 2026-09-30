@@ -165,10 +165,11 @@ export type EventPayload = {
   end_date?: string;
   icon?: string;
   // start_date, active, closed, archived, restricted, neg_risk,
-  // neg_risk_market_id, comment_count, deployment_status and
-  // deploying_timestamp are intentionally absent — they cannot be set at
-  // event creation time.
-  parent_event_id?: number;
+  // neg_risk_market_id, comment_count, deployment_status,
+  // deploying_timestamp and parent_event_id are intentionally absent — they
+  // cannot be usefully set at event creation time (either dpm-api ignores
+  // them on create, or the manual-creation flow has no legitimate use for
+  // them), so the manual creation forms don't expose them.
   series_id?: number;
   series_external_id?: string;
   metadata_type?: string;
