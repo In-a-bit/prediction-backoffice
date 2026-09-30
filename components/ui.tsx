@@ -227,6 +227,42 @@ export const selectClass = inputClass;
 
 export const textareaClass = `${inputClass} font-mono text-xs leading-relaxed`;
 
+// UsdcAmountInput is a plain decimal-text input (2dp, e.g. "5.00") with a
+// fixed "USDC" unit label inset on the right — used for money fields whose
+// underlying wire value is a raw base-unit integer string (e.g. the manual
+// market editor's UMA bond/reward). Callers own the human<->raw conversion
+// (see lib/format.ts's usdcInputToRaw/usdcRawToInput) so this stays a
+// generic decimal-text-with-unit widget rather than USDC-specific logic.
+export function UsdcAmountInput({
+  id,
+  value,
+  onChange,
+  invalid,
+  placeholder = "0.00",
+}: {
+  id?: string;
+  value: string;
+  onChange: (v: string) => void;
+  invalid?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        inputMode="decimal"
+        placeholder={placeholder}
+        className={`${inputClass} pr-14 ${invalid ? "border-danger" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-foreground-muted pointer-events-none">
+        USDC
+      </span>
+    </div>
+  );
+}
+
 export function Field({
   label,
   hint,

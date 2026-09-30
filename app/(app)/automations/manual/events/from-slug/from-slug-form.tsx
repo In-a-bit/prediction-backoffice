@@ -22,8 +22,10 @@ import {
 } from "@/components/manual/event-editor";
 import {
   MarketEditor,
+  marketEditorHasBlockingErrors,
   marketEditorStateFromPayload,
   marketEditorStateToPayload,
+  useManualMarketConfig,
   type MarketEditorState,
 } from "@/components/manual/market-editor";
 import {
@@ -79,6 +81,10 @@ export function FromSlugForm() {
   const [includeSeries, setIncludeSeries] = useState(true);
   const [eventState, setEventState] = useState<EventEditorState | null>(null);
   const [drafts, setDrafts] = useState<MarketEditorState[]>([]);
+  const marketConfig = useManualMarketConfig();
+  const hasBlockingMarketErrors = drafts.some((d) =>
+    marketEditorHasBlockingErrors(d, marketConfig),
+  );
 
   // Set after the chained creates.
   const [createdSeries, setCreatedSeries] = useState<SeriesResponse | null>(
@@ -138,6 +144,10 @@ export function FromSlugForm() {
   const startChain = () => {
     setError(null);
     if (!eventState) return;
+    if (hasBlockingMarketErrors) {
+      setError("Fix the UMA bond/reward errors before creating.");
+      return;
+    }
     startTransition(async () => {
       try {
         // Tags first: one list, edited in the Event card above — the
@@ -427,7 +437,7 @@ export function FromSlugForm() {
             <button
               type="button"
               onClick={startChain}
-              disabled={pending || !eventState}
+              disabled={pending || !eventState || hasBlockingMarketErrors}
               className={buttonVariants.primary}
             >
               {pending ? "Creating…" : "Create series + event, then deploy markets"}

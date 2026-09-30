@@ -21,8 +21,10 @@ import {
 } from "@/components/manual/event-editor";
 import {
   MarketEditor,
+  marketEditorHasBlockingErrors,
   marketEditorStateFromPayload,
   marketEditorStateToPayload,
+  useManualMarketConfig,
   type MarketEditorState,
 } from "@/components/manual/market-editor";
 import {
@@ -85,6 +87,10 @@ export function FromDescriptionForm() {
     null,
   );
   const [eventRows, setEventRows] = useState<EventDraftRow[]>([]);
+  const marketConfig = useManualMarketConfig();
+  const hasBlockingMarketErrors = eventRows.some((row) =>
+    row.markets.some((m) => marketEditorHasBlockingErrors(m, marketConfig)),
+  );
 
   // Created results.
   const [createdSeries, setCreatedSeries] = useState<SeriesResponse | null>(
@@ -153,6 +159,10 @@ export function FromDescriptionForm() {
 
   const startChain = () => {
     setError(null);
+    if (hasBlockingMarketErrors) {
+      setError("Fix the UMA bond/reward errors before creating.");
+      return;
+    }
     startTransition(async () => {
       try {
         // Resolve every event's tags up front, so a bad tag aborts before
@@ -478,7 +488,9 @@ export function FromDescriptionForm() {
             <button
               type="button"
               onClick={startChain}
-              disabled={pending || eventRows.length === 0}
+              disabled={
+                pending || eventRows.length === 0 || hasBlockingMarketErrors
+              }
               className={buttonVariants.primary}
             >
               {pending ? "Creating…" : "Create everything"}

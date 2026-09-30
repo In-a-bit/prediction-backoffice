@@ -141,6 +141,50 @@ export function formatUsdc(raw: string | null | undefined): string {
   }
 }
 
+// Editable USDC amount inputs (e.g. the manual market editor's UMA bond/
+// reward fields) show/accept 2 decimal places rather than the full 6 —
+// enough precision for an operator typing a dollar amount, while the wire
+// value (uma_bond/uma_reward) stays a raw 6-decimal base-unit string.
+const USDC_INPUT_DECIMALS = 2;
+
+// usdcRawToInput renders a raw USDC base-unit string as a fixed 2-decimal
+// plain number suitable for an <input>'s value (no trailing-zero trimming,
+// no "USDC" suffix — callers show the unit separately, e.g. as an adornment
+// next to the field). Returns "" for empty/undefined so the field renders
+// blank instead of "0.00".
+export function usdcRawToInput(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined || raw.trim() === "") return "";
+  try {
+    const value = BigInt(raw);
+    const negative = value < BigInt(0);
+    const abs = negative ? -value : value;
+    const base = BigInt(10) ** BigInt(USDC_DECIMALS);
+    const whole = abs / base;
+    const frac = abs % base;
+    const fracStr = frac
+      .toString()
+      .padStart(USDC_DECIMALS, "0")
+      .slice(0, USDC_INPUT_DECIMALS);
+    return `${negative ? "-" : ""}${whole}.${fracStr}`;
+  } catch {
+    return raw;
+  }
+}
+
+// usdcInputToRaw parses a 2-decimal USDC amount an operator typed (e.g.
+// "5", "5.5", "5.00") into the raw 6-decimal base-unit integer string
+// dpm-api's uma_bond/uma_reward wire fields expect. Returns "" for a blank
+// input (meaning "unset — use the server default") and null for anything
+// that isn't a non-negative number with at most 2 fractional digits.
+export function usdcInputToRaw(input: string): string | null {
+  const t = input.trim();
+  if (t === "") return "";
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const [whole, frac = ""] = t.split(".");
+  const fracRaw = frac.padEnd(USDC_INPUT_DECIMALS, "0").padEnd(USDC_DECIMALS, "0");
+  return (BigInt(whole) * BigInt(10) ** BigInt(USDC_DECIMALS) + BigInt(fracRaw)).toString();
+}
+
 // Ancillary data travels the wire as hex-encoded bytes (prediction-go's
 // txprocessor stores it via hexutil.Encode), but UMA convention encodes the
 // actual content as plain ASCII/UTF-8 ("q: title: ..., description: ...").

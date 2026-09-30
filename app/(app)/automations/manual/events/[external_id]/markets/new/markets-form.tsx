@@ -14,7 +14,9 @@ import { DeployPlanDriver } from "@/components/manual/deploy-plan-driver";
 import {
   MarketEditor,
   emptyMarketEditorState,
+  marketEditorHasBlockingErrors,
   marketEditorStateToPayload,
+  useManualMarketConfig,
   type MarketEditorState,
 } from "@/components/manual/market-editor";
 import { newUUID } from "@/lib/manual/helpers";
@@ -35,6 +37,10 @@ export function MarketsForm({
   const [drafts, setDrafts] = useState<MarketEditorState[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const marketConfig = useManualMarketConfig();
+  const hasBlockingMarketErrors = drafts.some((d) =>
+    marketEditorHasBlockingErrors(d, marketConfig),
+  );
 
   // On mount: rehydrate the active plan id from sessionStorage so a refresh
   // jumps straight to the observer view.
@@ -62,6 +68,10 @@ export function MarketsForm({
     }
     if (drafts.some((d) => !d.question.trim())) {
       setError("Every market needs a question.");
+      return;
+    }
+    if (hasBlockingMarketErrors) {
+      setError("Fix the UMA bond/reward errors before creating the plan.");
       return;
     }
     startTransition(async () => {
@@ -201,7 +211,7 @@ export function MarketsForm({
         <button
           type="button"
           onClick={createPlan}
-          disabled={pending || drafts.length === 0}
+          disabled={pending || drafts.length === 0 || hasBlockingMarketErrors}
           className={buttonVariants.primary}
         >
           {pending ? "Creating plan…" : "Create deploy plan"}

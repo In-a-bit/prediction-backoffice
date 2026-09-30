@@ -206,6 +206,22 @@ export type MarketPayload = {
   metadata?: Record<string, unknown>;
 };
 
+// ManualMarketConfig is the response of GET /manual/markets/config —
+// BACKOFFICE_MANUAL_UMA_BOND / BACKOFFICE_MANUAL_MAX_UMA_BOND /
+// BACKOFFICE_MANUAL_UMA_REWARD / BACKOFFICE_MANUAL_MAX_UMA_REWARD
+// (default/max, env-configurable) plus uma_bond_min/uma_reward_min
+// (hardcoded floors, never env-configurable — dpm-api enforces these on
+// create regardless of what's sent). Raw USDC base-unit strings (6
+// decimals), same convention as MarketPayload.uma_bond/uma_reward.
+export type ManualMarketConfig = {
+  uma_bond_default: string;
+  uma_bond_min: string;
+  uma_bond_max: string;
+  uma_reward_default: string;
+  uma_reward_min: string;
+  uma_reward_max: string;
+};
+
 export type SeriesResponse = {
   id: number;
   external_id: string;

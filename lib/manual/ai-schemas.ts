@@ -73,8 +73,12 @@ export const MarketSchema = z.object({
   // before submitting to dpm-api (which expects decimal strings).
   order_price_min_tick_size: z.number().optional(),
   order_min_size: z.number().int().optional(),
-  uma_bond: z.string().optional().describe("integer string in wei"),
-  uma_reward: z.string().optional().describe("integer string in wei"),
+  // uma_bond/uma_reward are intentionally absent: they're our own
+  // system's economics (with hardcoded minimums enforced on create), not
+  // something that should be inherited from a Polymarket source or
+  // hallucinated by the AI draft. Leaving them out of the schema means the
+  // market editor always starts with these fields blank, letting the
+  // operator opt in explicitly or rely on the server-side default.
   metadata_type: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
 });

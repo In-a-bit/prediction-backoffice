@@ -16,6 +16,7 @@ import type {
   Interval,
   ManualAudit,
   ManualEventListResponse,
+  ManualMarketConfig,
   MarketAccepted,
   MarketPayload,
   MarketOutcome,
@@ -173,6 +174,11 @@ export const manual = {
     ),
 
   // ----- Markets (async) -----
+  // Default/max hints for the UMA bond + reward inputs on the market
+  // editor. Not user/event-scoped — safe to fetch once and share across
+  // every MarketEditor instance on a page (see useManualMarketConfig).
+  getMarketConfig: () =>
+    request<ManualMarketConfig>("/manual/markets/config"),
   createMarket: (payload: MarketPayload, audit: ManualAudit = {}) =>
     request<MarketAccepted>("/manual/markets", {
       method: "POST",
